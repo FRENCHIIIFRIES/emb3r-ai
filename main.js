@@ -133,8 +133,21 @@ function createWindow() {
   return win;
 }
 
+// quitting or crashing mid-download leaves a .part behind that nothing else
+// will ever claim, so sweep them at startup rather than letting them accumulate
+function clearPartialDownloads() {
+  try {
+    for (const name of fs.readdirSync(MODELS_DIR)) {
+      if (name.endsWith(".part")) fs.unlinkSync(path.join(MODELS_DIR, name));
+    }
+  } catch (err) {
+    console.error("Could not clear partial downloads:", err);
+  }
+}
+
 app.whenReady().then(async () => {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
+  clearPartialDownloads();
   mainWindow = createWindow();
   try {
     await loadLocalModel();
@@ -229,45 +242,112 @@ ipcMain.handle("emb3r:list-models", () => {
   return { models, activeModel: config.activeModel, recommendedTier, totalRamGB };
 });
 
-function downloadFile(url, destPath, onProgress) {
+// a model download is gigabytes over many minutes, so a dead connection has to
+// be detected by silence rather than by any sensible overall deadline
+const DOWNLOAD_STALL_MS = 60_000;
+
+function downloadFile(url, destPath, onProgress, signal) {
   return new Promise((resolve, reject) => {
     const tmpPath = destPath + ".part";
     const file = fs.createWriteStream(tmpPath);
 
+    let settled = false;
+    let stallTimer = null;
+    let currentReq = null;
+
+    // every failure path has to drop the partial file, otherwise a cancelled or
+    // broken download leaves gigabytes of .part behind
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(stallTimer);
+      if (currentReq) currentReq.destroy();
+      file.destroy();
+      fs.unlink(tmpPath, () => {});
+      reject(err);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(stallTimer);
+      resolve();
+    };
+
+    file.on("error", fail);
+
+    if (signal) {
+      if (signal.aborted) return fail(new Error("Download cancelled."));
+      signal.addEventListener("abort", () => fail(new Error("Download cancelled.")), { once: true });
+    }
+
     function request(currentUrl, redirectsLeft) {
-      https.get(currentUrl, { headers: { "User-Agent": "emb3r-app" } }, (res) => {
-        if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
-          if (redirectsLeft <= 0) return reject(new Error("Too many redirects"));
+      let parsed;
+      try {
+        parsed = new URL(currentUrl);
+      } catch {
+        return fail(new Error("Malformed download URL."));
+      }
+      // a redirect must never be able to downgrade the transport
+      if (parsed.protocol !== "https:") {
+        return fail(new Error(`Refusing to download over ${parsed.protocol.replace(":", "")}.`));
+      }
+
+      currentReq = https.get(currentUrl, { headers: { "User-Agent": "emb3r-app" } }, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          if (redirectsLeft <= 0) return fail(new Error("Too many redirects."));
           res.resume();
-          request(res.headers.location, redirectsLeft - 1);
-          return;
+          // Location is allowed to be relative
+          return request(new URL(res.headers.location, currentUrl).toString(), redirectsLeft - 1);
         }
+
         if (res.statusCode !== 200) {
-          file.close();
-          fs.unlink(tmpPath, () => {});
-          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          res.resume();
+          return fail(new Error(`Download failed: HTTP ${res.statusCode}`));
         }
+
         const total = parseInt(res.headers["content-length"] || "0", 10);
         let downloaded = 0;
+
+        const resetStall = () => {
+          clearTimeout(stallTimer);
+          stallTimer = setTimeout(
+            () => fail(new Error("Download stalled - no data received for 60 seconds.")),
+            DOWNLOAD_STALL_MS,
+          );
+        };
+        resetStall();
+
         res.on("data", (chunk) => {
           downloaded += chunk.length;
+          resetStall();
           if (total > 0 && onProgress) onProgress(Math.round((downloaded / total) * 100));
         });
+        res.on("error", fail);
         res.pipe(file);
+
         file.on("finish", () => {
-          file.close(() => {
-            fs.rename(tmpPath, destPath, (err) => (err ? reject(err) : resolve()));
+          clearTimeout(stallTimer);
+          // a truncated response still fires finish, so size has to be checked
+          // before the file is promoted to its real name
+          if (total > 0 && downloaded !== total) {
+            return fail(new Error(`Download incomplete: received ${downloaded} of ${total} bytes.`));
+          }
+          file.close((err) => {
+            if (err) return fail(err);
+            fs.rename(tmpPath, destPath, (renameErr) => (renameErr ? fail(renameErr) : succeed()));
           });
         });
-      }).on("error", (err) => {
-        file.close();
-        fs.unlink(tmpPath, () => {});
-        reject(err);
       });
+
+      currentReq.on("error", fail);
     }
+
     request(url, 5);
   });
 }
+
+const activeDownloads = new Map();
 
 ipcMain.handle("emb3r:download-model", async (_e, modelId) => {
   if (!config.internetConsent) return { success: false, error: "Internet access hasn't been granted yet." };
@@ -275,15 +355,36 @@ ipcMain.handle("emb3r:download-model", async (_e, modelId) => {
   if (!entry) return { success: false, error: "Unknown model." };
   const destPath = path.join(MODELS_DIR, entry.file);
   if (fs.existsSync(destPath)) return { success: true, alreadyDownloaded: true };
+  if (activeDownloads.has(modelId)) return { success: false, error: "That model is already downloading." };
+
+  const controller = new AbortController();
+  activeDownloads.set(modelId, controller);
+
   const url = `https://huggingface.co/${entry.repo}/resolve/main/${entry.file}?download=true`;
   try {
-    await downloadFile(url, destPath, (percent) => {
-      if (mainWindow) mainWindow.webContents.send("emb3r:download-progress", { id: modelId, percent });
-    });
+    await downloadFile(
+      url,
+      destPath,
+      (percent) => {
+        if (mainWindow) mainWindow.webContents.send("emb3r:download-progress", { id: modelId, percent });
+      },
+      controller.signal,
+    );
     return { success: true };
   } catch (err) {
+    // a cancellation is a deliberate act, not a failure to report as one
+    if (controller.signal.aborted) return { success: false, cancelled: true };
     return { success: false, error: err.message || String(err) };
+  } finally {
+    activeDownloads.delete(modelId);
   }
+});
+
+ipcMain.handle("emb3r:cancel-download", (_e, modelId) => {
+  const controller = activeDownloads.get(modelId);
+  if (!controller) return { success: false, error: "No download in progress for that model." };
+  controller.abort();
+  return { success: true };
 });
 
 ipcMain.handle("emb3r:select-model", async (_e, filename) => {
