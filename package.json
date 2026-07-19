@@ -1,6 +1,8 @@
 {
   "name": "emb3r",
   "version": "1.0.0",
+  "description": "Local LLM desktop app powered by node-llama-cpp",
+  "author": "Ziyan",
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -26,14 +28,18 @@
       "**/node_modules/node-llama-cpp/**"
     ],
     "files": [
-      "**/*",
+      "main.js",
+      "preload.cjs",
+      "src/**/*",
       "!models/**"
-    ],
-    "extraResources": [
-      { "from": "models", "to": "models" }
     ],
     "win": {
       "target": ["nsis", "portable"]
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.productivity",
+      "identity": null
     },
     "nsis": {
       "oneClick": false,
