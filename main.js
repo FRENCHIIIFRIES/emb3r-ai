@@ -9,8 +9,11 @@ import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// models live beside the config in userData rather than inside the app bundle:
+// writing into the bundle breaks the code signature on macOS, needs privileges
+// the app may not have, and loses every downloaded model on update
 const MODELS_DIR = app.isPackaged
-  ? path.join(process.resourcesPath, "models")
+  ? path.join(app.getPath("userData"), "models")
   : path.join(__dirname, "models");
 const CONFIG_PATH = path.join(app.getPath("userData"), "emb3r-config.json");
 const DEFAULT_MODEL_FILE = "Llama-3.2-3B-Instruct-Q4_K_M.gguf";
