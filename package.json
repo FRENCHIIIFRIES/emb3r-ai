@@ -21,7 +21,7 @@
     "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "com.yourname.emb3r",
+    "appId": "io.github.frenchiiifries.emb3r",
     "productName": "emb3r",
     "asar": true,
     "asarUnpack": [
@@ -34,7 +34,7 @@
       "!models/**"
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["nsis"]
     },
     "mac": {
       "target": ["dmg", "zip"],
