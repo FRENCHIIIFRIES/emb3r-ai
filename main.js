@@ -72,11 +72,31 @@ const MODEL_CATALOG = [
     repo: "bartowski/Qwen2.5-14B-Instruct-GGUF", file: "Qwen2.5-14B-Instruct-Q4_K_M.gguf" },
 ];
 
+// the biggest model the machine can actually hold. matching on a tier name
+// instead used to leave 32GB+ machines recommending an "Extra Large" tier that
+// no model in the catalog has, so the better the hardware the less help you got
+function recommendModel(totalRamGB) {
+  return [...MODEL_CATALOG]
+    .filter((m) => m.minRamGB <= totalRamGB)
+    .sort((a, b) => b.sizeGB - a.sizeGB)[0] || null;
+}
+
 function recommendTier(totalRamGB) {
-  if (totalRamGB < 8) return "Small";
-  if (totalRamGB < 16) return "Medium";
-  if (totalRamGB < 32) return "Large";
-  return "Extra Large";
+  const model = recommendModel(totalRamGB);
+  return model ? model.tier : "None";
+}
+
+function totalRamGB() {
+  return Math.round((os.totalmem() / (1024 ** 3)) * 10) / 10;
+}
+
+async function freeDiskGB(dir) {
+  try {
+    const stats = await fs.promises.statfs(dir);
+    return (stats.bavail * stats.bsize) / (1024 ** 3);
+  } catch {
+    return null; // unsupported platform - skip the check rather than block
+  }
 }
 
 // ---- Local model loading ----
@@ -229,14 +249,40 @@ ipcMain.handle("emb3r:scan-hardware", () => {
 // ---- Model catalog / download / select ----
 
 ipcMain.handle("emb3r:list-models", () => {
-  const totalRamGB = Math.round((os.totalmem() / (1024 ** 3)) * 10) / 10;
-  const recommendedTier = recommendTier(totalRamGB);
+  const ram = totalRamGB();
+  const best = recommendModel(ram);
   const models = MODEL_CATALOG.map((m) => ({
     ...m,
     downloaded: fs.existsSync(path.join(MODELS_DIR, m.file)),
-    recommended: m.tier === recommendedTier,
+    recommended: best ? m.id === best.id : false,
+    fitsRam: m.minRamGB <= ram,
   }));
-  return { models, activeModel: config.activeModel, recommendedTier, totalRamGB };
+  return {
+    models,
+    activeModel: config.activeModel,
+    recommendedTier: recommendTier(ram),
+    recommendedId: best ? best.id : null,
+    totalRamGB: ram,
+  };
+});
+
+// drives the first-run screen: with no model on disk the app cannot answer
+// anything, so it needs to say so up front rather than surfacing a load error
+ipcMain.handle("emb3r:setup-state", async () => {
+  const ram = totalRamGB();
+  const best = recommendModel(ram);
+  const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)));
+  const cpus = os.cpus();
+
+  return {
+    needsSetup: !anyDownloaded,
+    totalRamGB: ram,
+    freeDiskGB: await freeDiskGB(MODELS_DIR),
+    cpuModel: cpus.length ? cpus[0].model : "Unknown CPU",
+    cpuCores: cpus.length,
+    platform: `${os.platform()} ${os.arch()}`,
+    recommended: best,
+  };
 });
 
 // a model download is gigabytes over many minutes, so a dead connection has to
@@ -354,6 +400,25 @@ ipcMain.handle("emb3r:download-model", async (_e, modelId) => {
   if (fs.existsSync(destPath)) return { success: true, alreadyDownloaded: true };
   if (activeDownloads.has(modelId)) return { success: false, error: "That model is already downloading." };
 
+  // minRamGB was previously shown in the UI but never enforced, so a machine
+  // could download a model that could only ever fail to load
+  const ram = totalRamGB();
+  if (entry.minRamGB > ram) {
+    return {
+      success: false,
+      error: `${entry.name} needs ${entry.minRamGB}GB of RAM and this machine has ${ram}GB.`,
+    };
+  }
+
+  // no point spending an hour on a download that cannot fit when it lands
+  const free = await freeDiskGB(MODELS_DIR);
+  if (free !== null && free < entry.sizeGB * 1.1) {
+    return {
+      success: false,
+      error: `Need about ${Math.ceil(entry.sizeGB * 1.1)}GB free and only ${free.toFixed(1)}GB is available.`,
+    };
+  }
+
   const controller = new AbortController();
   activeDownloads.set(modelId, controller);
 
@@ -385,12 +450,34 @@ ipcMain.handle("emb3r:cancel-download", (_e, modelId) => {
 });
 
 ipcMain.handle("emb3r:select-model", async (_e, filename) => {
-  config.activeModel = filename;
-  saveConfig(config);
+  const entry = MODEL_CATALOG.find((m) => m.file === filename);
+  const ram = totalRamGB();
+  if (entry && entry.minRamGB > ram) {
+    return {
+      success: false,
+      error: `${entry.name} needs ${entry.minRamGB}GB of RAM and this machine has ${ram}GB.`,
+    };
+  }
+
+  const previous = config.activeModel;
   chatSession = null;
   modelLoadError = null;
   await loadLocalModel(filename);
-  return { success: !modelLoadError, error: modelLoadError };
+
+  if (modelLoadError) {
+    // the selection used to be saved before the load was attempted, so a model
+    // that failed to load was still remembered and failed again on next launch
+    const failure = modelLoadError;
+    if (previous && previous !== filename) {
+      modelLoadError = null;
+      await loadLocalModel(previous);
+    }
+    return { success: false, error: failure };
+  }
+
+  config.activeModel = filename;
+  saveConfig(config);
+  return { success: true };
 });
 
 // ---- Spotify integration (PKCE, no client secret needed) ----

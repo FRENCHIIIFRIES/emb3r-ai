@@ -330,6 +330,7 @@ async function finishBoot() {
   resetIdleTimers();
   startMoodDecay();
   await loadConfigIntoUI();
+  await maybeRunFirstTimeSetup();
   input.focus();
 }
 
@@ -468,6 +469,69 @@ consentDeny.addEventListener("click", () => {
   pendingDownloadId = null;
   window.__pendingSpotifyConnect = false;
   consentModal.classList.remove("open");
+  setSetupButtonsEnabled(true);
+});
+
+// =============================
+// First run setup
+// =============================
+
+const setupModal = document.getElementById("setupModal");
+const setupHardwareEl = document.getElementById("setupHardware");
+const setupPickEl = document.getElementById("setupPick");
+const setupProgressEl = document.getElementById("setupProgress");
+const setupDownloadBtn = document.getElementById("setupDownload");
+const setupSkipBtn = document.getElementById("setupSkip");
+
+let setupModelId = null;
+
+function setSetupButtonsEnabled(enabled) {
+  setupDownloadBtn.disabled = !enabled || !setupModelId;
+  setupSkipBtn.disabled = !enabled;
+}
+
+function describePick(recommended, totalRam) {
+  const title = document.createElement("div");
+  title.className = "pickName";
+  const meta = document.createElement("div");
+  meta.className = "pickMeta";
+
+  if (recommended) {
+    title.textContent = `${recommended.name}  ★ best fit`;
+    meta.textContent = `${recommended.tier} tier • ~${recommended.sizeGB}GB download • runs offline once installed`;
+  } else {
+    // nothing in the catalog fits, so say that plainly instead of offering a
+    // download that could only ever fail to load
+    title.textContent = "No model fits this machine";
+    meta.textContent = `${totalRam}GB of RAM is below what the smallest model needs. You can still browse the full list in Settings.`;
+  }
+
+  setupPickEl.replaceChildren(title, meta);
+}
+
+async function maybeRunFirstTimeSetup() {
+  const state = await window.emb3r.setupState();
+  if (!state.needsSetup) return;
+
+  const disk = state.freeDiskGB === null ? "" : ` • ${state.freeDiskGB.toFixed(0)}GB free`;
+  setupHardwareEl.textContent =
+    `${state.cpuModel}\n${state.cpuCores} cores • ${state.totalRamGB}GB RAM • ${state.platform}${disk}`;
+
+  setupModelId = state.recommended ? state.recommended.id : null;
+  describePick(state.recommended, state.totalRamGB);
+  setSetupButtonsEnabled(true);
+  setupModal.classList.add("open");
+}
+
+setupDownloadBtn.addEventListener("click", () => {
+  if (!setupModelId) return;
+  setSetupButtonsEnabled(false);
+  setupProgressEl.textContent = "preparing...";
+  requestDownload(setupModelId);
+});
+
+setupSkipBtn.addEventListener("click", () => {
+  setupModal.classList.remove("open");
 });
 
 // =============================
@@ -554,6 +618,9 @@ function requestDownload(modelId) {
 function setProgressText(modelId, text) {
   const el = document.getElementById(`progress-${modelId}`);
   if (el) el.textContent = text;
+  // the same download can be driven from the first-run screen, where the
+  // settings row this would normally write to has not been rendered
+  if (setupModal.classList.contains("open")) setupProgressEl.textContent = text;
 }
 
 async function startDownload(modelId) {
@@ -567,9 +634,15 @@ async function startDownload(modelId) {
   if (result.success) {
     await refreshModelList();
     setProgressText(modelId, "done!");
+    if (setupModal.classList.contains("open")) {
+      await selectModel(modelsCache.find((m) => m.id === modelId).file);
+      setupProgressEl.textContent = "ready.";
+      setTimeout(() => setupModal.classList.remove("open"), 900);
+    }
   } else {
     renderModelList();
     setProgressText(modelId, result.cancelled ? "cancelled" : `failed: ${result.error}`);
+    setSetupButtonsEnabled(true);
   }
 }
 

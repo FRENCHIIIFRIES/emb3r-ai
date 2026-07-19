@@ -449,6 +449,88 @@ pre{
     background:var(--hover-color);
 }
 
+/* first-run model picker - shares the consent modal's look */
+#setupModal{
+    position:fixed;
+    top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.85);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:3000;
+}
+
+#setupModal.open{
+    display:flex;
+}
+
+#setupBox{
+    background:var(--bg-color);
+    border:1px solid var(--text-color);
+    padding:24px;
+    max-width:440px;
+    text-shadow:0 0 4px var(--text-color);
+}
+
+#setupBox h3{
+    margin-top:0;
+}
+
+#setupHardware{
+    font-size:15px;
+    opacity:0.75;
+    white-space:pre-wrap;
+    margin:14px 0;
+}
+
+#setupPick{
+    border:1px solid var(--text-color);
+    padding:10px;
+    margin-bottom:10px;
+}
+
+#setupPick .pickName{
+    font-weight:bold;
+}
+
+#setupPick .pickMeta{
+    font-size:15px;
+    opacity:0.75;
+    margin-top:3px;
+}
+
+#setupProgress{
+    font-size:15px;
+    min-height:1.2em;
+    margin-bottom:6px;
+}
+
+#setupButtons{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+}
+
+#setupButtons button{
+    flex:1;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    padding:8px;
+    font-family:inherit;
+    font-size:inherit;
+    cursor:pointer;
+}
+
+#setupButtons button:hover:not(:disabled){
+    background:var(--hover-color);
+}
+
+#setupButtons button:disabled{
+    opacity:0.5;
+    cursor:default;
+}
+
 /* ============================= */
 /* Boot sequence                  */
 /* ============================= */
@@ -572,6 +654,20 @@ pre{
         <div id="consentButtons">
             <button id="consentDeny">Not Now</button>
             <button id="consentAllow">Allow</button>
+        </div>
+    </div>
+</div>
+
+<div id="setupModal">
+    <div id="setupBox">
+        <h3>Let's pick a brain</h3>
+        <p>emb3r runs a language model on your own machine — nothing is sent to a server. It needs to download one first.</p>
+        <div id="setupHardware"></div>
+        <div id="setupPick"></div>
+        <div id="setupProgress"></div>
+        <div id="setupButtons">
+            <button id="setupSkip">I'll choose later</button>
+            <button id="setupDownload">Download</button>
         </div>
     </div>
 </div>

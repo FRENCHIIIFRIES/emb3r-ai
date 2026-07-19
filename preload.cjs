@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("emb3r", {
   deleteProfile: (id) => ipcRenderer.invoke("emb3r:delete-profile", id),
 
   scanHardware: () => ipcRenderer.invoke("emb3r:scan-hardware"),
+  setupState: () => ipcRenderer.invoke("emb3r:setup-state"),
   listModels: () => ipcRenderer.invoke("emb3r:list-models"),
   downloadModel: (modelId) => ipcRenderer.invoke("emb3r:download-model", modelId),
   cancelDownload: (modelId) => ipcRenderer.invoke("emb3r:cancel-download", modelId),
