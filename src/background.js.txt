@@ -1,0 +1,67 @@
+const frames = [
+`
+        ✦              .              ✦
+
+     .        *              *
+
+              ~ ~ ~ ~ ~ ~ ~
+
+        ✧              .
+
+     *              ✦              *
+
+              ~ ~ ~ ~ ~ ~ ~
+
+`,
+
+`
+              .              ✦
+
+     *                 .
+
+          ~ ~ ~ ~ ~ ~ ~ ~
+
+              ✧
+
+     .                 *
+
+          ~ ~ ~ ~ ~ ~ ~ ~
+
+`,
+
+`
+        ✧             *
+
+              .
+
+     ~ ~ ~ ~ ~ ~ ~ ~ ~
+
+          *             ✦
+
+     ~ ~ ~ ~ ~ ~ ~ ~ ~
+
+              .
+
+`
+];
+
+
+let currentFrame = 0;
+
+
+function animateBackground() {
+
+    const background = document.getElementById("background");
+
+    background.textContent = frames[currentFrame];
+
+    currentFrame++;
+
+    if (currentFrame >= frames.length) {
+        currentFrame = 0;
+    }
+
+}
+
+
+setInterval(animateBackground, 700);

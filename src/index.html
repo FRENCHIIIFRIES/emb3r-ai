@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+
+<title>emb3r</title>
+
+<style>
+:root {
+    --bg-color: #0b0f0b;
+    --text-color: #7CFF9E;
+    --hover-color: #162219;
+    --glow-small: 2px;
+    --glow-big: 6px;
+}
+
+[data-theme="light"] {
+    --bg-color: #f4fbf6;
+    --text-color: #1b7a3c;
+    --hover-color: #dff2e4;
+}
+
+#colorWheel{
+    border-radius:50%;
+    cursor:crosshair;
+    display:block;
+    margin-bottom:8px;
+}
+
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("./fonts/JetBrainsMono-Regular.ttf") format("truetype");
+    font-weight: 400;
+}
+
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("./fonts/JetBrainsMono-Medium.ttf") format("truetype");
+    font-weight: 500;
+}
+
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("./fonts/JetBrainsMono-Bold.ttf") format("truetype");
+    font-weight: 700;
+}
+
+html,
+body{
+    margin:0;
+    height:100%;
+    background:var(--bg-color);
+    color:var(--text-color);
+    font-family:"VT323", "JetBrains Mono", monospace;
+    font-size:20px;
+    line-height:1.35;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+}
+
+/* baseline theme for EVERY button, including ones created dynamically in JS
+   (model list, profile list, spotify, hardware scan) so nothing falls back
+   to the browser's default gray button style */
+button{
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    font-family:inherit;
+    font-size:inherit;
+    padding:6px 12px;
+    cursor:pointer;
+    transition:0.15s;
+    text-shadow:0 0 var(--glow-small) var(--text-color);
+}
+
+button:hover{
+    background:var(--hover-color);
+}
+
+button:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+}
+
+body{
+    display:flex;
+    flex-direction:column;
+    padding:16px;
+    box-sizing:border-box;
+    text-shadow:
+        0 0 var(--glow-small) var(--text-color),
+        0 0 var(--glow-big) var(--text-color);
+}
+
+pre{
+    margin:0;
+    white-space:pre;
+    font-family:inherit;
+}
+
+.dim{
+    color:#3a5;
+    text-shadow:none;
+}
+
+#pet{
+    border:1px solid var(--text-color);
+    padding:24px;
+    margin-bottom:12px;
+    text-align:center;
+    transition: padding .3s ease, max-height .3s ease;
+    overflow:hidden;
+}
+
+#pet.compact{
+    padding:8px 24px;
+}
+
+#pet.compact #logo{
+    max-height:0;
+    opacity:0;
+    margin-bottom:0;
+    overflow:hidden;
+}
+
+#pet.compact #face{
+    font-size:22px;
+    margin-bottom:4px;
+}
+
+#pet.compact #stats{
+    font-size:13px;
+    line-height:1.3;
+}
+
+#logo{
+    font-size:17px;
+    line-height:1;
+    margin-bottom:20px;
+    transition: max-height .3s ease, opacity .3s ease, margin-bottom .3s ease;
+    max-height:200px;
+}
+
+#face{
+    display:block;
+    font-size:48px;
+    font-weight:700;
+    margin-bottom:18px;
+}
+
+#stats{
+    font-size:20px;
+    line-height:1.8;
+}
+
+#chat{
+    flex:1;
+    border:1px solid var(--text-color);
+    padding:12px;
+    overflow-y:auto;
+    white-space:pre-wrap;
+    word-break:break-word;
+}
+
+#chat .you{
+    color:#CFFFDA;
+}
+
+#chat .bot{
+    color:var(--text-color);
+}
+
+#chat .err{
+    color:#ff7c7c;
+    text-shadow:0 0 4px #ff7c7c;
+}
+
+#chat .sys{
+    color:#8fd6ff;
+    text-shadow:0 0 4px #8fd6ff;
+}
+
+#row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:10px;
+}
+
+#prompt{
+    color:var(--text-color);
+}
+
+#input{
+    flex:1;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    padding:8px 10px;
+    font-family:inherit;
+    font-size:inherit;
+    outline:none;
+    text-shadow:0 0 var(--glow-small) var(--text-color);
+}
+
+#send,
+#uploadButton{
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    padding:8px 16px;
+    font-family:inherit;
+    font-size:inherit;
+    cursor:pointer;
+    transition:0.15s;
+}
+
+#send:hover,
+#uploadButton:hover{
+    background:var(--hover-color);
+}
+
+#send:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+}
+
+#fileInput{
+    display:none;
+}
+
+#topbar{
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    margin-bottom:12px;
+}
+
+#title{
+    font-size:16px;
+    font-weight:700;
+    white-space:pre;
+    margin:0;
+    line-height:1.2;
+}
+
+#settingsButton{
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    padding:8px 14px;
+    font-family:inherit;
+    font-size:inherit;
+    cursor:pointer;
+}
+
+#settingsButton:hover{
+    background:var(--hover-color);
+}
+
+#settingsPanel{
+    position:fixed;
+    top:0;
+    right:0;
+
+    width:340px;
+    height:100%;
+
+    background:var(--bg-color);
+
+    border-left:1px solid var(--text-color);
+
+    padding:24px;
+    overflow-y:auto;
+
+    display:flex;
+    flex-direction:column;
+
+    gap:14px;
+
+    transform:translateX(100%);
+    transition:transform .25s ease;
+
+    z-index:1000;
+}
+
+#settingsPanel.open{
+    transform:translateX(0);
+}
+
+#settingsPanel input,
+#settingsPanel select,
+#closeSettings{
+
+    background:var(--bg-color);
+
+    color:var(--text-color);
+
+    border:1px solid var(--text-color);
+
+    padding:8px;
+
+    font-family:inherit;
+    font-size:inherit;
+    box-sizing:border-box;
+    width:100%;
+}
+
+#settingsPanel hr{
+    border:none;
+    border-top:1px solid var(--hover-color);
+    margin:6px 0;
+}
+
+.settingsSection h3{
+    margin:0 0 6px 0;
+    font-size:18px;
+}
+
+#soundToggleRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.profileRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:4px 0;
+    font-size:15px;
+}
+
+.profileRow button{
+    width:auto;
+    padding:2px 8px;
+    font-size:13px;
+    margin-left:4px;
+}
+
+.modelRow{
+    border:1px solid var(--hover-color);
+    padding:8px;
+    margin-bottom:8px;
+    font-size:15px;
+}
+
+.modelRow .modelName{
+    font-weight:700;
+}
+
+.modelRow .modelMeta{
+    font-size:13px;
+    color:#8fd6ff;
+    text-shadow:0 0 4px #8fd6ff;
+}
+
+.modelRow button{
+    margin-top:6px;
+    width:auto;
+    padding:4px 10px;
+    font-size:14px;
+}
+
+.modelRow .recommendedTag{
+    color:#ffcc00;
+    text-shadow:0 0 4px #ffcc00;
+    font-size:13px;
+}
+
+.modelRow .activeTag{
+    color:#7CFF9E;
+    text-shadow:0 0 4px #7CFF9E;
+    font-size:13px;
+}
+
+#soundToggleRow input{
+    padding:0;
+    width:auto;
+}
+
+#accountStatus,
+#cloudStatus{
+    font-size:16px;
+    color:#8fd6ff;
+    text-shadow:0 0 4px #8fd6ff;
+}
+
+#closeSettings{
+    cursor:pointer;
+}
+
+#closeSettings:hover{
+    background:var(--hover-color);
+}
+
+/* ============================= */
+/* Consent modal                  */
+/* ============================= */
+
+#consentModal{
+    position:fixed;
+    top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.7);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:3000;
+}
+
+#consentModal.open{
+    display:flex;
+}
+
+#consentBox{
+    background:var(--bg-color);
+    border:1px solid var(--text-color);
+    padding:24px;
+    max-width:380px;
+    text-shadow:0 0 4px var(--text-color);
+}
+
+#consentBox h3{
+    margin-top:0;
+}
+
+#consentButtons{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+}
+
+#consentButtons button{
+    flex:1;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    padding:8px;
+    font-family:inherit;
+    font-size:inherit;
+    cursor:pointer;
+}
+
+#consentButtons button:hover{
+    background:var(--hover-color);
+}
+
+/* ============================= */
+/* Boot sequence                  */
+/* ============================= */
+
+#bootScreen{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:#000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:2000;
+    transition:opacity .5s ease;
+}
+
+#bootScreen.fade-out{
+    opacity:0;
+    pointer-events:none;
+}
+
+#bootLogo{
+    display:flex;
+    align-items:flex-start;
+    gap:6px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:15px;
+    line-height:1.15;
+    color:#e8e8e8;
+    opacity:0;
+    transform:scale(0.2);
+    animation: logoZoom 0.9s cubic-bezier(.2,1.4,.4,1) forwards;
+}
+
+.bootLetter{
+    margin:0;
+    white-space:pre;
+    font-family:inherit;
+}
+
+@keyframes logoZoom{
+    0%{ opacity:0; transform:scale(0.15); }
+    70%{ opacity:1; transform:scale(1.2); }
+    100%{ opacity:1; transform:scale(1); }
+}
+
+#bootThree.burning{
+    animation: flameFlicker 0.12s infinite alternate;
+}
+
+#bootThree.flash{
+    animation: flamePeak 0.1s infinite alternate !important;
+}
+
+@keyframes flamePeak{
+    0%   { color:#fff3b0; text-shadow: 0 0 12px #fff3b0, 0 0 26px #ffcc00, 0 0 42px #ff6a00; }
+    100% { color:#ffffff; text-shadow: 0 0 16px #ffffff, 0 0 30px #ffdd66, 0 0 46px #ff8800; }
+}
+
+@keyframes flameFlicker{
+    0%   { color:#ff6a00; text-shadow: 0 0 10px #ff6a00, 0 0 22px #ff2d00, 0 0 34px #ff8800; }
+    50%  { color:#ffcc00; text-shadow: 0 0 14px #ffcc00, 0 0 28px #ff6a00, 0 0 38px #ff2d00; }
+    100% { color:#ff3d00; text-shadow: 0 0 8px #ff3d00, 0 0 18px #ff0000, 0 0 30px #ff6a00; }
+}
+
+#app{
+    display:none;
+    flex-direction:column;
+    height:100%;
+}
+
+#app.visible{
+    display:flex;
+}
+</style>
+</head>
+
+<body>
+
+<div id="bootScreen">
+    <div id="bootLogo">
+<pre class="bootLetter">███████╗
+██╔════╝
+█████╗  
+██╔══╝  
+███████╗
+╚══════╝</pre>
+<pre class="bootLetter">███╗   ███╗
+████╗ ████║
+██╔████╔██║
+██║╚██╔╝██║
+██║ ╚═╝ ██║
+╚═╝     ╚═╝</pre>
+<pre class="bootLetter">██████╗ 
+██╔══██╗
+██████╔╝
+██╔══██╗
+██████╔╝
+╚═════╝ </pre>
+<pre class="bootLetter" id="bootThree">██████╗ 
+╚════██╗
+ █████╔╝
+ ╚═══██╗
+██████╔╝
+╚═════╝ </pre>
+<pre class="bootLetter">██████╗ 
+██╔══██╗
+██████╔╝
+██╔══██╗
+██║  ██║
+╚═╝  ╚═╝</pre>
+    </div>
+</div>
+
+<div id="consentModal">
+    <div id="consentBox">
+        <h3>Allow internet access?</h3>
+        <p>Downloading a model pulls a file from Hugging Face over the internet. Your local model still runs fully offline once downloaded — this permission only covers fetching new model files.</p>
+        <div id="consentButtons">
+            <button id="consentDeny">Not Now</button>
+            <button id="consentAllow">Allow</button>
+        </div>
+    </div>
+</div>
+
+<div id="app">
+
+<div id="topbar">
+    <button id="settingsButton">⚙ Settings</button>
+</div>
+
+<div id="settingsPanel">
+    <h2>Settings</h2>
+
+    <div class="settingsSection">
+        <h3>Account</h3>
+        <div id="profileList"></div>
+        <label>New profile name</label>
+        <input type="text" id="newProfileName" placeholder="e.g. Ziyan">
+        <button id="addProfileButton">Add Profile</button>
+    </div>
+
+    <hr>
+
+    <div class="settingsSection">
+        <h3>Spotify</h3>
+        <label>Client ID</label>
+        <input type="text" id="spotifyClientIdInput" placeholder="from developer.spotify.com">
+        <button id="spotifyConnectButton">Connect Spotify</button>
+        <div id="spotifyStatusText" style="font-size:15px; margin-top:4px;"></div>
+    </div>
+
+    <hr>
+
+    <div class="settingsSection">
+        <h3>Models</h3>
+        <div id="modelList"></div>
+    </div>
+
+    <hr>
+
+    <div class="settingsSection">
+        <h3>Hardware</h3>
+        <button id="scanHardwareButton">Scan Hardware</button>
+        <div id="hardwareResult" style="font-size:16px; white-space:pre-wrap; margin-top:6px;"></div>
+    </div>
+
+    <hr>
+
+    <div class="settingsSection">
+        <h3>Display</h3>
+        <label>Accent Color</label>
+        <canvas id="colorWheel" width="150" height="150"></canvas>
+        <input type="range" id="lightness" min="20" max="80" value="55">
+
+        <label>Theme</label>
+        <select id="themeSelect">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+        </select>
+
+        <label>Font Size</label>
+        <input type="range" id="fontSize" min="12" max="28" value="20">
+
+        <label>Phosphor Glow</label>
+        <input type="range" id="glowIntensity" min="0" max="20" value="6">
+    </div>
+
+    <hr>
+
+    <div id="soundToggleRow">
+        <input type="checkbox" id="soundToggle" checked>
+        <label for="soundToggle">Sound effects</label>
+    </div>
+
+    <button id="closeSettings">Close</button>
+</div>
+
+<div id="pet">
+
+<pre id="logo">
+███████╗███╗   ███╗██████╗ ██████╗ ██████╗
+██╔════╝████╗ ████║██╔══██╗╚════██╗██╔══██╗
+█████╗  ██╔████╔██║██████╔╝ █████╔╝██████╔╝
+██╔══╝  ██║╚██╔╝██║██╔══██╗ ╚═══██╗██╔══██╗
+███████╗██║ ╚═╝ ██║██████╔╝██████╔╝██║  ██║
+╚══════╝╚═╝     ╚═╝╚═════╝ ╚═════╝ ╚═╝  ╚═╝
+</pre>
+
+<div id="face">
+<span id="face-text">( ^_^ )</span>
+</div>
+
+<div id="stats">
+mood: <span id="mood">#####</span>
+
+<br><br>
+
+status: <span id="status">idle</span>
+</div>
+
+</div>
+
+
+
+<div id="chat">
+<span class="dim">// ember terminal ready. type below and hit enter.</span>
+</div>
+
+<div id="row">
+<span id="prompt">&gt;</span>
+<input
+    id="input"
+    autocomplete="off"
+    placeholder="say something..."
+>
+<button id="uploadButton" title="Attach a file">📎</button>
+<input type="file" id="fileInput">
+<button id="send">[ send ]</button>
+</div>
+
+</div>
+
+<script src="./renderer.js"></script>
+
+</body>
+</html>
