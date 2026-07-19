@@ -20,21 +20,23 @@ const THREE_GLYPH = [
 "╚═════╝ ",
 ].join("\n");
 
+// ordered dimmest -> brightest, so the boot loop can walk along the array as
+// the fire ignites and dies back down instead of picking frames at random
 const FLAME_FRAMES = [
 [
-"  .^    ",
-"  :*:   ",
-" ;xXx;  ",
-" x#@#x  ",
-"x@@#@@x ",
+"        ",
+"        ",
+"        ",
+"   .    ",
+"  x@x   ",
 "@@@@@@@@",
 ],
 [
-"    ^.  ",
-"   :*:  ",
-"  ;xXx; ",
-"  x#@#x ",
-" x@@#@@x",
+"        ",
+"        ",
+"   .    ",
+"  ;x;   ",
+" x@@@x  ",
 "@@@@@@@@",
 ],
 [
@@ -42,14 +44,6 @@ const FLAME_FRAMES = [
 "  .;.   ",
 " ;x@x;  ",
 " x@@@x  ",
-"x@@@@@x ",
-"@@@@@@@@",
-],
-[
-" .:^:.  ",
-" :x*x:  ",
-";x@#@x; ",
-"x@@#@@x ",
 "x@@@@@x ",
 "@@@@@@@@",
 ],
@@ -69,10 +63,82 @@ const FLAME_FRAMES = [
 "x@@@@@x ",
 "@@@@@@@@",
 ],
+[
+"  .^    ",
+"  :*:   ",
+" ;xXx;  ",
+" x#@#x  ",
+"x@@#@@x ",
+"@@@@@@@@",
+],
+[
+"    ^.  ",
+"   :*:  ",
+"  ;xXx; ",
+"  x#@#x ",
+" x@@#@@x",
+"@@@@@@@@",
+],
+[
+" .:^:.  ",
+" :x*x:  ",
+";x@#@x; ",
+"x@@#@@x ",
+"x@@@@@x ",
+"@@@@@@@@",
+],
 ].map(f => f.join("\n"));
 
-// index 3 is the brightest "peak" frame - flag it so the JS can give it an extra flash color
-const FLAME_PEAK_INDEX = 3;
+// the frame art already encodes heat as character density, so map each glyph
+// onto a colour ramp rather than painting every character the same shade
+const FLAME_HEAT = { ".":0, ":":1, ";":2, "^":2, "*":3, "x":4, "X":5, "#":6, "@":7 };
+const FLAME_PALETTE = [
+  "#5c1000", "#8f1e00", "#c43200", "#ef5400",
+  "#ff8000", "#ffb020", "#ffd964", "#fff4c2",
+];
+
+const BURN_MS = 1300;
+
+function flameRun(text, level) {
+  if (level === null) return text;              // spaces stay unpainted
+  const c = FLAME_PALETTE[level];
+  const halo = FLAME_PALETTE[Math.max(0, level - 2)];
+  return `<span style="color:${c};text-shadow:0 0 6px ${c},0 0 14px ${halo}">${text}</span>`;
+}
+
+// paint one frame, boost shifting the whole thing up/down the ramp so the fire
+// can ignite from dull embers and cool back down to them
+function flameHTML(frame, boost) {
+  const rows = frame.split("\n");
+  const last = rows.length - 1;
+  let out = "";
+
+  for (let r = 0; r <= last; r++) {
+    // the base of the fire runs hotter than its tips
+    const rowBoost = r === last ? 2 : r === last - 1 ? 1 : 0;
+    let run = "";
+    let runLevel;
+
+    for (const ch of rows[r]) {
+      const heat = FLAME_HEAT[ch];
+      const level = heat === undefined
+        ? null
+        : Math.max(0, Math.min(FLAME_PALETTE.length - 1, heat + rowBoost + boost));
+
+      if (level !== runLevel) {
+        if (run) out += flameRun(run, runLevel);
+        run = "";
+        runLevel = level;
+      }
+      run += ch;
+    }
+
+    if (run) out += flameRun(run, runLevel);
+    if (r < last) out += "\n";
+  }
+
+  return out;
+}
 
 const FACES = {
   idle:     "( ^_^ )",
@@ -287,23 +353,48 @@ function runBoot(onDone) {
     playBootChime();
     bootThree.classList.add("burning");
 
-    // randomly pick frames so the flame flickers organically instead of a fixed loop
-    let lastIndex = -1;
-    const flameInterval = setInterval(() => {
-      let idx;
-      do { idx = Math.floor(Math.random() * FLAME_FRAMES.length); } while (idx === lastIndex);
-      lastIndex = idx;
-      bootThree.textContent = FLAME_FRAMES[idx];
-      bootThree.classList.toggle("flash", idx === FLAME_PEAK_INDEX);
-    }, 70 + Math.random() * 50);
-
-    // after the flame burst, settle back into the actual "3" glyph
-    setTimeout(() => {
-      clearInterval(flameInterval);
-      bootThree.classList.remove("flash");
+    const settle = () => {
       bootThree.textContent = THREE_GLYPH;
       bootThree.classList.remove("burning");
-    }, 1300);
+      bootThree.classList.add("cooling");
+    };
+
+    // a strobing fire is the one thing this effect should never do to someone
+    // who has asked the OS for less motion
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      bootThree.innerHTML = flameHTML(FLAME_FRAMES[FLAME_FRAMES.length - 2], 0);
+      setTimeout(settle, BURN_MS);
+      return;
+    }
+
+    const started = performance.now();
+    let idx = 0;
+    let timer;
+
+    const tick = () => {
+      const t = (performance.now() - started) / BURN_MS;
+      if (t >= 1) return settle();
+
+      // ignite fast, hold, then burn down to embers
+      const intensity = t < 0.15 ? t / 0.15
+                      : t > 0.6  ? Math.max(0, 1 - (t - 0.6) / 0.4)
+                      : 1;
+
+      // walk toward the frame the envelope calls for rather than teleporting,
+      // then jitter a step either side so it still reads as flickering
+      const target = Math.round(intensity * (FLAME_FRAMES.length - 1));
+      if (idx !== target && Math.random() < 0.8) idx += Math.sign(target - idx);
+      if (Math.random() < 0.45) idx += Math.random() < 0.5 ? -1 : 1;
+      idx = Math.max(0, Math.min(FLAME_FRAMES.length - 1, idx));
+
+      bootThree.innerHTML = flameHTML(FLAME_FRAMES[idx], Math.round(intensity * 5) - 4);
+
+      // low fires flicker lazily, roaring ones snap
+      timer = setTimeout(tick, 50 + Math.random() * 40 + (1 - intensity) * 55);
+    };
+
+    tick();
+    setTimeout(() => clearTimeout(timer), BURN_MS);
   }, 750);
 
   setTimeout(() => {
