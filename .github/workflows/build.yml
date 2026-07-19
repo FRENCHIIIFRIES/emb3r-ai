@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
 
@@ -21,15 +23,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build application
+        env:
+          # No Apple Developer cert in CI, so don't let electron-builder
+          # try (and fail) to auto-discover a signing identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: emb3r-${{ matrix.os }}
-          path: dist/**
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
