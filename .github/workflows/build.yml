@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
     branches:
       - main
@@ -14,9 +16,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            name: win-x64
+            install: npm ci
+            args: --win --x64
+
+          - os: macos-latest
+            name: mac-arm64
+            install: npm ci
+            args: --mac --arm64
+
+          # macos-latest is Apple Silicon, and node-llama-cpp ships its binaries
+          # as per-arch optional dependencies, so a plain install here would put
+          # arm64 binaries inside an x64 app. --os/--cpu forces npm to fetch the
+          # Intel ones instead. electron-builder downloads the matching Electron
+          # for the target arch by itself.
+          - os: macos-latest
+            name: mac-x64
+            install: npm ci --os=darwin --cpu=x64
+            args: --mac --x64
 
     runs-on: ${{ matrix.os }}
+    name: build (${{ matrix.name }})
 
     steps:
       - name: Checkout repository
@@ -29,7 +51,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: ${{ matrix.install }}
 
       - name: Build application
         env:
@@ -37,14 +59,39 @@ jobs:
           # try (and fail) to auto-discover a signing identity.
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
+        run: npm run dist -- ${{ matrix.args }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: emb3r-${{ matrix.os }}
+          name: emb3r-${{ matrix.name }}
           if-no-files-found: error
           path: |
             dist/*.exe
             dist/*.dmg
             dist/*.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "emb3r $GITHUB_REF_NAME" \
+            --notes-file .github/RELEASE_NOTES.md \
+            artifacts/*/*
