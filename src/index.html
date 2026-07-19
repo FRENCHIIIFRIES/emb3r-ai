@@ -579,23 +579,31 @@ pre{
     100%{ opacity:1; transform:scale(1); }
 }
 
+/* the renderer paints each character its own colour, so this only breathes the
+   overall brightness - keeping it off the colour channel means the two never
+   fight over the same property the way the old flash/flicker pair did */
 #bootThree.burning{
-    animation: flameFlicker 0.12s infinite alternate;
+    animation: flameBreathe 0.19s infinite alternate;
 }
 
-#bootThree.flash{
-    animation: flamePeak 0.1s infinite alternate !important;
+@keyframes flameBreathe{
+    0%   { filter: brightness(0.9); }
+    100% { filter: brightness(1.14); }
 }
 
-@keyframes flamePeak{
-    0%   { color:#fff3b0; text-shadow: 0 0 12px #fff3b0, 0 0 26px #ffcc00, 0 0 42px #ff6a00; }
-    100% { color:#ffffff; text-shadow: 0 0 16px #ffffff, 0 0 30px #ffdd66, 0 0 46px #ff8800; }
+/* once the fire dies the glyph keeps a little residual heat on its way out */
+#bootThree.cooling{
+    animation: emberCool 1.1s ease-out forwards;
 }
 
-@keyframes flameFlicker{
-    0%   { color:#ff6a00; text-shadow: 0 0 10px #ff6a00, 0 0 22px #ff2d00, 0 0 34px #ff8800; }
-    50%  { color:#ffcc00; text-shadow: 0 0 14px #ffcc00, 0 0 28px #ff6a00, 0 0 38px #ff2d00; }
-    100% { color:#ff3d00; text-shadow: 0 0 8px #ff3d00, 0 0 18px #ff0000, 0 0 30px #ff6a00; }
+@keyframes emberCool{
+    0%   { color:#ff8000; text-shadow: 0 0 10px #ff6a00, 0 0 22px #c43200; }
+    100% { color:#e8e8e8; text-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+    #bootThree.burning{ animation: none; }
+    #bootLogo{ animation-duration: 0.01ms; }
 }
 
 #app{
