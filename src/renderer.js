@@ -153,6 +153,15 @@ function append(kind, who, text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+// replaces the transcript with a single system note. profile names reach this,
+// so the text goes in via textContent rather than being interpolated into markup
+function systemNote(text) {
+  const line = document.createElement("span");
+  line.className = "dim";
+  line.textContent = `// ${text}`;
+  chat.replaceChildren(line);
+}
+
 // =============================
 // Sound effects
 // =============================
@@ -383,7 +392,7 @@ function renderProfileList() {
         if (result.success) {
           profilesCache = { profiles: result.profiles, activeProfileId: result.activeProfileId };
           renderProfileList();
-          chat.innerHTML = `<span class="dim">// switched profile to ${p.name || "(unnamed)"}</span>`;
+          systemNote(`switched profile to ${p.name || "(unnamed)"}`);
         }
       });
       row.appendChild(useBtn);
@@ -417,7 +426,7 @@ addProfileButton.addEventListener("click", async () => {
     profilesCache = { profiles: result.profiles, activeProfileId: result.activeProfileId };
     newProfileNameInput.value = "";
     renderProfileList();
-    chat.innerHTML = `<span class="dim">// new profile created: ${name}</span>`;
+    systemNote(`new profile created: ${name}`);
   }
 });
 
@@ -476,11 +485,32 @@ function renderModelList() {
 
     const isActive = m.file === modelsCache.activeModel;
 
-    row.innerHTML = `
-      <div class="modelName">${m.name} ${m.recommended ? '<span class="recommendedTag">★ recommended</span>' : ""} ${isActive ? '<span class="activeTag">● active</span>' : ""}</div>
-      <div class="modelMeta">${m.tier} tier • ~${m.sizeGB}GB • needs ${m.minRamGB}GB+ RAM</div>
-      <div class="modelProgress" id="progress-${m.id}"></div>
-    `;
+    const nameEl = document.createElement("div");
+    nameEl.className = "modelName";
+    nameEl.append(m.name);
+
+    if (m.recommended) {
+      const tag = document.createElement("span");
+      tag.className = "recommendedTag";
+      tag.textContent = "★ recommended";
+      nameEl.append(" ", tag);
+    }
+    if (isActive) {
+      const tag = document.createElement("span");
+      tag.className = "activeTag";
+      tag.textContent = "● active";
+      nameEl.append(" ", tag);
+    }
+
+    const metaEl = document.createElement("div");
+    metaEl.className = "modelMeta";
+    metaEl.textContent = `${m.tier} tier • ~${m.sizeGB}GB • needs ${m.minRamGB}GB+ RAM`;
+
+    const rowProgressEl = document.createElement("div");
+    rowProgressEl.className = "modelProgress";
+    rowProgressEl.id = `progress-${m.id}`;
+
+    row.append(nameEl, metaEl, rowProgressEl);
 
     const btn = document.createElement("button");
     if (!m.downloaded) {
