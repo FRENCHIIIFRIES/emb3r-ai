@@ -58,8 +58,11 @@ jobs:
           # No Apple Developer cert in CI, so don't let electron-builder
           # try (and fail) to auto-discover a signing identity.
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist -- ${{ matrix.args }}
+        # --publish never: on a tag build electron-builder would otherwise try
+        # to publish to GitHub itself, from a job with a read-only token (403).
+        # Building and publishing are deliberately separate here - the release
+        # job below does the publishing.
+        run: npm run dist -- ${{ matrix.args }} --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
