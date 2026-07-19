@@ -34,7 +34,9 @@
       "preload.cjs",
       "src/**/*",
       "!models/**",
-      "!**/node_modules/@node-llama-cpp/win-arm64/**"
+      "!**/node_modules/@node-llama-cpp/win-arm64/**",
+      "!**/node_modules/@node-llama-cpp/win-x64-cuda/**",
+      "!**/node_modules/@node-llama-cpp/win-x64-cuda-ext/**"
     ],
     "win": {
       "target": ["nsis"]
