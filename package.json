@@ -25,13 +25,16 @@
     "productName": "emb3r",
     "asar": true,
     "asarUnpack": [
-      "**/node_modules/node-llama-cpp/**"
+      "**/node_modules/node-llama-cpp/**",
+      "**/node_modules/@node-llama-cpp/**"
     ],
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "files": [
       "main.js",
       "preload.cjs",
       "src/**/*",
-      "!models/**"
+      "!models/**",
+      "!**/node_modules/@node-llama-cpp/win-arm64/**"
     ],
     "win": {
       "target": ["nsis"]
