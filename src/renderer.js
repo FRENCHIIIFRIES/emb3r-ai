@@ -476,6 +476,7 @@ consentDeny.addEventListener("click", () => {
 
 const modelListEl = document.getElementById("modelList");
 let modelsCache = [];
+const downloadingIds = new Set();
 
 function renderModelList() {
   modelListEl.innerHTML = "";
@@ -513,7 +514,10 @@ function renderModelList() {
     row.append(nameEl, metaEl, rowProgressEl);
 
     const btn = document.createElement("button");
-    if (!m.downloaded) {
+    if (downloadingIds.has(m.id)) {
+      btn.textContent = "Cancel";
+      btn.addEventListener("click", () => cancelDownload(m.id));
+    } else if (!m.downloaded) {
       btn.textContent = "Download";
       btn.addEventListener("click", () => requestDownload(m.id));
     } else if (isActive) {
@@ -545,16 +549,33 @@ function requestDownload(modelId) {
   startDownload(modelId);
 }
 
+// re-rendering the list swaps the row's Download button for Cancel, which also
+// replaces the progress node - so it has to be looked up again after each render
+function setProgressText(modelId, text) {
+  const el = document.getElementById(`progress-${modelId}`);
+  if (el) el.textContent = text;
+}
+
 async function startDownload(modelId) {
-  const progressEl = document.getElementById(`progress-${modelId}`);
-  if (progressEl) progressEl.textContent = "starting download...";
+  downloadingIds.add(modelId);
+  renderModelList();
+  setProgressText(modelId, "starting download...");
+
   const result = await window.emb3r.downloadModel(modelId);
+  downloadingIds.delete(modelId);
+
   if (result.success) {
-    if (progressEl) progressEl.textContent = "done!";
     await refreshModelList();
+    setProgressText(modelId, "done!");
   } else {
-    if (progressEl) progressEl.textContent = `failed: ${result.error}`;
+    renderModelList();
+    setProgressText(modelId, result.cancelled ? "cancelled" : `failed: ${result.error}`);
   }
+}
+
+async function cancelDownload(modelId) {
+  setProgressText(modelId, "cancelling...");
+  await window.emb3r.cancelDownload(modelId);
 }
 
 window.emb3r.onDownloadProgress(({ id, percent }) => {

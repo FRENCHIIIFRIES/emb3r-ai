@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("emb3r", {
   scanHardware: () => ipcRenderer.invoke("emb3r:scan-hardware"),
   listModels: () => ipcRenderer.invoke("emb3r:list-models"),
   downloadModel: (modelId) => ipcRenderer.invoke("emb3r:download-model", modelId),
+  cancelDownload: (modelId) => ipcRenderer.invoke("emb3r:cancel-download", modelId),
   selectModel: (filename) => ipcRenderer.invoke("emb3r:select-model", filename),
   onDownloadProgress: (callback) => {
     ipcRenderer.on("emb3r:download-progress", (_event, data) => callback(data));
