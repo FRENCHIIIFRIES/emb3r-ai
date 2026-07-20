@@ -595,31 +595,59 @@ pre{
     100%{ opacity:1; transform:scale(1); }
 }
 
-/* the renderer paints each character its own colour, so this only breathes the
-   overall brightness - keeping it off the colour channel means the two never
-   fight over the same property the way the old flash/flicker pair did */
-#bootThree.burning{
-    animation: flameBreathe 0.19s infinite alternate;
+/* the sparks are positioned against this, not the flex-centred screen */
+#bootStage{
+    position:relative;
+    display:inline-block;
 }
 
-@keyframes flameBreathe{
-    0%   { filter: brightness(0.9); }
-    100% { filter: brightness(1.14); }
+#sparkLayer{
+    position:absolute;
+    left:0;
+    right:0;
+    /* sparks lift off the top edge of the wordmark and rise into open black.
+       emitting from below meant they drifted up through the letters and were
+       lost against them. */
+    top:2px;
+    height:0;
+    pointer-events:none;
 }
 
-/* once the fire dies the glyph keeps a little residual heat on its way out */
-#bootThree.cooling{
-    animation: emberCool 1.1s ease-out forwards;
+.spark{
+    position:absolute;
+    top:0;
+    line-height:1;
+    opacity:0;
+    white-space:pre;
+    animation: sparkRise var(--dur, 1200ms) ease-out forwards;
+    /* promote once: dozens of these animate at the same time */
+    will-change: transform, opacity;
 }
 
-@keyframes emberCool{
-    0%   { color:#ff8000; text-shadow: 0 0 10px #ff6a00, 0 0 22px #c43200; }
-    100% { color:#e8e8e8; text-shadow: none; }
+@keyframes sparkRise{
+    0%   { opacity:0; transform: translate(0, 0) scale(1); }
+    12%  { opacity:1; }
+    70%  { opacity:0.8; }
+    100% { opacity:0; transform: translate(var(--dx, 0), var(--dy, -70px)) scale(0.5); }
+}
+
+/* the 3 keeps a steady ember warmth instead of being replaced by flames, so
+   the wordmark stays readable the whole way through */
+#bootThree.glowing{
+    color:#ffb020;
+    text-shadow: 0 0 6px #ff8000, 0 0 16px #ff6a00;
+    animation: emberGlow 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes emberGlow{
+    0%   { color:#ff8000; text-shadow: 0 0 5px #ff6a00, 0 0 13px #c43200; }
+    100% { color:#ffd964; text-shadow: 0 0 8px #ffb020, 0 0 20px #ff8000; }
 }
 
 @media (prefers-reduced-motion: reduce){
-    #bootThree.burning{ animation: none; }
+    #bootThree.glowing{ animation: none; }
     #bootLogo{ animation-duration: 0.01ms; }
+    .spark{ display:none; }
 }
 
 #app{
@@ -637,6 +665,8 @@ pre{
 <body>
 
 <div id="bootScreen">
+  <div id="bootStage">
+    <div id="sparkLayer" aria-hidden="true"></div>
     <div id="bootLogo">
 <pre class="bootLetter">███████╗
 ██╔════╝
@@ -669,6 +699,7 @@ pre{
 ██║  ██║
 ╚═╝  ╚═╝</pre>
     </div>
+  </div>
 </div>
 
 <div id="consentModal">
