@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld("emb3r", {
   getConfig: () => ipcRenderer.invoke("emb3r:get-config"),
   setInternetConsent: (granted) => ipcRenderer.invoke("emb3r:set-internet-consent", granted),
 
+  getPersonality: () => ipcRenderer.invoke("emb3r:get-personality"),
+  setPersonality: (text) => ipcRenderer.invoke("emb3r:set-personality", text),
+  resetPersonality: () => ipcRenderer.invoke("emb3r:reset-personality"),
+
   listProfiles: () => ipcRenderer.invoke("emb3r:list-profiles"),
   createProfile: (name) => ipcRenderer.invoke("emb3r:create-profile", name),
   switchProfile: (id) => ipcRenderer.invoke("emb3r:switch-profile", id),
