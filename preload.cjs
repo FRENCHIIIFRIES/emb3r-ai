@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("emb3r", {
   sendMessage: (message) => ipcRenderer.invoke("emb3r:send-message", message),
+  stopGeneration: () => ipcRenderer.invoke("emb3r:stop-generation"),
+  contextUsage: () => ipcRenderer.invoke("emb3r:context-usage"),
+  onToken: (callback) => {
+    ipcRenderer.on("emb3r:token", (_event, data) => callback(data));
+  },
+  onGenStats: (callback) => {
+    ipcRenderer.on("emb3r:gen-stats", (_event, data) => callback(data));
+  },
   getConfig: () => ipcRenderer.invoke("emb3r:get-config"),
   setInternetConsent: (granted) => ipcRenderer.invoke("emb3r:set-internet-consent", granted),
 

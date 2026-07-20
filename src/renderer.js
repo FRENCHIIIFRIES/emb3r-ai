@@ -10,6 +10,8 @@ const appEl    = document.getElementById("app");
 const petEl    = document.getElementById("pet");
 const bootScreen = document.getElementById("bootScreen");
 const bootThree = document.getElementById("bootThree");
+const stopButton = document.getElementById("stopButton");
+const statsEl    = document.getElementById("genStats");
 
 const FACES = {
   idle:     "( ^_^ )",
@@ -30,6 +32,9 @@ let sleepTimer = null;
 let moodDecayTimer = null;
 
 let pendingUpload = null;
+// last known context window, so attachment limits track the loaded model rather
+// than a guess. refreshed after every reply and on model switch.
+let lastContext = null;
 
 function bar(n) {
   n = Math.max(0, Math.min(5, n));
@@ -160,7 +165,15 @@ async function onSend() {
   let messageToSend = text;
   if (pendingUpload) {
     append("sys", "sys", `attached: ${pendingUpload.name}`);
-    messageToSend = `[Attached file: ${pendingUpload.name}]\n${pendingUpload.content}\n\n${text}`;
+    // fence the contents so the model can tell file from instruction. the old
+    // form opened with a label and never closed it, leaving the question
+    // looking like part of the document
+    messageToSend =
+      `The user attached a file named "${pendingUpload.name}". Its full contents are between the markers below.\n` +
+      `--- BEGIN ${pendingUpload.name} ---\n` +
+      `${pendingUpload.content}\n` +
+      `--- END ${pendingUpload.name} ---\n\n` +
+      `${text || "Summarise this file."}`;
   }
 
   if (text) append("you", "you", text);
@@ -172,28 +185,107 @@ async function onSend() {
   startThinking();
   resetIdleTimers();
 
+  // the reply is written into this line as tokens arrive rather than appended
+  // once at the end, so there is something to watch during a slow generation
+  streamLine = beginStream();
+  streamText = "";
+  setGenerating(true);
+
   try {
-    const reply = await window.emb3r.sendMessage(messageToSend);
+    const result = await window.emb3r.sendMessage(messageToSend);
     stopThinking();
-    append("bot", "ember", reply);
-    playReplyBeep();
-    setFace("happy");
-    setStatus("happy");
+
+    if (!result.success) {
+      if (streamLine && !streamText) streamLine.remove();
+      append("err", "err", result.error);
+      playErrorBeep();
+      setFace("error");
+      setStatus("error");
+    } else {
+      // the streamed text is already on screen; fall back to the returned text
+      // if no chunks arrived (very short replies can complete in one go)
+      if (!streamText && result.text) writeStream(result.text);
+      if (result.stopped) append("sys", "sys", "stopped");
+      playReplyBeep();
+      setFace("happy");
+      setStatus("happy");
+    }
     setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
   } catch (err) {
     stopThinking();
+    if (streamLine && !streamText) streamLine.remove();
     append("err", "err", String(err?.message || err));
     playErrorBeep();
     setFace("error");
     setStatus("error");
     setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
   } finally {
-    send.disabled = false;
+    setGenerating(false);
+    streamLine = null;
     pendingUpload = null;
     input.focus();
     resetIdleTimers();
   }
 }
+
+// =============================
+// Streaming replies
+// =============================
+
+let streamLine = null;
+let streamText = "";
+
+function beginStream() {
+  const line = document.createElement("div");
+  line.className = "bot";
+  line.textContent = "ember > ";
+  chat.appendChild(line);
+  chat.scrollTop = chat.scrollHeight;
+  return line;
+}
+
+function writeStream(chunk) {
+  // the first token is the moment Ember actually starts talking, so drop the
+  // thinking face then rather than when the whole reply is finished
+  if (!streamText) {
+    stopThinking();
+    setFace("happy");
+    setStatus("replying");
+  }
+  streamText += chunk;
+  if (!streamLine) return;
+  // textContent, never innerHTML - model output is untrusted text
+  streamLine.textContent = `ember > ${streamText}`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// swaps the send button for a stop button while Ember is talking
+function setGenerating(on) {
+  send.disabled = on;
+  input.disabled = on;
+  stopButton.hidden = !on;
+  if (!on) statsEl.textContent = "";
+}
+
+window.emb3r.onToken(({ text }) => writeStream(text));
+
+window.emb3r.onGenStats(({ tokensPerSec, context }) => {
+  if (context && context.size) lastContext = context;
+  const speed = tokensPerSec ? `${tokensPerSec.toFixed(1)} tok/s` : "";
+  if (!context || !context.size) {
+    statsEl.textContent = speed;
+    return;
+  }
+  const pct = Math.round((context.used / context.size) * 100);
+  // reuses the download meter so the two read as the same idiom
+  statsEl.textContent = `ctx ${progressBar(pct, 10)}  ${speed}`;
+});
+
+stopButton.addEventListener("click", async () => {
+  stopButton.disabled = true;
+  await window.emb3r.stopGeneration();
+  stopButton.disabled = false;
+});
 
 send.addEventListener("click", onSend);
 input.addEventListener("keydown", (e) => { if (e.key === "Enter") onSend(); });
@@ -210,17 +302,65 @@ input.addEventListener("blur", () => {
 
 uploadButton.addEventListener("click", () => fileInput.click());
 
+// Roughly four characters per token for English text. Deliberately pessimistic:
+// over-estimating means we refuse a file that would have just fit, which is far
+// better than accepting one that silently pushes the conversation out of the
+// context window.
+const CHARS_PER_TOKEN = 4;
+
+// leave room for the system prompt, the question, and Ember's reply
+function attachmentCharBudget() {
+  const size = lastContext && lastContext.size ? lastContext.size : 4096;
+  return Math.floor(size * 0.5) * CHARS_PER_TOKEN;
+}
+
+// readAsText happily decodes a PDF or a PNG into mojibake and hands it over as
+// if it were prose, which is why attaching one produced confident nonsense.
+// Null bytes and a high proportion of replacement characters both mean we were
+// given something that is not text.
+function looksBinary(text) {
+  if (text.includes("\u0000")) return true;
+  const sample = text.slice(0, 4000);
+  if (!sample.length) return false;
+  const replacements = (sample.match(/�/g) || []).length;
+  return replacements / sample.length > 0.02;
+}
+
 fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
+  fileInput.value = "";
   if (!file) return;
+
   const reader = new FileReader();
   reader.onload = () => {
-    pendingUpload = { name: file.name, content: reader.result };
-    append("sys", "sys", `ready to send: ${file.name} (${file.size} bytes) — type a message and hit send`);
+    const content = String(reader.result || "");
+
+    if (looksBinary(content)) {
+      pendingUpload = null;
+      append("err", "err",
+        `${file.name} isn't a text file. Ember can only read text — try .txt, .md, code, .csv or .json.`);
+      return;
+    }
+
+    const budget = attachmentCharBudget();
+    if (content.length > budget) {
+      pendingUpload = null;
+      const kb = (n) => Math.round(n / 1024) + "KB";
+      append("err", "err",
+        `${file.name} is too big to read (${kb(content.length)}; the limit is about ${kb(budget)}). ` +
+        `Send a smaller file or an excerpt — truncating it would make Ember answer from a fragment without telling you.`);
+      return;
+    }
+
+    pendingUpload = { name: file.name, content };
+    append("sys", "sys",
+      `ready to send: ${file.name} (${Math.round(content.length / 1024)}KB) — type a message and hit send`);
   };
-  reader.onerror = () => append("err", "err", `couldn't read file: ${file.name}`);
+  reader.onerror = () => {
+    pendingUpload = null;
+    append("err", "err", `couldn't read file: ${file.name}`);
+  };
   reader.readAsText(file);
-  fileInput.value = "";
 });
 
 // =============================
@@ -300,6 +440,8 @@ async function finishBoot() {
   resetIdleTimers();
   startMoodDecay();
   await loadConfigIntoUI();
+  // know the context window before the first attachment, not after the first reply
+  lastContext = await window.emb3r.contextUsage();
   await maybeRunFirstTimeSetup();
   input.focus();
 }
