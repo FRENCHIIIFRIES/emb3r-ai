@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "Local LLM desktop app powered by node-llama-cpp",
   "author": "Ziyan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FRENCHIIIFRIES/emb3r-ai.git"
+  },
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -41,10 +46,10 @@
     "win": {
       "target": ["nsis"]
     },
+    "afterPack": "./scripts/after-pack.cjs",
     "mac": {
       "target": ["dmg", "zip"],
-      "category": "public.app-category.productivity",
-      "identity": null
+      "category": "public.app-category.productivity"
     },
     "nsis": {
       "oneClick": false,

@@ -57,6 +57,10 @@ jobs:
         env:
           # No Apple Developer cert in CI, so don't let electron-builder
           # try (and fail) to auto-discover a signing identity.
+          # No Developer ID cert here, so electron-builder does no signing of
+          # its own. scripts/after-pack.cjs applies an ad-hoc signature instead,
+          # on every build including pull requests - Apple Silicon will not
+          # launch an unsigned arm64 app at all.
           CSC_IDENTITY_AUTO_DISCOVERY: false
         # --publish never: on a tag build electron-builder would otherwise try
         # to publish to GitHub itself, from a job with a read-only token (403).
