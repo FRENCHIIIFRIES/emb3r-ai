@@ -10,6 +10,8 @@ const appEl    = document.getElementById("app");
 const petEl    = document.getElementById("pet");
 const bootScreen = document.getElementById("bootScreen");
 const bootThree = document.getElementById("bootThree");
+const stopButton = document.getElementById("stopButton");
+const statsEl    = document.getElementById("genStats");
 
 const FACES = {
   idle:     "( ^_^ )",
@@ -172,28 +174,106 @@ async function onSend() {
   startThinking();
   resetIdleTimers();
 
+  // the reply is written into this line as tokens arrive rather than appended
+  // once at the end, so there is something to watch during a slow generation
+  streamLine = beginStream();
+  streamText = "";
+  setGenerating(true);
+
   try {
-    const reply = await window.emb3r.sendMessage(messageToSend);
+    const result = await window.emb3r.sendMessage(messageToSend);
     stopThinking();
-    append("bot", "ember", reply);
-    playReplyBeep();
-    setFace("happy");
-    setStatus("happy");
+
+    if (!result.success) {
+      if (streamLine && !streamText) streamLine.remove();
+      append("err", "err", result.error);
+      playErrorBeep();
+      setFace("error");
+      setStatus("error");
+    } else {
+      // the streamed text is already on screen; fall back to the returned text
+      // if no chunks arrived (very short replies can complete in one go)
+      if (!streamText && result.text) writeStream(result.text);
+      if (result.stopped) append("sys", "sys", "stopped");
+      playReplyBeep();
+      setFace("happy");
+      setStatus("happy");
+    }
     setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
   } catch (err) {
     stopThinking();
+    if (streamLine && !streamText) streamLine.remove();
     append("err", "err", String(err?.message || err));
     playErrorBeep();
     setFace("error");
     setStatus("error");
     setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
   } finally {
-    send.disabled = false;
+    setGenerating(false);
+    streamLine = null;
     pendingUpload = null;
     input.focus();
     resetIdleTimers();
   }
 }
+
+// =============================
+// Streaming replies
+// =============================
+
+let streamLine = null;
+let streamText = "";
+
+function beginStream() {
+  const line = document.createElement("div");
+  line.className = "bot";
+  line.textContent = "ember > ";
+  chat.appendChild(line);
+  chat.scrollTop = chat.scrollHeight;
+  return line;
+}
+
+function writeStream(chunk) {
+  // the first token is the moment Ember actually starts talking, so drop the
+  // thinking face then rather than when the whole reply is finished
+  if (!streamText) {
+    stopThinking();
+    setFace("happy");
+    setStatus("replying");
+  }
+  streamText += chunk;
+  if (!streamLine) return;
+  // textContent, never innerHTML - model output is untrusted text
+  streamLine.textContent = `ember > ${streamText}`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// swaps the send button for a stop button while Ember is talking
+function setGenerating(on) {
+  send.disabled = on;
+  input.disabled = on;
+  stopButton.hidden = !on;
+  if (!on) statsEl.textContent = "";
+}
+
+window.emb3r.onToken(({ text }) => writeStream(text));
+
+window.emb3r.onGenStats(({ tokensPerSec, context }) => {
+  const speed = tokensPerSec ? `${tokensPerSec.toFixed(1)} tok/s` : "";
+  if (!context || !context.size) {
+    statsEl.textContent = speed;
+    return;
+  }
+  const pct = Math.round((context.used / context.size) * 100);
+  // reuses the download meter so the two read as the same idiom
+  statsEl.textContent = `ctx ${progressBar(pct, 10)}  ${speed}`;
+});
+
+stopButton.addEventListener("click", async () => {
+  stopButton.disabled = true;
+  await window.emb3r.stopGeneration();
+  stopButton.disabled = false;
+});
 
 send.addEventListener("click", onSend);
 input.addEventListener("keydown", (e) => { if (e.key === "Enter") onSend(); });

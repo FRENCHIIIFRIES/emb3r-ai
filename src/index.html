@@ -233,6 +233,33 @@ pre{
     display:none;
 }
 
+#stopButton{
+    background:var(--bg-color);
+    color:#ffb020;
+    border:1px solid #ffb020;
+    padding:8px 16px;
+    font-family:inherit;
+    font-size:inherit;
+    cursor:pointer;
+    text-shadow:0 0 4px #ff6a00;
+}
+
+#stopButton:hover:not(:disabled){
+    background:#241a08;
+}
+
+/* the generation meter reuses the download bar's glyphs, so it needs the same
+   font - VT323 lacks the block characters and the bar would jitter */
+#genStats{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    min-height:1.2em;
+    margin-top:4px;
+    color:#8fd6ff;
+    text-shadow:0 0 4px #8fd6ff;
+    white-space:pre;
+}
+
 #topbar{
     display:flex;
     justify-content:flex-end;
@@ -841,7 +868,9 @@ status: <span id="status">idle</span>
 <button id="uploadButton" title="Attach a file">📎</button>
 <input type="file" id="fileInput">
 <button id="send">[ send ]</button>
+<button id="stopButton" title="Stop generating" hidden>[ stop ]</button>
 </div>
+<div id="genStats" aria-live="off"></div>
 
 </div>
 

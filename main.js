@@ -45,6 +45,7 @@ function saveConfig(cfg) { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, nul
 
 let config = loadConfig();
 let chatSession = null;
+let chatSequence = null;
 let modelLoadError = null;
 let mainWindow = null;
 
@@ -125,7 +126,9 @@ async function loadLocalModel(filename) {
     const llama = await getLlama();
     const model = await llama.loadModel({ modelPath: modelPath });
     const context = await model.createContext();
-    chatSession = new LlamaChatSession({ contextSequence: context.getSequence(), systemPrompt: systemPrompt() });
+    // keep the sequence: it is the only way to read how full the context is
+    chatSequence = context.getSequence();
+    chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
     modelLoadError = null;
     console.log("Local model loaded:", target);
   } catch (err) {
@@ -134,7 +137,8 @@ async function loadLocalModel(filename) {
       const llama = await getLlama({ gpu: false });
       const model = await llama.loadModel({ modelPath: modelPath });
       const context = await model.createContext({ contextSize: 4096 });
-      chatSession = new LlamaChatSession({ contextSequence: context.getSequence(), systemPrompt: systemPrompt() });
+      chatSequence = context.getSequence();
+      chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
       modelLoadError = null;
       console.log("Local model loaded on CPU fallback:", target);
     } catch (err2) {
@@ -644,11 +648,80 @@ ipcMain.handle("emb3r:get-now-playing", async () => {
 
 // ---- Message handling ----
 
+let activeGeneration = null;
+
+// how full the context is. node-llama-cpp shifts context automatically once it
+// fills, silently dropping the oldest turns - so this is really a "how soon
+// will Ember start forgetting" gauge rather than a crash warning
+function contextUsage() {
+  if (!chatSequence) return null;
+  try {
+    return { used: chatSequence.nextTokenIndex, size: chatSequence.contextSize };
+  } catch {
+    return null;
+  }
+}
+
+function generationStats(chunks, startedAt) {
+  const seconds = (Date.now() - startedAt) / 1000;
+  return {
+    // onTextChunk fires per chunk of text rather than per token, so this is a
+    // close approximation rather than an exact token count
+    tokensPerSec: seconds > 0 ? chunks / seconds : 0,
+    context: contextUsage(),
+  };
+}
+
 ipcMain.handle("emb3r:send-message", async (_event, userMessage) => {
   if (!chatSession) {
-    return modelLoadError
-      ? `Ember can't reply right now: ${modelLoadError}`
-      : "Local model is still loading. Please wait...";
+    return {
+      success: false,
+      error: modelLoadError
+        ? `Ember can't reply right now: ${modelLoadError}`
+        : "Local model is still loading. Please wait...",
+    };
   }
-  return await chatSession.prompt(userMessage);
+  if (activeGeneration) return { success: false, error: "Ember is already replying." };
+
+  const controller = new AbortController();
+  activeGeneration = controller;
+
+  const startedAt = Date.now();
+  let chunks = 0;
+  let lastStatAt = 0;
+
+  try {
+    const text = await chatSession.prompt(userMessage, {
+      signal: controller.signal,
+      // stop cleanly on abort instead of throwing, so pressing stop keeps
+      // whatever Ember had already said
+      stopOnAbortSignal: true,
+      onTextChunk: (chunk) => {
+        chunks++;
+        if (!mainWindow) return;
+        mainWindow.webContents.send("emb3r:token", { text: chunk });
+        // stats are for glancing at, so a few updates a second is plenty
+        const now = Date.now();
+        if (now - lastStatAt > 250) {
+          lastStatAt = now;
+          mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
+        }
+      },
+    });
+
+    if (mainWindow) mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
+    return { success: true, text, stopped: controller.signal.aborted, stats: generationStats(chunks, startedAt) };
+  } catch (err) {
+    return { success: false, error: err.message || String(err) };
+  } finally {
+    activeGeneration = null;
+  }
 });
+
+ipcMain.handle("emb3r:stop-generation", () => {
+  if (!activeGeneration) return { success: false, error: "Nothing is generating." };
+  activeGeneration.abort();
+  return { success: true };
+});
+
+ipcMain.handle("emb3r:context-usage", () => contextUsage());
