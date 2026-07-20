@@ -370,10 +370,22 @@ function downloadFile(url, destPath, onProgress, signal) {
         };
         resetStall();
 
+        // throttle progress events: a multi-gigabyte download fires "data" many
+        // thousands of times a second, and repainting the bar that often is
+        // wasted work in the renderer
+        let lastEmit = 0;
         res.on("data", (chunk) => {
           downloaded += chunk.length;
           resetStall();
-          if (total > 0 && onProgress) onProgress(Math.round((downloaded / total) * 100));
+          if (!onProgress || total <= 0) return;
+          const now = Date.now();
+          if (now - lastEmit < 100 && downloaded < total) return;
+          lastEmit = now;
+          onProgress({
+            percent: Math.round((downloaded / total) * 100),
+            downloaded,
+            total,
+          });
         });
         res.on("error", fail);
         res.pipe(file);
@@ -436,8 +448,10 @@ ipcMain.handle("emb3r:download-model", async (_e, modelId) => {
     await downloadFile(
       url,
       destPath,
-      (percent) => {
-        if (mainWindow) mainWindow.webContents.send("emb3r:download-progress", { id: modelId, percent });
+      ({ percent, downloaded, total }) => {
+        if (mainWindow) {
+          mainWindow.webContents.send("emb3r:download-progress", { id: modelId, percent, downloaded, total });
+        }
       },
       controller.signal,
     );

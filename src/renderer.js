@@ -704,6 +704,24 @@ function requestDownload(modelId) {
   startDownload(modelId);
 }
 
+// an ASCII meter rather than a styled div, to match the mood bar and the rest
+// of the terminal look
+function progressBar(percent, width = 22) {
+  const pct = Math.max(0, Math.min(100, percent));
+  const filled = Math.round((pct / 100) * width);
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${String(pct).padStart(3)}%`;
+}
+
+function formatGB(bytes) {
+  return (bytes / 1024 ** 3).toFixed(1) + "GB";
+}
+
+function downloadLine(percent, downloaded, total) {
+  const bar = progressBar(percent);
+  if (!total) return bar;
+  return `${bar}  ${formatGB(downloaded)} / ${formatGB(total)}`;
+}
+
 // re-rendering the list swaps the row's Download button for Cancel, which also
 // replaces the progress node - so it has to be looked up again after each render
 function setProgressText(modelId, text) {
@@ -717,14 +735,16 @@ function setProgressText(modelId, text) {
 async function startDownload(modelId) {
   downloadingIds.add(modelId);
   renderModelList();
-  setProgressText(modelId, "starting download...");
+  // start at an empty bar rather than a line of text, so the layout does not
+  // jump when the first progress event lands
+  setProgressText(modelId, `${progressBar(0)}  connecting...`);
 
   const result = await window.emb3r.downloadModel(modelId);
   downloadingIds.delete(modelId);
 
   if (result.success) {
     await refreshModelList();
-    setProgressText(modelId, "done!");
+    setProgressText(modelId, `${progressBar(100)}  done`);
     if (setupModal.classList.contains("open")) {
       await selectModel(modelsCache.find((m) => m.id === modelId).file);
       setupProgressEl.textContent = "ready.";
@@ -742,9 +762,10 @@ async function cancelDownload(modelId) {
   await window.emb3r.cancelDownload(modelId);
 }
 
-window.emb3r.onDownloadProgress(({ id, percent }) => {
-  const progressEl = document.getElementById(`progress-${id}`);
-  if (progressEl) progressEl.textContent = `downloading... ${percent}%`;
+window.emb3r.onDownloadProgress(({ id, percent, downloaded, total }) => {
+  // goes through setProgressText so the first-run screen tracks the same
+  // download as the settings row
+  setProgressText(id, downloadLine(percent, downloaded, total));
 });
 
 async function selectModel(filename) {

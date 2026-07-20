@@ -508,6 +508,19 @@ pre{
     margin-bottom:6px;
 }
 
+/* the ASCII progress meter needs a font that actually carries the block glyphs
+   and advances every cell equally - VT323 does neither, so the bar would jitter
+   as it fills. pin these to JetBrains Mono. */
+#setupProgress,
+.modelProgress{
+    font-family:"JetBrains Mono", monospace;
+    font-size:13px;
+    letter-spacing:0;
+    white-space:pre;
+    color:#ffb020;
+    text-shadow:0 0 4px #ff6a00;
+}
+
 #setupButtons{
     display:flex;
     gap:10px;
