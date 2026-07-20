@@ -588,8 +588,8 @@ function describePick(recommended, totalRam) {
   meta.className = "pickMeta";
 
   if (recommended) {
-    title.textContent = `${recommended.name}  ★ best fit`;
-    meta.textContent = `${recommended.tier} tier • ~${recommended.sizeGB}GB download • runs offline once installed`;
+    title.textContent = `${recommended.name}  ★ recommended`;
+    meta.textContent = `~${recommended.sizeGB}GB download • quickest way to get started • larger models available later in Settings`;
   } else {
     // nothing in the catalog fits, so say that plainly instead of offering a
     // download that could only ever fail to load

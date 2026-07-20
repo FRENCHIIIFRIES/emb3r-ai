@@ -43,8 +43,7 @@
     },
     "mac": {
       "target": ["dmg", "zip"],
-      "category": "public.app-category.productivity",
-      "identity": null
+      "category": "public.app-category.productivity"
     },
     "nsis": {
       "oneClick": false,

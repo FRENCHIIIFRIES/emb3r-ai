@@ -409,7 +409,10 @@ pre{
     display:none;
     align-items:center;
     justify-content:center;
-    z-index:3000;
+    /* must sit above #setupModal: the first-run screen asks for consent, so the
+       consent dialog opens on top of it. equal z-index let the later element in
+       the DOM win, which hid this behind the setup backdrop entirely. */
+    z-index:3500;
 }
 
 #consentModal.open{

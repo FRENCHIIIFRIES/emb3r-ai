@@ -75,13 +75,19 @@ const MODEL_CATALOG = [
     repo: "bartowski/Qwen2.5-14B-Instruct-GGUF", file: "Qwen2.5-14B-Instruct-Q4_K_M.gguf" },
 ];
 
-// the biggest model the machine can actually hold. matching on a tier name
-// instead used to leave 32GB+ machines recommending an "Extra Large" tier that
-// no model in the catalog has, so the better the hardware the less help you got
+// the smallest model the machine can run, not the biggest it could hold.
+// recommending the largest that fits meant a 16GB machine was offered a 9GB
+// download on first launch, which is a poor first run: slow to fetch, slow to
+// answer, and the most likely thing to fail. bigger models stay one click away
+// in Settings.
 function recommendModel(totalRamGB) {
-  return [...MODEL_CATALOG]
+  const fits = MODEL_CATALOG
     .filter((m) => m.minRamGB <= totalRamGB)
-    .sort((a, b) => b.sizeGB - a.sizeGB)[0] || null;
+    .sort((a, b) => a.sizeGB - b.sizeGB);
+  if (!fits.length) return null;
+  // prefer the shipped default when it runs here - it is within 0.1GB of the
+  // smallest entry, so there is no real cost to picking the better-known model
+  return fits.find((m) => m.file === DEFAULT_MODEL_FILE) || fits[0];
 }
 
 function recommendTier(totalRamGB) {
