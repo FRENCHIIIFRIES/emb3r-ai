@@ -87,12 +87,44 @@ function startMoodDecay() {
   }, 45_000);
 }
 
-function append(kind, who, text) {
+// small clipboard button, revealed on hover of its containing line. copyText
+// is a function rather than a captured string so a streaming line can hand
+// back whatever it currently holds at click time
+function makeCopyButton(copyText) {
+  const btn = document.createElement("button");
+  btn.className = "copyBtn";
+  btn.type = "button";
+  btn.title = "Copy";
+  btn.textContent = "⧉";
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(copyText());
+      btn.textContent = "✓";
+      btn.classList.add("copied");
+    } catch {
+      btn.textContent = "✗";
+    }
+    setTimeout(() => { btn.textContent = "⧉"; btn.classList.remove("copied"); }, 1000);
+  });
+  return btn;
+}
+
+// chat lines only, not error/system notices - those are not worth copying and
+// a button on every line would be noise
+function append(kind, who, text, { copyable = false } = {}) {
   const line = document.createElement("div");
   line.className = kind;
-  line.textContent = `${who} > ${text}`;
+
+  const span = document.createElement("span");
+  span.className = "msgText";
+  span.textContent = `${who} > ${text}`;
+  line.appendChild(span);
+
+  if (copyable) line.appendChild(makeCopyButton(() => text));
+
   chat.appendChild(line);
   chat.scrollTop = chat.scrollHeight;
+  return line;
 }
 
 // replaces the transcript with a single system note. profile names reach this,
@@ -176,7 +208,7 @@ async function onSend() {
       `${text || "Summarise this file."}`;
   }
 
-  if (text) append("you", "you", text);
+  if (text) append("you", "you", text, { copyable: true });
 
   mood = Math.min(5, mood + 1);
   renderStats();
@@ -234,11 +266,22 @@ async function onSend() {
 
 let streamLine = null;
 let streamText = "";
+let streamTextEl = null;
 
 function beginStream() {
   const line = document.createElement("div");
   line.className = "bot";
-  line.textContent = "ember > ";
+
+  const span = document.createElement("span");
+  span.className = "msgText";
+  span.textContent = "ember > ";
+  line.appendChild(span);
+  streamTextEl = span;
+
+  // reads streamText live, so it copies whatever has arrived by the time the
+  // button is actually clicked rather than a snapshot from when it was drawn
+  line.appendChild(makeCopyButton(() => streamText));
+
   chat.appendChild(line);
   chat.scrollTop = chat.scrollHeight;
   return line;
@@ -253,9 +296,9 @@ function writeStream(chunk) {
     setStatus("replying");
   }
   streamText += chunk;
-  if (!streamLine) return;
+  if (!streamTextEl) return;
   // textContent, never innerHTML - model output is untrusted text
-  streamLine.textContent = `ember > ${streamText}`;
+  streamTextEl.textContent = `ember > ${streamText}`;
   chat.scrollTop = chat.scrollHeight;
 }
 
@@ -458,6 +501,22 @@ const closeSettings  = document.getElementById("closeSettings");
 const soundToggle    = document.getElementById("soundToggle");
 
 settingsButton.addEventListener("click", () => settingsPanel.classList.add("open"));
+
+const copyAllButton = document.getElementById("copyAllButton");
+copyAllButton.addEventListener("click", async () => {
+  // pull from .msgText where present (message lines); fall back to the raw
+  // element text for the system-note span, which has no such wrapper
+  const text = Array.from(chat.children)
+    .map((el) => (el.querySelector(".msgText") || el).textContent)
+    .join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    copyAllButton.textContent = "✓ Copied";
+  } catch {
+    copyAllButton.textContent = "✗ Failed";
+  }
+  setTimeout(() => { copyAllButton.textContent = "⧉ Copy chat"; }, 1200);
+});
 closeSettings.addEventListener("click", () => settingsPanel.classList.remove("open"));
 
 document.addEventListener("click", (e) => {
@@ -560,7 +619,48 @@ async function loadConfigIntoUI() {
   await refreshModelList();
   spotifyClientIdInput.value = currentConfig.spotifyClientId || "";
   await refreshSpotifyStatus();
+  await refreshPersonality();
 }
+
+// =============================
+// Personality
+// =============================
+
+const personalityInput = document.getElementById("personalityInput");
+const personalitySave = document.getElementById("personalitySave");
+const personalityReset = document.getElementById("personalityReset");
+const personalityStatus = document.getElementById("personalityStatus");
+let defaultPersonality = "";
+
+async function refreshPersonality() {
+  const p = await window.emb3r.getPersonality();
+  defaultPersonality = p.defaultPrompt;
+  personalityInput.value = p.isDefault ? "" : p.current;
+  personalityInput.placeholder = p.defaultPrompt;
+  personalityInput.maxLength = p.maxLength;
+  personalityStatus.textContent = "";
+}
+
+personalitySave.addEventListener("click", async () => {
+  const text = personalityInput.value.trim();
+  // an empty box is treated as "use the default" rather than "give Ember no
+  // instructions at all" - the latter is supported by the IPC layer but there
+  // is no UI path to it, since it is not a choice worth exposing a control for
+  if (!text) {
+    await window.emb3r.resetPersonality();
+  } else {
+    await window.emb3r.setPersonality(text);
+  }
+  personalityStatus.textContent = "saved";
+  setTimeout(() => { personalityStatus.textContent = ""; }, 1500);
+});
+
+personalityReset.addEventListener("click", async () => {
+  await window.emb3r.resetPersonality();
+  personalityInput.value = "";
+  personalityStatus.textContent = "reset to default";
+  setTimeout(() => { personalityStatus.textContent = ""; }, 1500);
+});
 
 consentAllow.addEventListener("click", async () => {
   await window.emb3r.setInternetConsent(true);

@@ -21,6 +21,9 @@ const CONFIG_PATH = path.join(app.getPath("userData"), "emb3r-config.json");
 const CONVERSATIONS_DIR = path.join(app.getPath("userData"), "conversations");
 const DEFAULT_MODEL_FILE = "Llama-3.2-3B-Instruct-Q4_K_M.gguf";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback";
+const DEFAULT_PERSONALITY =
+  "You are Ember, a small terminal-dwelling AI companion living inside a retro desktop pet app. Keep replies concise and warm.";
+const MAX_PERSONALITY_LENGTH = 2000;
 
 function defaultConfig() {
   return {
@@ -28,6 +31,10 @@ function defaultConfig() {
     activeModel: DEFAULT_MODEL_FILE,
     profiles: [{ id: "default", name: "" }],
     activeProfileId: "default",
+    // null means "use DEFAULT_PERSONALITY" - kept distinct from the empty
+    // string, which a user could deliberately choose to give Ember no
+    // instructions at all
+    systemPrompt: null,
     spotifyClientId: "",
     spotifyAccessToken: null,
     spotifyRefreshToken: null,
@@ -59,7 +66,8 @@ function activeProfile() {
 function systemPrompt() {
   const profile = activeProfile();
   const name = profile && profile.name ? `The user's name is ${profile.name}.` : "";
-  return `You are Ember, a small terminal-dwelling AI companion living inside a retro desktop pet app. Keep replies concise and warm. ${name}`.trim();
+  const base = typeof config.systemPrompt === "string" ? config.systemPrompt : DEFAULT_PERSONALITY;
+  return `${base} ${name}`.trim();
 }
 
 // ---- Model catalog (real, verified Hugging Face GGUF repos) ----
@@ -323,6 +331,44 @@ ipcMain.handle("emb3r:set-internet-consent", (_e, granted) => {
   config.internetConsent = granted;
   saveConfig(config);
   return true;
+});
+
+// ---- Personality ----
+
+// swaps just the system entry rather than reloading the model, since the rest
+// of the conversation should survive a personality change
+function refreshSystemPrompt() {
+  if (!chatSession) return;
+  try {
+    const history = chatSession.getChatHistory().filter((h) => h.type !== "system");
+    chatSession.setChatHistory([{ type: "system", text: systemPrompt() }, ...history]);
+  } catch (err) {
+    console.error("Could not refresh personality:", err);
+  }
+}
+
+ipcMain.handle("emb3r:get-personality", () => ({
+  current: config.systemPrompt,
+  isDefault: config.systemPrompt === null,
+  defaultPrompt: DEFAULT_PERSONALITY,
+  maxLength: MAX_PERSONALITY_LENGTH,
+}));
+
+ipcMain.handle("emb3r:set-personality", (_e, text) => {
+  if (typeof text !== "string") return { success: false, error: "Personality must be text." };
+  // an empty string is a deliberate choice to give Ember no instructions at
+  // all, and is kept distinct from null ("use the default")
+  config.systemPrompt = text.slice(0, MAX_PERSONALITY_LENGTH);
+  saveConfig(config);
+  refreshSystemPrompt();
+  return { success: true };
+});
+
+ipcMain.handle("emb3r:reset-personality", () => {
+  config.systemPrompt = null;
+  saveConfig(config);
+  refreshSystemPrompt();
+  return { success: true, defaultPrompt: DEFAULT_PERSONALITY };
 });
 
 // ---- Account / profile system ----
