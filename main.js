@@ -16,6 +16,9 @@ const MODELS_DIR = app.isPackaged
   ? path.join(app.getPath("userData"), "models")
   : path.join(__dirname, "models");
 const CONFIG_PATH = path.join(app.getPath("userData"), "emb3r-config.json");
+// conversations are small JSON, not multi-gigabyte weights, so unlike
+// MODELS_DIR there is no reason to keep them out of userData in dev mode
+const CONVERSATIONS_DIR = path.join(app.getPath("userData"), "conversations");
 const DEFAULT_MODEL_FILE = "Llama-3.2-3B-Instruct-Q4_K_M.gguf";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback";
 
@@ -109,9 +112,118 @@ async function freeDiskGB(dir) {
   }
 }
 
+// ---- Conversation storage ----
+//
+// One folder per profile under CONVERSATIONS_DIR, each conversation its own
+// JSON file plus an index.json the renderer's history list reads from without
+// having to open every conversation file just to show a title and a date.
+
+let activeConversation = null; // { id, profileId, title, createdAt, updatedAt, messages }
+
+function conversationsDirFor(profileId) {
+  return path.join(CONVERSATIONS_DIR, profileId);
+}
+
+function conversationIndexPath(profileId) {
+  return path.join(conversationsDirFor(profileId), "index.json");
+}
+
+function conversationFilePath(profileId, convId) {
+  return path.join(conversationsDirFor(profileId), `${convId}.json`);
+}
+
+function readConversationIndex(profileId) {
+  try {
+    return JSON.parse(fs.readFileSync(conversationIndexPath(profileId), "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
+function writeConversationIndex(profileId, index) {
+  fs.mkdirSync(conversationsDirFor(profileId), { recursive: true });
+  fs.writeFileSync(conversationIndexPath(profileId), JSON.stringify(index, null, 2));
+}
+
+function loadConversationFile(profileId, convId) {
+  try {
+    return JSON.parse(fs.readFileSync(conversationFilePath(profileId, convId), "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveConversationFile(profileId, conv) {
+  fs.mkdirSync(conversationsDirFor(profileId), { recursive: true });
+  fs.writeFileSync(conversationFilePath(profileId, conv.id), JSON.stringify(conv, null, 2));
+
+  const index = readConversationIndex(profileId).filter((c) => c.id !== conv.id);
+  index.push({ id: conv.id, title: conv.title, updatedAt: conv.updatedAt });
+  index.sort((a, b) => b.updatedAt - a.updatedAt);
+  writeConversationIndex(profileId, index);
+}
+
+function deleteConversationFile(profileId, convId) {
+  try {
+    fs.unlinkSync(conversationFilePath(profileId, convId));
+  } catch {
+    // already gone - deleting an already-deleted conversation is not an error
+  }
+  writeConversationIndex(profileId, readConversationIndex(profileId).filter((c) => c.id !== convId));
+}
+
+function newConversation() {
+  const now = Date.now();
+  return { id: crypto.randomUUID(), title: null, createdAt: now, updatedAt: now, messages: [] };
+}
+
+// first ~48 characters of the opening message, so the history list is
+// scannable without opening every conversation
+function deriveTitle(text) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "New chat";
+  return clean.length > 48 ? clean.slice(0, 48) + "…" : clean;
+}
+
+// LlamaChatSession's own history format, distinct from the {role,text,ts}
+// shape used on disk - kept separate so the storage format doesn't have to
+// change if the library's shape ever does
+function toChatHistory(conv) {
+  const items = [{ type: "system", text: systemPrompt() }];
+  for (const m of conv.messages) {
+    items.push(m.role === "user" ? { type: "user", text: m.text } : { type: "model", response: [m.text] });
+  }
+  return items;
+}
+
+// loads convId if given and it exists, otherwise starts a fresh conversation,
+// makes it the active one, and - if a session is already loaded - replays it
+// into the model so continuing an old conversation actually carries memory of
+// it rather than just showing old text above a blank context
+function attachConversation(profileId, convId) {
+  const conv = (convId && loadConversationFile(profileId, convId)) || newConversation();
+  activeConversation = { ...conv, profileId };
+
+  if (chatSession) {
+    try {
+      chatSession.setChatHistory(toChatHistory(activeConversation));
+    } catch (err) {
+      console.error("Could not restore conversation history:", err);
+    }
+  }
+
+  const profile = config.profiles.find((p) => p.id === profileId);
+  if (profile && profile.lastConversationId !== activeConversation.id) {
+    profile.lastConversationId = activeConversation.id;
+    saveConfig(config);
+  }
+
+  return activeConversation;
+}
+
 // ---- Local model loading ----
 
-async function loadLocalModel(filename) {
+async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   const modelPath = path.join(MODELS_DIR, target);
 
@@ -146,6 +258,14 @@ async function loadLocalModel(filename) {
       modelLoadError = err2.message || String(err2);
       chatSession = null;
     }
+  }
+
+  if (chatSession) {
+    const profile = activeProfile();
+    // an explicit conversationId (passed when only the model changed, not the
+    // profile) continues that conversation; otherwise fall back to whichever
+    // conversation this profile was last in, or start a new one
+    attachConversation(profile.id, conversationId || profile.lastConversationId);
   }
 }
 
@@ -487,9 +607,14 @@ ipcMain.handle("emb3r:select-model", async (_e, filename) => {
   }
 
   const previous = config.activeModel;
+  // switching models should not start a new conversation - only a profile
+  // switch does that. loadLocalModel defaults to the profile's last
+  // conversation when none is given, which would otherwise re-attach whatever
+  // was active before this one rather than the one just in use
+  const conversationId = activeConversation ? activeConversation.id : undefined;
   chatSession = null;
   modelLoadError = null;
-  await loadLocalModel(filename);
+  await loadLocalModel(filename, { conversationId });
 
   if (modelLoadError) {
     // the selection used to be saved before the load was attempted, so a model
@@ -497,7 +622,7 @@ ipcMain.handle("emb3r:select-model", async (_e, filename) => {
     const failure = modelLoadError;
     if (previous && previous !== filename) {
       modelLoadError = null;
-      await loadLocalModel(previous);
+      await loadLocalModel(previous, { conversationId });
     }
     return { success: false, error: failure };
   }
@@ -710,6 +835,25 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage) => {
     });
 
     if (mainWindow) mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
+
+    // an empty reply means generation was stopped before anything came out -
+    // nothing meaningful happened, so there is nothing worth persisting
+    if (text && activeConversation) {
+      const now = Date.now();
+      const isFirstExchange = activeConversation.messages.length === 0;
+      activeConversation.messages.push({ role: "user", text: userMessage, ts: now });
+      activeConversation.messages.push({ role: "model", text, ts: now });
+      activeConversation.updatedAt = now;
+      if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
+      saveConversationFile(activeConversation.profileId, activeConversation);
+      if (mainWindow) {
+        mainWindow.webContents.send("emb3r:conversation-saved", {
+          id: activeConversation.id,
+          title: activeConversation.title,
+        });
+      }
+    }
+
     return { success: true, text, stopped: controller.signal.aborted, stats: generationStats(chunks, startedAt) };
   } catch (err) {
     return { success: false, error: err.message || String(err) };
@@ -725,3 +869,44 @@ ipcMain.handle("emb3r:stop-generation", () => {
 });
 
 ipcMain.handle("emb3r:context-usage", () => contextUsage());
+
+// ---- Conversation history IPC ----
+
+ipcMain.handle("emb3r:get-active-conversation", () => {
+  if (!activeConversation) return null;
+  const { id, title, messages } = activeConversation;
+  return { id, title, messages };
+});
+
+ipcMain.handle("emb3r:list-conversations", () => {
+  const profile = activeProfile();
+  if (!profile) return [];
+  return readConversationIndex(profile.id);
+});
+
+ipcMain.handle("emb3r:new-conversation", () => {
+  const profile = activeProfile();
+  if (!profile) return { success: false, error: "No active profile." };
+  const conv = attachConversation(profile.id, null);
+  return { success: true, id: conv.id };
+});
+
+ipcMain.handle("emb3r:load-conversation", (_e, convId) => {
+  const profile = activeProfile();
+  if (!profile) return { success: false, error: "No active profile." };
+  const conv = attachConversation(profile.id, convId);
+  return { success: true, id: conv.id, title: conv.title, messages: conv.messages };
+});
+
+ipcMain.handle("emb3r:delete-conversation", (_e, convId) => {
+  const profile = activeProfile();
+  if (!profile) return { success: false, error: "No active profile." };
+  deleteConversationFile(profile.id, convId);
+  // deleting the conversation you are currently in needs somewhere to land -
+  // the next most recent one, or a fresh conversation if none are left
+  if (activeConversation && activeConversation.id === convId) {
+    const index = readConversationIndex(profile.id);
+    attachConversation(profile.id, index[0] ? index[0].id : null);
+  }
+  return { success: true, activeId: activeConversation ? activeConversation.id : null };
+});
