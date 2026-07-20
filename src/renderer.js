@@ -32,6 +32,9 @@ let sleepTimer = null;
 let moodDecayTimer = null;
 
 let pendingUpload = null;
+// last known context window, so attachment limits track the loaded model rather
+// than a guess. refreshed after every reply and on model switch.
+let lastContext = null;
 
 function bar(n) {
   n = Math.max(0, Math.min(5, n));
@@ -162,7 +165,15 @@ async function onSend() {
   let messageToSend = text;
   if (pendingUpload) {
     append("sys", "sys", `attached: ${pendingUpload.name}`);
-    messageToSend = `[Attached file: ${pendingUpload.name}]\n${pendingUpload.content}\n\n${text}`;
+    // fence the contents so the model can tell file from instruction. the old
+    // form opened with a label and never closed it, leaving the question
+    // looking like part of the document
+    messageToSend =
+      `The user attached a file named "${pendingUpload.name}". Its full contents are between the markers below.\n` +
+      `--- BEGIN ${pendingUpload.name} ---\n` +
+      `${pendingUpload.content}\n` +
+      `--- END ${pendingUpload.name} ---\n\n` +
+      `${text || "Summarise this file."}`;
   }
 
   if (text) append("you", "you", text);
@@ -259,6 +270,7 @@ function setGenerating(on) {
 window.emb3r.onToken(({ text }) => writeStream(text));
 
 window.emb3r.onGenStats(({ tokensPerSec, context }) => {
+  if (context && context.size) lastContext = context;
   const speed = tokensPerSec ? `${tokensPerSec.toFixed(1)} tok/s` : "";
   if (!context || !context.size) {
     statsEl.textContent = speed;
@@ -290,17 +302,65 @@ input.addEventListener("blur", () => {
 
 uploadButton.addEventListener("click", () => fileInput.click());
 
+// Roughly four characters per token for English text. Deliberately pessimistic:
+// over-estimating means we refuse a file that would have just fit, which is far
+// better than accepting one that silently pushes the conversation out of the
+// context window.
+const CHARS_PER_TOKEN = 4;
+
+// leave room for the system prompt, the question, and Ember's reply
+function attachmentCharBudget() {
+  const size = lastContext && lastContext.size ? lastContext.size : 4096;
+  return Math.floor(size * 0.5) * CHARS_PER_TOKEN;
+}
+
+// readAsText happily decodes a PDF or a PNG into mojibake and hands it over as
+// if it were prose, which is why attaching one produced confident nonsense.
+// Null bytes and a high proportion of replacement characters both mean we were
+// given something that is not text.
+function looksBinary(text) {
+  if (text.includes("\u0000")) return true;
+  const sample = text.slice(0, 4000);
+  if (!sample.length) return false;
+  const replacements = (sample.match(/�/g) || []).length;
+  return replacements / sample.length > 0.02;
+}
+
 fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
+  fileInput.value = "";
   if (!file) return;
+
   const reader = new FileReader();
   reader.onload = () => {
-    pendingUpload = { name: file.name, content: reader.result };
-    append("sys", "sys", `ready to send: ${file.name} (${file.size} bytes) — type a message and hit send`);
+    const content = String(reader.result || "");
+
+    if (looksBinary(content)) {
+      pendingUpload = null;
+      append("err", "err",
+        `${file.name} isn't a text file. Ember can only read text — try .txt, .md, code, .csv or .json.`);
+      return;
+    }
+
+    const budget = attachmentCharBudget();
+    if (content.length > budget) {
+      pendingUpload = null;
+      const kb = (n) => Math.round(n / 1024) + "KB";
+      append("err", "err",
+        `${file.name} is too big to read (${kb(content.length)}; the limit is about ${kb(budget)}). ` +
+        `Send a smaller file or an excerpt — truncating it would make Ember answer from a fragment without telling you.`);
+      return;
+    }
+
+    pendingUpload = { name: file.name, content };
+    append("sys", "sys",
+      `ready to send: ${file.name} (${Math.round(content.length / 1024)}KB) — type a message and hit send`);
   };
-  reader.onerror = () => append("err", "err", `couldn't read file: ${file.name}`);
+  reader.onerror = () => {
+    pendingUpload = null;
+    append("err", "err", `couldn't read file: ${file.name}`);
+  };
   reader.readAsText(file);
-  fileInput.value = "";
 });
 
 // =============================
@@ -380,6 +440,8 @@ async function finishBoot() {
   resetIdleTimers();
   startMoodDecay();
   await loadConfigIntoUI();
+  // know the context window before the first attachment, not after the first reply
+  lastContext = await window.emb3r.contextUsage();
   await maybeRunFirstTimeSetup();
   input.focus();
 }
