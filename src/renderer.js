@@ -11,135 +11,6 @@ const petEl    = document.getElementById("pet");
 const bootScreen = document.getElementById("bootScreen");
 const bootThree = document.getElementById("bootThree");
 
-const THREE_GLYPH = [
-"██████╗ ",
-"╚════██╗",
-" █████╔╝",
-" ╚═══██╗",
-"██████╔╝",
-"╚═════╝ ",
-].join("\n");
-
-// ordered dimmest -> brightest, so the boot loop can walk along the array as
-// the fire ignites and dies back down instead of picking frames at random
-const FLAME_FRAMES = [
-[
-"        ",
-"        ",
-"        ",
-"   .    ",
-"  x@x   ",
-"@@@@@@@@",
-],
-[
-"        ",
-"        ",
-"   .    ",
-"  ;x;   ",
-" x@@@x  ",
-"@@@@@@@@",
-],
-[
-"        ",
-"  .;.   ",
-" ;x@x;  ",
-" x@@@x  ",
-"x@@@@@x ",
-"@@@@@@@@",
-],
-[
-"   :    ",
-"   x    ",
-"  x@x   ",
-" x@@@x  ",
-" @@@@@  ",
-"@@@@@@@@",
-],
-[
-"  .  .  ",
-"  ;* :  ",
-" ;x@x;  ",
-" x@@@x  ",
-"x@@@@@x ",
-"@@@@@@@@",
-],
-[
-"  .^    ",
-"  :*:   ",
-" ;xXx;  ",
-" x#@#x  ",
-"x@@#@@x ",
-"@@@@@@@@",
-],
-[
-"    ^.  ",
-"   :*:  ",
-"  ;xXx; ",
-"  x#@#x ",
-" x@@#@@x",
-"@@@@@@@@",
-],
-[
-" .:^:.  ",
-" :x*x:  ",
-";x@#@x; ",
-"x@@#@@x ",
-"x@@@@@x ",
-"@@@@@@@@",
-],
-].map(f => f.join("\n"));
-
-// the frame art already encodes heat as character density, so map each glyph
-// onto a colour ramp rather than painting every character the same shade
-const FLAME_HEAT = { ".":0, ":":1, ";":2, "^":2, "*":3, "x":4, "X":5, "#":6, "@":7 };
-const FLAME_PALETTE = [
-  "#5c1000", "#8f1e00", "#c43200", "#ef5400",
-  "#ff8000", "#ffb020", "#ffd964", "#fff4c2",
-];
-
-const BURN_MS = 1300;
-
-function flameRun(text, level) {
-  if (level === null) return text;              // spaces stay unpainted
-  const c = FLAME_PALETTE[level];
-  const halo = FLAME_PALETTE[Math.max(0, level - 2)];
-  return `<span style="color:${c};text-shadow:0 0 6px ${c},0 0 14px ${halo}">${text}</span>`;
-}
-
-// paint one frame, boost shifting the whole thing up/down the ramp so the fire
-// can ignite from dull embers and cool back down to them
-function flameHTML(frame, boost) {
-  const rows = frame.split("\n");
-  const last = rows.length - 1;
-  let out = "";
-
-  for (let r = 0; r <= last; r++) {
-    // the base of the fire runs hotter than its tips
-    const rowBoost = r === last ? 2 : r === last - 1 ? 1 : 0;
-    let run = "";
-    let runLevel;
-
-    for (const ch of rows[r]) {
-      const heat = FLAME_HEAT[ch];
-      const level = heat === undefined
-        ? null
-        : Math.max(0, Math.min(FLAME_PALETTE.length - 1, heat + rowBoost + boost));
-
-      if (level !== runLevel) {
-        if (run) out += flameRun(run, runLevel);
-        run = "";
-        runLevel = level;
-      }
-      run += ch;
-    }
-
-    if (run) out += flameRun(run, runLevel);
-    if (r < last) out += "\n";
-  }
-
-  return out;
-}
-
 const FACES = {
   idle:     "( ^_^ )",
   think1:   "( o_o )",
@@ -356,60 +227,68 @@ fileInput.addEventListener("change", () => {
 // Boot sequence (Game Boy style)
 // =============================
 
+// Embers drifting up off the wordmark.
+//
+// The previous boot swapped the "3" out for ASCII flame frames, which meant the
+// logo read "EMB_R" with noise in the middle for over a second - it took apart
+// the wordmark at the exact moment it should have been establishing it. Sparks
+// sit on top instead, so the letters are never touched.
+const SPARK_CHARS = ["·", "˙", "•", "*", "˚", "'"];
+const SPARK_COLORS = ["#ff6a00", "#ff8000", "#ffb020", "#ffd964", "#fff4c2"];
+
+const SPARK_START_MS = 550;   // let the logo finish zooming first
+const SPARK_STOP_MS = 2000;   // stop emitting
+const BOOT_FADE_MS = 2350;    // begin fading the boot screen
+
+function spawnSpark(layer) {
+  const el = document.createElement("span");
+  el.className = "spark";
+  el.textContent = SPARK_CHARS[Math.floor(Math.random() * SPARK_CHARS.length)];
+
+  // the "3" sits roughly 64-81% across the wordmark and is the thing that's
+  // glowing, so embers come off it - with a little spread onto its neighbours
+  const centre = 0.72;
+  const spread = (Math.random() + Math.random() + Math.random() - 1.5) * 0.22;
+  el.style.left = (Math.max(0.04, Math.min(0.96, centre + spread)) * 100).toFixed(1) + "%";
+  el.style.color = SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)];
+
+  // vary drift, distance and speed so they never look like a repeating loop
+  el.style.setProperty("--dx", (Math.random() * 30 - 15).toFixed(1) + "px");
+  el.style.setProperty("--dy", (-55 - Math.random() * 70).toFixed(1) + "px");
+  el.style.setProperty("--dur", (1000 + Math.random() * 800).toFixed(0) + "ms");
+  el.style.fontSize = (10 + Math.random() * 6).toFixed(1) + "px";
+  // a spark is a point of light, so give it its own small halo
+  el.style.textShadow = "0 0 6px currentColor";
+
+  layer.appendChild(el);
+  el.addEventListener("animationend", () => el.remove(), { once: true });
+}
+
 function runBoot(onDone) {
-  // logo zooms in via CSS animation already running on load
+  const layer = document.getElementById("sparkLayer");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   setTimeout(() => {
     playBootChime();
-    bootThree.classList.add("burning");
+    bootThree.classList.add("glowing");
 
-    const settle = () => {
-      bootThree.textContent = THREE_GLYPH;
-      bootThree.classList.remove("burning");
-      bootThree.classList.add("cooling");
+    // drifting particles are exactly what reduced-motion is asking us not to
+    // do; the logo still warms, it just stays still
+    if (reduced || !layer) return;
+
+    const emit = () => {
+      if (performance.now() - started > SPARK_STOP_MS - SPARK_START_MS) return;
+      spawnSpark(layer);
+      setTimeout(emit, 45 + Math.random() * 65);
     };
-
-    // a strobing fire is the one thing this effect should never do to someone
-    // who has asked the OS for less motion
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      bootThree.innerHTML = flameHTML(FLAME_FRAMES[FLAME_FRAMES.length - 2], 0);
-      setTimeout(settle, BURN_MS);
-      return;
-    }
-
     const started = performance.now();
-    let idx = 0;
-    let timer;
-
-    const tick = () => {
-      const t = (performance.now() - started) / BURN_MS;
-      if (t >= 1) return settle();
-
-      // ignite fast, hold, then burn down to embers
-      const intensity = t < 0.15 ? t / 0.15
-                      : t > 0.6  ? Math.max(0, 1 - (t - 0.6) / 0.4)
-                      : 1;
-
-      // walk toward the frame the envelope calls for rather than teleporting,
-      // then jitter a step either side so it still reads as flickering
-      const target = Math.round(intensity * (FLAME_FRAMES.length - 1));
-      if (idx !== target && Math.random() < 0.8) idx += Math.sign(target - idx);
-      if (Math.random() < 0.45) idx += Math.random() < 0.5 ? -1 : 1;
-      idx = Math.max(0, Math.min(FLAME_FRAMES.length - 1, idx));
-
-      bootThree.innerHTML = flameHTML(FLAME_FRAMES[idx], Math.round(intensity * 5) - 4);
-
-      // low fires flicker lazily, roaring ones snap
-      timer = setTimeout(tick, 50 + Math.random() * 40 + (1 - intensity) * 55);
-    };
-
-    tick();
-    setTimeout(() => clearTimeout(timer), BURN_MS);
-  }, 750);
+    emit();
+  }, SPARK_START_MS);
 
   setTimeout(() => {
     bootScreen.classList.add("fade-out");
     setTimeout(onDone, 500);
-  }, 2600);
+  }, BOOT_FADE_MS);
 }
 
 async function finishBoot() {
