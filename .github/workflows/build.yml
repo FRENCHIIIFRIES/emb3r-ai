@@ -58,6 +58,11 @@ jobs:
           # No Apple Developer cert in CI, so don't let electron-builder
           # try (and fail) to auto-discover a signing identity.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # electron-builder skips signing on pull requests by default, to keep
+          # certificates away from fork builds. We only ever ad-hoc sign, so
+          # there is no secret to protect - and without this every PR artifact
+          # is unsigned, which Apple Silicon refuses to launch at all.
+          CSC_FOR_PULL_REQUEST: true
         # --publish never: on a tag build electron-builder would otherwise try
         # to publish to GitHub itself, from a job with a read-only token (403).
         # Building and publishing are deliberately separate here - the release
