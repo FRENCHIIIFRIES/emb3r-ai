@@ -1,5 +1,9 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
+## If you have v1.0.3, please re-download
+
+v1.0.3 does not launch at all, on any platform — it crashes immediately with a JavaScript error, before the window even opens. This release fixes that. Because the crash happens before the app finishes starting up, **the in-app update checker cannot fix this one for you** — you'll need to download v1.0.4 directly from this page.
+
 ## New since v1.0.2
 
 - **Replies stream in** as they're generated, with a stop button and a live tokens/sec + context readout
