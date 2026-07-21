@@ -543,26 +543,19 @@ runBoot(finishBoot);
 // =============================
 
 const settingsButton = document.getElementById("settingsButton");
-const settingsPanel  = document.getElementById("settingsPanel");
 const closeSettings  = document.getElementById("closeSettings");
 const soundToggle    = document.getElementById("soundToggle");
+const settingsTabs   = document.querySelectorAll(".settingsTab");
 
-settingsButton.addEventListener("click", () => settingsPanel.classList.add("open"));
+settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
 
-const copyAllButton = document.getElementById("copyAllButton");
-copyAllButton.addEventListener("click", async () => {
-  // pull from .msgText where present (message lines); fall back to the raw
-  // element text for the system-note span, which has no such wrapper
-  const text = Array.from(chat.children)
-    .map((el) => (el.querySelector(".msgText") || el).textContent)
-    .join("\n");
-  try {
-    await navigator.clipboard.writeText(text);
-    copyAllButton.textContent = "✓ Copied";
-  } catch {
-    copyAllButton.textContent = "✗ Failed";
-  }
-  setTimeout(() => { copyAllButton.textContent = "⧉ Copy chat"; }, 1200);
+settingsTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    settingsTabs.forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+  });
 });
 
 // =============================
@@ -671,15 +664,9 @@ window.emb3r.onModelReady(() => {
   renderActiveConversationHistory();
   if (historyWrap.classList.contains("open")) refreshHistoryList();
 });
-closeSettings.addEventListener("click", () => settingsPanel.classList.remove("open"));
+closeSettings.addEventListener("click", () => appEl.classList.remove("settingsOpen"));
 
 document.addEventListener("click", (e) => {
-    const clickedInsidePanel = settingsPanel.contains(e.target);
-    const clickedButton = settingsButton.contains(e.target);
-    const clickedModal = document.getElementById("consentModal").contains(e.target);
-    if (settingsPanel.classList.contains("open") && !clickedInsidePanel && !clickedButton && !clickedModal) {
-        settingsPanel.classList.remove("open");
-    }
     if (historyWrap.classList.contains("open") && !historyWrap.contains(e.target)) {
         historyWrap.classList.remove("open");
     }
@@ -1329,7 +1316,13 @@ function applyTheme(theme) {
 const savedTheme = localStorage.getItem("emb3rTheme") || "dark";
 themeSelect.value = savedTheme;
 applyTheme(savedTheme);
-themeSelect.addEventListener("change", (e) => applyTheme(e.target.value));
+themeSelect.addEventListener("change", (e) => {
+    applyTheme(e.target.value);
+    // a custom accent color that was legible against the old background may
+    // not be against the new one - recheck it, but leave the theme's own
+    // default text color alone if the user never customized it
+    if (localStorage.getItem("emb3rAccentColor")) applyColor();
+});
 
 // =============================
 // Font size
@@ -1424,12 +1417,73 @@ function hsvToRgb(h, s, v) {
     ];
 }
 
+function hslToRgb(h, s, l) {
+    s /= 100; l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60)       { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else              { r = c; g = 0; b = x; }
+    return [
+        Math.round((r + m) * 255),
+        Math.round((g + m) * 255),
+        Math.round((b + m) * 255)
+    ];
+}
+
+function hexToRgb(hex) {
+    const n = parseInt(hex.replace("#", ""), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// WCAG relative luminance / contrast ratio, used below to keep the accent
+// color legible against the current theme's background - a raw hue/sat/
+// lightness pick can otherwise land arbitrarily close to it (e.g. a dark
+// pick on the near-black dark-theme background is invisible)
+function relativeLuminance([r, g, b]) {
+    const [rl, gl, bl] = [r, g, b].map((v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+}
+
+function contrastRatio(rgb, bgLuminance) {
+    const l1 = relativeLuminance(rgb) + 0.05;
+    const l2 = bgLuminance + 0.05;
+    return l1 > l2 ? l1 / l2 : l2 / l1;
+}
+
+const MIN_TEXT_CONTRAST = 4.5;
+
+// nudges lightness away from the background, in 1% steps, until the accent
+// color reaches a readable contrast ratio - hue/saturation are left alone so
+// the color the user picked is preserved as closely as possible
+function legibleLightness(h, s, l, bgLuminance) {
+    const towardsWhite = bgLuminance < 0.5;
+    let lightness = l;
+    for (let i = 0; i < 100; i++) {
+        if (contrastRatio(hslToRgb(h, s, lightness), bgLuminance) >= MIN_TEXT_CONTRAST) break;
+        lightness += towardsWhite ? 1 : -1;
+        if (lightness <= 0 || lightness >= 100) { lightness = Math.max(0, Math.min(100, lightness)); break; }
+    }
+    return lightness;
+}
+
 function applyColor() {
-    const lightness = Number(lightnessInput.value);
-    const color = `hsl(${currentHue.toFixed(0)}, ${currentSat.toFixed(0)}%, ${lightness}%)`;
+    const requestedLightness = Number(lightnessInput.value);
+    const bgHex = getComputedStyle(document.documentElement).getPropertyValue("--bg-color").trim();
+    const bgLuminance = relativeLuminance(hexToRgb(bgHex));
+    const safeLightness = legibleLightness(currentHue, currentSat, requestedLightness, bgLuminance);
+    const color = `hsl(${currentHue.toFixed(0)}, ${currentSat.toFixed(0)}%, ${safeLightness}%)`;
     document.documentElement.style.setProperty("--text-color", color);
     document.documentElement.style.setProperty("--hover-color", color + "33");
-    localStorage.setItem("emb3rAccentColor", JSON.stringify({ h: currentHue, s: currentSat, l: lightness }));
+    localStorage.setItem("emb3rAccentColor", JSON.stringify({ h: currentHue, s: currentSat, l: requestedLightness }));
 }
 
 function pickAt(clientX, clientY) {

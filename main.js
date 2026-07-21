@@ -982,7 +982,10 @@ function getGeminiClient() {
   return geminiClient;
 }
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+// "-latest" aliases track whatever Google currently recommends for this tier,
+// so this doesn't go stale the way a dated snapshot (e.g. "gemini-2.5-flash")
+// does once Google retires it for new users.
+const GEMINI_MODEL = "gemini-flash-latest";
 
 // answers one message via Gemini with Google Search grounding enabled,
 // streaming through the same onTextChunk shape the local model uses so the
