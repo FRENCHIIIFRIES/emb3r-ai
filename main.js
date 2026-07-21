@@ -7,7 +7,17 @@ import http from "http";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
-import { autoUpdater } from "electron-updater";
+// electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
+// Object.defineProperty getter rather than a plain `exports.autoUpdater = `
+// assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
+// reliably detect that pattern, so `import { autoUpdater } from
+// "electron-updater"` throws "Named export 'autoUpdater' not found" at
+// startup on every platform - this is not a bug in a single build, it is in
+// the import statement itself. A default import always gets the whole
+// module.exports object regardless of what the lexer could statically see,
+// and destructuring at runtime correctly triggers the getter.
+import electronUpdater from "electron-updater";
+const { autoUpdater } = electronUpdater;
 import { GoogleGenAI } from "@google/genai";
 
 const RELEASES_URL = "https://github.com/FRENCHIIIFRIES/emb3r-ai/releases/latest";
