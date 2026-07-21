@@ -468,6 +468,24 @@ pre{
     opacity:0.75;
 }
 
+#geminiButtons{
+    display:flex;
+    gap:8px;
+    margin-top:8px;
+}
+
+#geminiButtons button{
+    flex:1;
+    width:auto;
+}
+
+#geminiKeyStatus{
+    font-size:13px;
+    min-height:1.2em;
+    margin-top:4px;
+    opacity:0.75;
+}
+
 #updateVersion{
     opacity:0.75;
     margin-bottom:4px;
@@ -965,6 +983,19 @@ pre{
         <input type="text" id="spotifyClientIdInput" placeholder="from developer.spotify.com">
         <button id="spotifyConnectButton">Connect Spotify</button>
         <div id="spotifyStatusText" style="font-size:15px; margin-top:4px;"></div>
+    </div>
+
+    <hr>
+
+    <div class="settingsSection">
+        <h3>Web access</h3>
+        <label>Gemini API key — lets Ember search the web for questions that look like they need current information (news, prices, "today", etc). Optional; without a key, Ember only ever answers from the local model.</label>
+        <input type="password" id="geminiKeyInput" placeholder="paste your key" autocomplete="off">
+        <div id="geminiButtons">
+            <button id="geminiKeySave">Save</button>
+            <button id="geminiKeyClear">Clear</button>
+        </div>
+        <div id="geminiKeyStatus"></div>
     </div>
 
     <hr>

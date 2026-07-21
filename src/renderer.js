@@ -185,6 +185,11 @@ input.addEventListener("keydown", (e) => {
 // Send
 // =============================
 
+// the exact string last sent to submitToModel, resent by the consent modal's
+// handlers once the user answers - either via Gemini (allow) or forced local
+// (deny), so declining still gets a reply rather than silently doing nothing
+let pendingWebMessage = null;
+
 async function onSend() {
   const text = input.value.trim();
   if (!text && !pendingUpload) return;
@@ -213,9 +218,19 @@ async function onSend() {
   mood = Math.min(5, mood + 1);
   renderStats();
 
+  await submitToModel(messageToSend);
+  pendingUpload = null;
+  input.focus();
+}
+
+async function submitToModel(messageToSend, opts) {
   setStatus("thinking...");
   startThinking();
   resetIdleTimers();
+
+  // reset to the default in case the previous exchange left it labelled for
+  // Gemini - onAnswerSource corrects it again before any token arrives
+  currentAnswerPrefix = "ember > ";
 
   // the reply is written into this line as tokens arrive rather than appended
   // once at the end, so there is something to watch during a slow generation
@@ -224,8 +239,18 @@ async function onSend() {
   setGenerating(true);
 
   try {
-    const result = await window.emb3r.sendMessage(messageToSend);
+    const result = await window.emb3r.sendMessage(messageToSend, opts);
     stopThinking();
+
+    if (result.needsConsent) {
+      // nothing was generated - remove the empty line rather than treat this
+      // like a failure, and ask instead of silently doing nothing
+      if (streamLine) streamLine.remove();
+      pendingWebMessage = messageToSend;
+      consentModal.classList.add("open");
+      setStatus("idle");
+      return;
+    }
 
     if (!result.success) {
       if (streamLine && !streamText) streamLine.remove();
@@ -238,6 +263,7 @@ async function onSend() {
       // if no chunks arrived (very short replies can complete in one go)
       if (!streamText && result.text) writeStream(result.text);
       if (result.stopped) append("sys", "sys", "stopped");
+      if (result.source === "gemini") appendSources(result.sources);
       playReplyBeep();
       setFace("happy");
       setStatus("happy");
@@ -254,8 +280,6 @@ async function onSend() {
   } finally {
     setGenerating(false);
     streamLine = null;
-    pendingUpload = null;
-    input.focus();
     resetIdleTimers();
   }
 }
@@ -268,13 +292,17 @@ let streamLine = null;
 let streamText = "";
 let streamTextEl = null;
 
+// set by emb3r:answer-source before generation starts, so the line already
+// carries the right label by the time the first token arrives
+let currentAnswerPrefix = "ember > ";
+
 function beginStream() {
   const line = document.createElement("div");
   line.className = "bot";
 
   const span = document.createElement("span");
   span.className = "msgText";
-  span.textContent = "ember > ";
+  span.textContent = currentAnswerPrefix;
   line.appendChild(span);
   streamTextEl = span;
 
@@ -298,9 +326,28 @@ function writeStream(chunk) {
   streamText += chunk;
   if (!streamTextEl) return;
   // textContent, never innerHTML - model output is untrusted text
-  streamTextEl.textContent = `ember > ${streamText}`;
+  streamTextEl.textContent = `${currentAnswerPrefix}${streamText}`;
   chat.scrollTop = chat.scrollHeight;
 }
+
+// appends a small list of source links under a Gemini reply, in its own line
+// so it's visually distinct from the answer text and never mixed into it
+function appendSources(sources) {
+  if (!sources || !sources.length) return;
+  const line = document.createElement("div");
+  line.className = "sys";
+  const span = document.createElement("span");
+  span.className = "msgText";
+  span.textContent = "sources: " + sources.map((s) => s.title || s.uri).join(" · ");
+  line.appendChild(span);
+  chat.appendChild(line);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+window.emb3r.onAnswerSource(({ source }) => {
+  currentAnswerPrefix = source === "gemini" ? "ember (web) > " : "ember > ";
+  if (streamTextEl) streamTextEl.textContent = currentAnswerPrefix;
+});
 
 // swaps the send button for a stop button while Ember is talking
 function setGenerating(on) {
@@ -731,6 +778,7 @@ async function loadConfigIntoUI() {
   await refreshSpotifyStatus();
   await refreshPersonality();
   await initUpdateUI();
+  await refreshGeminiKeyStatus();
 }
 
 // =============================
@@ -771,6 +819,42 @@ personalityReset.addEventListener("click", async () => {
   personalityInput.value = "";
   personalityStatus.textContent = "reset to default";
   setTimeout(() => { personalityStatus.textContent = ""; }, 1500);
+});
+
+// =============================
+// Gemini web access
+// =============================
+
+const geminiKeyInput  = document.getElementById("geminiKeyInput");
+const geminiKeySave   = document.getElementById("geminiKeySave");
+const geminiKeyClear  = document.getElementById("geminiKeyClear");
+const geminiKeyStatus = document.getElementById("geminiKeyStatus");
+
+// the key itself is never sent back from main - only whether one is set - so
+// this reflects "configured" state, never the value the user pasted in
+async function refreshGeminiKeyStatus() {
+  const { configured } = await window.emb3r.geminiKeyStatus();
+  geminiKeyInput.value = "";
+  geminiKeyInput.placeholder = configured ? "•••••••• (key saved)" : "paste your key";
+  geminiKeyStatus.textContent = configured ? "configured" : "not set";
+}
+
+geminiKeySave.addEventListener("click", async () => {
+  const key = geminiKeyInput.value.trim();
+  if (!key) return;
+  const result = await window.emb3r.setGeminiKey(key);
+  if (!result.success) {
+    geminiKeyStatus.textContent = result.error;
+    return;
+  }
+  await refreshGeminiKeyStatus();
+  geminiKeyStatus.textContent = "saved";
+  setTimeout(() => { geminiKeyStatus.textContent = "configured"; }, 1500);
+});
+
+geminiKeyClear.addEventListener("click", async () => {
+  await window.emb3r.clearGeminiKey();
+  await refreshGeminiKeyStatus();
 });
 
 // =============================
@@ -877,6 +961,11 @@ consentAllow.addEventListener("click", async () => {
     window.__pendingSpotifyConnect = false;
     doSpotifyConnect();
   }
+  if (pendingWebMessage) {
+    const message = pendingWebMessage;
+    pendingWebMessage = null;
+    submitToModel(message);
+  }
 });
 
 consentDeny.addEventListener("click", () => {
@@ -884,6 +973,13 @@ consentDeny.addEventListener("click", () => {
   window.__pendingSpotifyConnect = false;
   consentModal.classList.remove("open");
   setSetupButtonsEnabled(true);
+  if (pendingWebMessage) {
+    // declining "use the internet for this" should not just drop the
+    // question - force it through the local model instead
+    const message = pendingWebMessage;
+    pendingWebMessage = null;
+    submitToModel(message, { forceLocal: true });
+  }
 });
 
 // =============================

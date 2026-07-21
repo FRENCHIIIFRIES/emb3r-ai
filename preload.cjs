@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld("emb3r", {
     ipcRenderer.on("emb3r:update-status", (_event, data) => callback(data));
   },
 
-  sendMessage: (message) => ipcRenderer.invoke("emb3r:send-message", message),
+  sendMessage: (message, opts) => ipcRenderer.invoke("emb3r:send-message", message, opts),
   stopGeneration: () => ipcRenderer.invoke("emb3r:stop-generation"),
   contextUsage: () => ipcRenderer.invoke("emb3r:context-usage"),
   onToken: (callback) => {
@@ -18,6 +18,13 @@ contextBridge.exposeInMainWorld("emb3r", {
   onGenStats: (callback) => {
     ipcRenderer.on("emb3r:gen-stats", (_event, data) => callback(data));
   },
+  onAnswerSource: (callback) => {
+    ipcRenderer.on("emb3r:answer-source", (_event, data) => callback(data));
+  },
+
+  geminiKeyStatus: () => ipcRenderer.invoke("emb3r:gemini-key-status"),
+  setGeminiKey: (key) => ipcRenderer.invoke("emb3r:set-gemini-key", key),
+  clearGeminiKey: () => ipcRenderer.invoke("emb3r:clear-gemini-key"),
 
   getActiveConversation: () => ipcRenderer.invoke("emb3r:get-active-conversation"),
   listConversations: () => ipcRenderer.invoke("emb3r:list-conversations"),
