@@ -195,7 +195,10 @@ pre{
     position:absolute;
     top:0;
     right:0;
-    opacity:0;
+    /* visible as soon as the line exists, not hidden behind a hover - the
+       whole-conversation "Copy chat" button was removed in favour of this
+       being discoverable on its own */
+    opacity:0.55;
     background:transparent;
     border:none;
     color:inherit;
@@ -204,10 +207,6 @@ pre{
     padding:2px 4px;
     line-height:1;
     transition:opacity .15s ease;
-}
-
-#chat > div:hover .copyBtn{
-    opacity:0.6;
 }
 
 .copyBtn:hover{
@@ -396,40 +395,65 @@ pre{
     background:var(--hover-color);
 }
 
+/* a full page within #app, not an overlay - swapped in for the chat view
+   rather than sliding over part of it */
 #settingsPanel{
-    position:fixed;
-    top:0;
-    right:0;
-
-    width:340px;
-    height:100%;
-
-    background:var(--bg-color);
-
-    border-left:1px solid var(--text-color);
-
-    padding:24px;
-    overflow-y:auto;
-
-    display:flex;
+    display:none;
     flex-direction:column;
-
+    flex:1;
+    min-height:0; /* required for overflow-y:auto to work inside a flex column */
     gap:14px;
-
-    transform:translateX(100%);
-    transition:transform .25s ease;
-
-    z-index:1000;
+    padding:4px 4px 16px;
+    overflow-y:auto;
 }
 
-#settingsPanel.open{
-    transform:translateX(0);
+#app.settingsOpen #settingsPanel{
+    display:flex;
+}
+
+#app.settingsOpen #pet,
+#app.settingsOpen #chat,
+#app.settingsOpen #row,
+#app.settingsOpen #genStats{
+    display:none;
+}
+
+#settingsTabs{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-bottom:6px;
+    padding-bottom:12px;
+    border-bottom:1px solid var(--hover-color);
+}
+
+.settingsTab{
+    width:auto;
+    padding:6px 12px;
+    font-size:14px;
+    opacity:0.6;
+}
+
+.settingsTab:hover{
+    opacity:0.85;
+}
+
+.settingsTab.active{
+    opacity:1;
+    background:var(--hover-color);
+}
+
+.settingsSection{
+    display:none;
+}
+
+.settingsSection.active{
+    display:block;
 }
 
 #settingsPanel input,
 #settingsPanel select,
-#settingsPanel textarea,
-#closeSettings{
+#settingsPanel textarea{
 
     background:var(--bg-color);
 
@@ -520,12 +544,6 @@ pre{
     min-width:120px;
 }
 
-#settingsPanel hr{
-    border:none;
-    border-top:1px solid var(--hover-color);
-    margin:6px 0;
-}
-
 .settingsSection h3{
     margin:0 0 6px 0;
     font-size:18px;
@@ -600,7 +618,24 @@ pre{
     text-shadow:0 0 4px #8fd6ff;
 }
 
+#settingsHeader{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+#settingsHeader h2{
+    margin:0;
+}
+
 #closeSettings{
+    width:auto;
+    padding:6px 12px;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    font-family:inherit;
+    font-size:14px;
     cursor:pointer;
 }
 
@@ -940,7 +975,6 @@ pre{
 <div id="app">
 
 <div id="topbar">
-    <button id="copyAllButton" title="Copy whole conversation">⧉ Copy chat</button>
     <div id="historyWrap">
         <button id="historyButton" title="Conversation history">🕘 History</button>
         <div id="historyPanel">
@@ -952,9 +986,23 @@ pre{
 </div>
 
 <div id="settingsPanel">
-    <h2>Settings</h2>
+    <div id="settingsHeader">
+        <button id="closeSettings">← Back to chat</button>
+        <h2>Settings</h2>
+    </div>
 
-    <div class="settingsSection">
+    <div id="settingsTabs">
+        <button class="settingsTab active" data-tab="account">Account</button>
+        <button class="settingsTab" data-tab="personality">Personality</button>
+        <button class="settingsTab" data-tab="spotify">Spotify</button>
+        <button class="settingsTab" data-tab="web">Web access</button>
+        <button class="settingsTab" data-tab="models">Models</button>
+        <button class="settingsTab" data-tab="hardware">Hardware</button>
+        <button class="settingsTab" data-tab="updates">Updates</button>
+        <button class="settingsTab" data-tab="display">Display</button>
+    </div>
+
+    <div class="settingsSection active" data-tab="account">
         <h3>Account</h3>
         <div id="profileList"></div>
         <label>New profile name</label>
@@ -962,9 +1010,7 @@ pre{
         <button id="addProfileButton">Add Profile</button>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="personality">
         <h3>Personality</h3>
         <label>What Ember is told to be, before every reply</label>
         <textarea id="personalityInput" rows="4" placeholder="Loading..."></textarea>
@@ -975,9 +1021,7 @@ pre{
         <div id="personalityStatus"></div>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="spotify">
         <h3>Spotify</h3>
         <label>Client ID</label>
         <input type="text" id="spotifyClientIdInput" placeholder="from developer.spotify.com">
@@ -985,9 +1029,7 @@ pre{
         <div id="spotifyStatusText" style="font-size:15px; margin-top:4px;"></div>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="web">
         <h3>Web access</h3>
         <label>Gemini API key — lets Ember search the web for questions that look like they need current information (news, prices, "today", etc). Optional; without a key, Ember only ever answers from the local model.</label>
         <input type="password" id="geminiKeyInput" placeholder="paste your key" autocomplete="off">
@@ -998,24 +1040,18 @@ pre{
         <div id="geminiKeyStatus"></div>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="models">
         <h3>Models</h3>
         <div id="modelList"></div>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="hardware">
         <h3>Hardware</h3>
         <button id="scanHardwareButton">Scan Hardware</button>
         <div id="hardwareResult" style="font-size:16px; white-space:pre-wrap; margin-top:6px;"></div>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="updates">
         <h3>Updates</h3>
         <div id="updateVersion" style="font-size:15px;"></div>
         <div id="updateStatus"></div>
@@ -1028,9 +1064,7 @@ pre{
         </div>
     </div>
 
-    <hr>
-
-    <div class="settingsSection">
+    <div class="settingsSection" data-tab="display">
         <h3>Display</h3>
         <label>Accent Color</label>
         <canvas id="colorWheel" width="150" height="150"></canvas>
@@ -1047,16 +1081,12 @@ pre{
 
         <label>Phosphor Glow</label>
         <input type="range" id="glowIntensity" min="0" max="20" value="6">
+
+        <div id="soundToggleRow">
+            <input type="checkbox" id="soundToggle" checked>
+            <label for="soundToggle">Sound effects</label>
+        </div>
     </div>
-
-    <hr>
-
-    <div id="soundToggleRow">
-        <input type="checkbox" id="soundToggle" checked>
-        <label for="soundToggle">Sound effects</label>
-    </div>
-
-    <button id="closeSettings">Close</button>
 </div>
 
 <div id="pet">

@@ -543,26 +543,19 @@ runBoot(finishBoot);
 // =============================
 
 const settingsButton = document.getElementById("settingsButton");
-const settingsPanel  = document.getElementById("settingsPanel");
 const closeSettings  = document.getElementById("closeSettings");
 const soundToggle    = document.getElementById("soundToggle");
+const settingsTabs   = document.querySelectorAll(".settingsTab");
 
-settingsButton.addEventListener("click", () => settingsPanel.classList.add("open"));
+settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
 
-const copyAllButton = document.getElementById("copyAllButton");
-copyAllButton.addEventListener("click", async () => {
-  // pull from .msgText where present (message lines); fall back to the raw
-  // element text for the system-note span, which has no such wrapper
-  const text = Array.from(chat.children)
-    .map((el) => (el.querySelector(".msgText") || el).textContent)
-    .join("\n");
-  try {
-    await navigator.clipboard.writeText(text);
-    copyAllButton.textContent = "✓ Copied";
-  } catch {
-    copyAllButton.textContent = "✗ Failed";
-  }
-  setTimeout(() => { copyAllButton.textContent = "⧉ Copy chat"; }, 1200);
+settingsTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    settingsTabs.forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+  });
 });
 
 // =============================
@@ -671,15 +664,9 @@ window.emb3r.onModelReady(() => {
   renderActiveConversationHistory();
   if (historyWrap.classList.contains("open")) refreshHistoryList();
 });
-closeSettings.addEventListener("click", () => settingsPanel.classList.remove("open"));
+closeSettings.addEventListener("click", () => appEl.classList.remove("settingsOpen"));
 
 document.addEventListener("click", (e) => {
-    const clickedInsidePanel = settingsPanel.contains(e.target);
-    const clickedButton = settingsButton.contains(e.target);
-    const clickedModal = document.getElementById("consentModal").contains(e.target);
-    if (settingsPanel.classList.contains("open") && !clickedInsidePanel && !clickedButton && !clickedModal) {
-        settingsPanel.classList.remove("open");
-    }
     if (historyWrap.classList.contains("open") && !historyWrap.contains(e.target)) {
         historyWrap.classList.remove("open");
     }
