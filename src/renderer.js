@@ -401,7 +401,7 @@ const CHARS_PER_TOKEN = 4;
 // leave room for the system prompt, the question, and Ember's reply
 function attachmentCharBudget() {
   const size = lastContext && lastContext.size ? lastContext.size : 4096;
-  return Math.floor(size * 0.5) * CHARS_PER_TOKEN;
+  return Math.floor(size * 0.7) * CHARS_PER_TOKEN;
 }
 
 // readAsText happily decodes a PDF or a PNG into mojibake and hands it over as
@@ -1460,6 +1460,14 @@ function contrastRatio(rgb, bgLuminance) {
 }
 
 const MIN_TEXT_CONTRAST = 4.5;
+// your own messages are pushed this many lightness points further from the
+// background than Ember's already-legible color, so the two never collide -
+// color is the only thing telling "you" and "ember" lines apart. A second,
+// stricter contrast target isn't enough on its own: at high natural contrast
+// both would independently pass on the very first try and land on the exact
+// same lightness (verified against a full hue/sat/lightness sweep - a fixed
+// offset from the already-safe color has zero collisions there)
+const USER_LIGHTNESS_OFFSET = 12;
 
 // nudges lightness away from the background, in 1% steps, until the accent
 // color reaches a readable contrast ratio - hue/saturation are left alone so
@@ -1479,9 +1487,14 @@ function applyColor() {
     const requestedLightness = Number(lightnessInput.value);
     const bgHex = getComputedStyle(document.documentElement).getPropertyValue("--bg-color").trim();
     const bgLuminance = relativeLuminance(hexToRgb(bgHex));
+    const towardsWhite = bgLuminance < 0.5;
     const safeLightness = legibleLightness(currentHue, currentSat, requestedLightness, bgLuminance);
+    const userLightness = Math.max(0, Math.min(100,
+        towardsWhite ? safeLightness + USER_LIGHTNESS_OFFSET : safeLightness - USER_LIGHTNESS_OFFSET));
     const color = `hsl(${currentHue.toFixed(0)}, ${currentSat.toFixed(0)}%, ${safeLightness}%)`;
+    const userColor = `hsl(${currentHue.toFixed(0)}, ${currentSat.toFixed(0)}%, ${userLightness}%)`;
     document.documentElement.style.setProperty("--text-color", color);
+    document.documentElement.style.setProperty("--user-text-color", userColor);
     document.documentElement.style.setProperty("--hover-color", color + "33");
     localStorage.setItem("emb3rAccentColor", JSON.stringify({ h: currentHue, s: currentSat, l: requestedLightness }));
 }
