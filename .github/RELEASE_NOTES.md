@@ -1,5 +1,10 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
+## New since v1.0.5
+
+- Fixed **your own chat messages being nearly invisible in light theme** — they were a fixed color unrelated to the theme or your chosen accent color; now they track your accent (at a distinct shade from Ember's replies) and stay legible in both themes
+- File attachments can now use **more of the model's context window** (up to 70%, up from 50%)
+
 ## New since v1.0.4
 
 - **Settings is now a full page with tabs** (Account, Personality, Spotify, Web access, Models, Hardware, Updates, Display) instead of a small overlay panel you had to scroll through
