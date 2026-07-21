@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
 import { autoUpdater } from "electron-updater";
+import { GoogleGenAI } from "@google/genai";
 
 const RELEASES_URL = "https://github.com/FRENCHIIIFRIES/emb3r-ai/releases/latest";
 
@@ -38,6 +39,9 @@ function defaultConfig() {
     // string, which a user could deliberately choose to give Ember no
     // instructions at all
     systemPrompt: null,
+    // a secret, same handling as the spotify tokens below: written from the
+    // renderer, never read back to it, and excluded from emb3r:get-config
+    geminiApiKey: "",
     spotifyClientId: "",
     spotifyAccessToken: null,
     spotifyRefreshToken: null,
@@ -422,8 +426,8 @@ app.on("window-all-closed", () => {
 // ---- Config / consent IPC ----
 
 ipcMain.handle("emb3r:get-config", () => {
-  // never leak spotify tokens to the renderer
-  const { spotifyAccessToken, spotifyRefreshToken, ...safe } = config;
+  // never leak spotify tokens or the gemini key to the renderer
+  const { spotifyAccessToken, spotifyRefreshToken, geminiApiKey, ...safe } = config;
   return safe;
 });
 
@@ -921,6 +925,102 @@ ipcMain.handle("emb3r:get-now-playing", async () => {
 
 let activeGeneration = null;
 
+// ---- Gemini web access ----
+//
+// A conservative, local, keyword-based guess at whether a question needs
+// information newer than any model's training cutoff. This app's whole pitch
+// is staying offline, so a false negative - the local model answering as it
+// always has - is the safe direction to fail in. A false positive would
+// silently send a local prompt to Google, which is the direction to avoid,
+// so the list stays narrow and no LLM call is used to make this decision.
+function needsCurrentInfo(text) {
+  const t = text.toLowerCase();
+  // "current" alone is here for phrasings like "current price of X", at the
+  // acknowledged cost of also matching unrelated senses of the word (electrical
+  // current, current draw) - a keyword list cannot disambiguate word sense, and
+  // the safe failure mode (an occasional unnecessary web lookup, gated behind
+  // consent and a configured key either way) is preferable to missing genuine
+  // "what's happening right now" questions that use the word "current"
+  const currentInfoPhrases = [
+    "today", "right now", "current", "currently", "at the moment",
+    "this week", "this month", "this year",
+    "latest", "recent", "recently", "up to date", "up-to-date",
+    "news", "weather", "forecast",
+    "price of", "stock price", "share price", "exchange rate", "crypto price",
+    "who won", "election result", "results of", "score",
+    "what happened", "what's happening",
+  ];
+  if (currentInfoPhrases.some((p) => t.includes(p))) return true;
+
+  // a year mentioned that is this year or later reads as wanting current
+  // information even without any of the phrases above - "what's new in 2026"
+  const yearMatch = text.match(/\b(20\d{2})\b/);
+  if (yearMatch && parseInt(yearMatch[1], 10) >= new Date().getFullYear()) return true;
+
+  return false;
+}
+
+let geminiClient = null;
+let geminiClientKey = null; // the key the cached client was built with
+
+function getGeminiClient() {
+  if (!config.geminiApiKey) return null;
+  if (!geminiClient || geminiClientKey !== config.geminiApiKey) {
+    geminiClient = new GoogleGenAI({ apiKey: config.geminiApiKey });
+    geminiClientKey = config.geminiApiKey;
+  }
+  return geminiClient;
+}
+
+const GEMINI_MODEL = "gemini-2.5-flash";
+
+// answers one message via Gemini with Google Search grounding enabled,
+// streaming through the same onTextChunk shape the local model uses so the
+// renderer's existing streaming UI does not need a second code path
+async function answerWithGemini(userMessage, onTextChunk, signal) {
+  const client = getGeminiClient();
+  if (!client) throw new Error("No Gemini API key configured.");
+
+  const stream = await client.models.generateContentStream({
+    model: GEMINI_MODEL,
+    contents: userMessage,
+    config: { tools: [{ googleSearch: {} }] },
+  });
+
+  let text = "";
+  let sources = [];
+  for await (const chunk of stream) {
+    if (signal.aborted) break;
+    if (chunk.text) {
+      text += chunk.text;
+      onTextChunk(chunk.text);
+    }
+    const chunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    if (chunks) {
+      sources = chunks.map((c) => c.web).filter((w) => w?.uri).map((w) => ({ title: w.title || w.uri, uri: w.uri }));
+    }
+  }
+  return { text, sources };
+}
+
+ipcMain.handle("emb3r:gemini-key-status", () => ({ configured: Boolean(config.geminiApiKey) }));
+
+ipcMain.handle("emb3r:set-gemini-key", (_e, key) => {
+  const trimmed = typeof key === "string" ? key.trim() : "";
+  if (!trimmed) return { success: false, error: "Enter a key first." };
+  config.geminiApiKey = trimmed;
+  saveConfig(config);
+  geminiClient = null; // rebuild with the new key next time it's used
+  return { success: true };
+});
+
+ipcMain.handle("emb3r:clear-gemini-key", () => {
+  config.geminiApiKey = "";
+  saveConfig(config);
+  geminiClient = null;
+  return { success: true };
+});
+
 // how full the context is. node-llama-cpp shifts context automatically once it
 // fills, silently dropping the oldest turns - so this is really a "how soon
 // will Ember start forgetting" gauge rather than a crash warning
@@ -943,7 +1043,7 @@ function generationStats(chunks, startedAt) {
   };
 }
 
-ipcMain.handle("emb3r:send-message", async (_event, userMessage) => {
+ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   if (!chatSession) {
     return {
       success: false,
@@ -954,41 +1054,58 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage) => {
   }
   if (activeGeneration) return { success: false, error: "Ember is already replying." };
 
+  // a Gemini key configured with no consent granted must never fire silently -
+  // the renderer catches needsConsent, shows the same modal already used for
+  // model downloads, and resends with forceLocal or after consent is granted
+  const wantsGemini = Boolean(config.geminiApiKey) && !opts.forceLocal && needsCurrentInfo(userMessage);
+  if (wantsGemini && !config.internetConsent) {
+    return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
+  }
+
   const controller = new AbortController();
   activeGeneration = controller;
 
   const startedAt = Date.now();
   let chunks = 0;
   let lastStatAt = 0;
+  const onTextChunk = (chunk) => {
+    chunks++;
+    if (!mainWindow) return;
+    mainWindow.webContents.send("emb3r:token", { text: chunk });
+    // stats are for glancing at, so a few updates a second is plenty
+    const now = Date.now();
+    if (now - lastStatAt > 250) {
+      lastStatAt = now;
+      mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
+    }
+  };
 
   try {
-    const text = await chatSession.prompt(userMessage, {
-      signal: controller.signal,
-      // stop cleanly on abort instead of throwing, so pressing stop keeps
-      // whatever Ember had already said
-      stopOnAbortSignal: true,
-      onTextChunk: (chunk) => {
-        chunks++;
-        if (!mainWindow) return;
-        mainWindow.webContents.send("emb3r:token", { text: chunk });
-        // stats are for glancing at, so a few updates a second is plenty
-        const now = Date.now();
-        if (now - lastStatAt > 250) {
-          lastStatAt = now;
-          mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
-        }
-      },
-    });
+    let text, sources;
+    const source = wantsGemini ? "gemini" : "local";
+    // sent explicitly either way, so the renderer never has to assume "no
+    // event means local" - it always knows which one is about to answer
+    if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
 
-    if (mainWindow) mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
+    if (wantsGemini) {
+      ({ text, sources } = await answerWithGemini(userMessage, onTextChunk, controller.signal));
+    } else {
+      text = await chatSession.prompt(userMessage, {
+        signal: controller.signal,
+        // stop cleanly on abort instead of throwing, so pressing stop keeps
+        // whatever Ember had already said
+        stopOnAbortSignal: true,
+        onTextChunk,
+      });
+    }
 
     // an empty reply means generation was stopped before anything came out -
     // nothing meaningful happened, so there is nothing worth persisting
     if (text && activeConversation) {
       const now = Date.now();
       const isFirstExchange = activeConversation.messages.length === 0;
-      activeConversation.messages.push({ role: "user", text: userMessage, ts: now });
-      activeConversation.messages.push({ role: "model", text, ts: now });
+      activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source });
+      activeConversation.messages.push({ role: "model", text, ts: now, source, sources });
       activeConversation.updatedAt = now;
       if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
       saveConversationFile(activeConversation.profileId, activeConversation);
@@ -998,9 +1115,34 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage) => {
           title: activeConversation.title,
         });
       }
+
+      // a Gemini exchange never went through chatSession.prompt(), so the
+      // local model's own history has no idea it happened. Replaying the
+      // full persisted transcript keeps a mixed conversation coherent if the
+      // next message goes back to the local model.
+      if (wantsGemini) {
+        try {
+          chatSession.setChatHistory(toChatHistory(activeConversation));
+        } catch (err) {
+          console.error("Could not sync Gemini turn into local history:", err);
+        }
+      }
     }
 
-    return { success: true, text, stopped: controller.signal.aborted, stats: generationStats(chunks, startedAt) };
+    // sent once, here, after any Gemini-turn sync above - the renderer only
+    // ever displays the pushed event stream, never the stats in the return
+    // value below, so sending this earlier would have left the visible
+    // context-usage figure showing pre-sync numbers until the next message
+    if (mainWindow) mainWindow.webContents.send("emb3r:gen-stats", generationStats(chunks, startedAt));
+
+    return {
+      success: true,
+      text,
+      source,
+      sources,
+      stopped: controller.signal.aborted,
+      stats: generationStats(chunks, startedAt),
+    };
   } catch (err) {
     return { success: false, error: err.message || String(err) };
   } finally {

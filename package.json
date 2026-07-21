@@ -16,12 +16,15 @@
     "dist": "electron-builder"
   },
   "dependencies": {
+    "@google/genai": "^2.12.0",
     "electron-updater": "^6.8.9",
     "node-llama-cpp": "^3.19.0"
   },
   "allowScripts": {
     "node-llama-cpp@3.19.0": true,
-    "electron-winstaller@5.4.0": true
+    "electron-winstaller@5.4.0": true,
+    "@google/genai@2.12.0": true,
+    "protobufjs@7.6.5": true
   },
   "devDependencies": {
     "electron": "^43.1.1",
