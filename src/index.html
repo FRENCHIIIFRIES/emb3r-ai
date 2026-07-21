@@ -397,6 +397,40 @@ pre{
     opacity:0.75;
 }
 
+#updateVersion{
+    opacity:0.75;
+    margin-bottom:4px;
+}
+
+#updateStatus{
+    font-size:13px;
+    min-height:1.2em;
+}
+
+/* reuses the ASCII progress-bar font/idiom from model and generation stats */
+#updateProgress{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    min-height:1.2em;
+    margin-top:2px;
+    color:#8fd6ff;
+    text-shadow:0 0 4px #8fd6ff;
+    white-space:pre;
+}
+
+#updateButtons{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:8px;
+}
+
+#updateButtons button{
+    flex:1;
+    width:auto;
+    min-width:120px;
+}
+
 #settingsPanel hr{
     border:none;
     border-top:1px solid var(--hover-color);
@@ -868,6 +902,21 @@ pre{
         <h3>Hardware</h3>
         <button id="scanHardwareButton">Scan Hardware</button>
         <div id="hardwareResult" style="font-size:16px; white-space:pre-wrap; margin-top:6px;"></div>
+    </div>
+
+    <hr>
+
+    <div class="settingsSection">
+        <h3>Updates</h3>
+        <div id="updateVersion" style="font-size:15px;"></div>
+        <div id="updateStatus"></div>
+        <div id="updateProgress"></div>
+        <div id="updateButtons">
+            <button id="checkUpdateButton">Check for Updates</button>
+            <button id="downloadUpdateButton" hidden>Download Update</button>
+            <button id="installUpdateButton" hidden>Restart &amp; Install</button>
+            <button id="openReleasesButton" hidden>Open Download Page</button>
+        </div>
     </div>
 
     <hr>

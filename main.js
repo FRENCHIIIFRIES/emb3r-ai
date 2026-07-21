@@ -7,6 +7,9 @@ import http from "http";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
+import { autoUpdater } from "electron-updater";
+
+const RELEASES_URL = "https://github.com/FRENCHIIIFRIES/emb3r-ai/releases/latest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // models live beside the config in userData rather than inside the app bundle:
@@ -183,6 +186,81 @@ function clearPartialDownloads() {
   }
 }
 
+// ---- Auto-update ----
+//
+// Checking is automatic; downloading is not. The button in Settings is what
+// starts a download, matching "let them download the update from the app"
+// rather than a silent background install the user never asked for.
+//
+// macOS needs a channel split that Windows does not. electron-builder names
+// the update feed file the same regardless of mac architecture - both the
+// arm64 and x64 builds would independently produce "latest-mac.yml" and
+// collide when uploaded to the same GitHub release (confirmed by reading
+// app-builder-lib's own update-info generator: it only adds an arch suffix on
+// Linux). The CI workflow builds the arm64 job under a distinct "arm64"
+// channel for exactly this reason, so the client has to ask for that same
+// channel on arm64 Macs or it will fetch the Intel build's feed and offer to
+// "update" to a binary that will not run.
+if (process.platform === "darwin" && process.arch === "arm64") {
+  autoUpdater.channel = "arm64";
+}
+autoUpdater.autoDownload = false;
+
+function sendUpdateStatus(payload) {
+  if (mainWindow) mainWindow.webContents.send("emb3r:update-status", payload);
+}
+
+autoUpdater.on("checking-for-update", () => sendUpdateStatus({ state: "checking" }));
+autoUpdater.on("update-available", (info) => sendUpdateStatus({ state: "available", version: info.version }));
+autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ state: "not-available", version: info.version }));
+autoUpdater.on("download-progress", (p) => {
+  sendUpdateStatus({ state: "downloading", percent: p.percent, transferred: p.transferred, total: p.total });
+});
+autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ state: "downloaded", version: info.version }));
+autoUpdater.on("error", (err) => {
+  console.error("Update error:", err);
+  // this is the path an unsigned macOS build is expected to take: Squirrel.Mac
+  // refuses to apply an update whose signature does not match a Developer ID
+  // it trusts, and an ad-hoc signature is not one. Whatever the cause, the
+  // fallback is the same either way - point at the page they'd have used
+  // before this feature existed.
+  sendUpdateStatus({ state: "error", message: err.message || String(err), releasesUrl: RELEASES_URL });
+});
+
+ipcMain.handle("emb3r:get-app-version", () => app.getVersion());
+
+ipcMain.handle("emb3r:check-for-updates", async () => {
+  if (!app.isPackaged) return { success: false, error: "Updates are only available in the packaged app." };
+  try {
+    await autoUpdater.checkForUpdates();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle("emb3r:download-update", async () => {
+  if (!app.isPackaged) return { success: false, error: "Updates are only available in the packaged app." };
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle("emb3r:install-update", () => {
+  // isSilent defaults to false, which on Windows shows the same assisted
+  // installer UI a first-time install would - deliberately not overridden,
+  // matching the oneClick:false choice already made for a fresh install
+  autoUpdater.quitAndInstall();
+  return { success: true };
+});
+
+ipcMain.handle("emb3r:open-releases-page", () => {
+  shell.openExternal(RELEASES_URL);
+});
+
 app.whenReady().then(async () => {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
   clearPartialDownloads();
@@ -192,6 +270,14 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error("Unexpected error during model load:", err);
     modelLoadError = err.message || String(err);
+  }
+
+  // a few seconds after launch, not competing with model loading for
+  // attention, and not the very first thing a user sees
+  if (app.isPackaged) {
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch((err) => console.error("Startup update check failed:", err));
+    }, 5000);
   }
 });
 

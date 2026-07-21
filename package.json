@@ -16,10 +16,12 @@
     "dist": "electron-builder"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "node-llama-cpp": "^3.19.0"
   },
   "allowScripts": {
-    "node-llama-cpp@3.19.0": true
+    "node-llama-cpp@3.19.0": true,
+    "electron-winstaller@5.4.0": true
   },
   "devDependencies": {
     "electron": "^43.1.1",
@@ -28,6 +30,11 @@
   "build": {
     "appId": "io.github.frenchiiifries.emb3r",
     "productName": "emb3r",
+    "publish": {
+      "provider": "github",
+      "owner": "FRENCHIIIFRIES",
+      "repo": "emb3r-ai"
+    },
     "asar": true,
     "asarUnpack": [
       "**/node_modules/node-llama-cpp/**",
