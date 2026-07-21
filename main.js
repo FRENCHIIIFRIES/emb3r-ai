@@ -231,6 +231,17 @@ function attachConversation(profileId, convId) {
 
 // ---- Local model loading ----
 
+// window creation and model loading run concurrently - the renderer's boot
+// animation reliably finishes well before a multi-gigabyte model does, so the
+// renderer cannot just ask for the active conversation once at boot and
+// expect an answer. It listens for this instead, which fires at every exit
+// path of loadLocalModel, success or failure, so it never waits forever.
+function notifyModelReady() {
+  if (mainWindow) {
+    mainWindow.webContents.send("emb3r:model-ready", { ready: !!chatSession, error: modelLoadError });
+  }
+}
+
 async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   const modelPath = path.join(MODELS_DIR, target);
@@ -238,6 +249,7 @@ async function loadLocalModel(filename, { conversationId } = {}) {
   if (!fs.existsSync(modelPath)) {
     modelLoadError = `Model file not found: ${target}. Download it from Settings first.`;
     chatSession = null;
+    notifyModelReady();
     return;
   }
 
@@ -275,6 +287,8 @@ async function loadLocalModel(filename, { conversationId } = {}) {
     // conversation this profile was last in, or start a new one
     attachConversation(profile.id, conversationId || profile.lastConversationId);
   }
+
+  notifyModelReady();
 }
 
 function createWindow() {

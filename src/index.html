@@ -303,6 +303,77 @@ pre{
     margin-bottom:12px;
 }
 
+#historyWrap{
+    position:relative;
+}
+
+#historyPanel{
+    display:none;
+    position:absolute;
+    top:calc(100% + 6px);
+    right:0;
+    width:260px;
+    max-height:340px;
+    overflow-y:auto;
+    background:var(--bg-color);
+    border:1px solid var(--text-color);
+    padding:10px;
+    z-index:1500;
+}
+
+#historyWrap.open #historyPanel{
+    display:block;
+}
+
+#newChatButton{
+    width:100%;
+    margin-bottom:8px;
+}
+
+.historyRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    padding:6px 4px;
+    font-size:14px;
+    border-bottom:1px solid var(--hover-color);
+    cursor:pointer;
+}
+
+.historyRow:last-child{
+    border-bottom:none;
+}
+
+.historyRow:hover{
+    background:var(--hover-color);
+}
+
+.historyRow.active{
+    color:var(--text-color);
+    font-weight:700;
+}
+
+.historyRow .historyTitle{
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.historyRow button{
+    width:auto;
+    padding:1px 7px;
+    font-size:12px;
+    flex-shrink:0;
+}
+
+.historyEmpty{
+    font-size:13px;
+    opacity:0.6;
+    padding:6px 4px;
+}
+
 #title{
     font-size:16px;
     font-weight:700;
@@ -818,6 +889,13 @@ pre{
 
 <div id="topbar">
     <button id="copyAllButton" title="Copy whole conversation">⧉ Copy chat</button>
+    <div id="historyWrap">
+        <button id="historyButton" title="Conversation history">🕘 History</button>
+        <div id="historyPanel">
+            <button id="newChatButton">+ New chat</button>
+            <div id="historyList"></div>
+        </div>
+    </div>
     <button id="settingsButton">⚙ Settings</button>
 </div>
 

@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld("emb3r", {
   onConversationSaved: (callback) => {
     ipcRenderer.on("emb3r:conversation-saved", (_event, data) => callback(data));
   },
+  onModelReady: (callback) => {
+    ipcRenderer.on("emb3r:model-ready", (_event, data) => callback(data));
+  },
 
   getConfig: () => ipcRenderer.invoke("emb3r:get-config"),
   setInternetConsent: (granted) => ipcRenderer.invoke("emb3r:set-internet-consent", granted),
