@@ -22,10 +22,20 @@ jobs:
             install: npm ci
             args: --win --x64
 
+          # electron-builder names the auto-update feed file the same
+          # ("latest-mac.yml") on every mac build regardless of architecture -
+          # confirmed by reading app-builder-lib's own update-info generator,
+          # which only adds an arch suffix on Linux. Building arm64 and x64 as
+          # two separate jobs (needed below, for the native-binary reason) means
+          # each would independently produce a file with that same name, which
+          # collide when both land in the same GitHub release. Publishing this
+          # job under its own "arm64" channel makes electron-builder write
+          # "arm64-mac.yml" instead, and main.js asks for that same channel at
+          # runtime on arm64 Macs - see the comment above autoUpdater.channel.
           - os: macos-latest
             name: mac-arm64
             install: npm ci
-            args: --mac --arm64
+            args: --mac --arm64 -c.publish.channel=arm64
 
           # macos-latest is Apple Silicon, and node-llama-cpp ships its binaries
           # as per-arch optional dependencies, so a plain install here would put
@@ -68,6 +78,15 @@ jobs:
         # job below does the publishing.
         run: npm run dist -- ${{ matrix.args }} --publish never
 
+      # electron-builder always writes dist/builder-debug.yml alongside the
+      # real update feed file (latest.yml / latest-mac.yml / arm64-mac.yml) -
+      # it's an internal glob-pattern dump, not update metadata, and must not
+      # be uploaded as if it were. shell: bash so `rm` works the same way on
+      # the Windows job too, which otherwise defaults to PowerShell.
+      - name: Remove electron-builder debug output
+        shell: bash
+        run: rm -f dist/builder-debug.yml
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
@@ -77,6 +96,7 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.zip
+            dist/*.yml
 
   release:
     needs: build

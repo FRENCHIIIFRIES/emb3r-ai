@@ -620,6 +620,7 @@ async function loadConfigIntoUI() {
   spotifyClientIdInput.value = currentConfig.spotifyClientId || "";
   await refreshSpotifyStatus();
   await refreshPersonality();
+  await initUpdateUI();
 }
 
 // =============================
@@ -660,6 +661,97 @@ personalityReset.addEventListener("click", async () => {
   personalityInput.value = "";
   personalityStatus.textContent = "reset to default";
   setTimeout(() => { personalityStatus.textContent = ""; }, 1500);
+});
+
+// =============================
+// Updates
+// =============================
+
+const updateVersionEl   = document.getElementById("updateVersion");
+const updateStatusEl    = document.getElementById("updateStatus");
+const updateProgressEl  = document.getElementById("updateProgress");
+const checkUpdateButton = document.getElementById("checkUpdateButton");
+const downloadUpdateButton = document.getElementById("downloadUpdateButton");
+const installUpdateButton  = document.getElementById("installUpdateButton");
+const openReleasesButton   = document.getElementById("openReleasesButton");
+
+async function initUpdateUI() {
+  const version = await window.emb3r.getAppVersion();
+  updateVersionEl.textContent = `Current version: v${version}`;
+}
+
+// only one of download / install / open-releases is ever relevant at a time
+function showUpdateButtons({ download = false, install = false, openReleases = false } = {}) {
+  downloadUpdateButton.hidden = !download;
+  installUpdateButton.hidden = !install;
+  openReleasesButton.hidden = !openReleases;
+}
+
+checkUpdateButton.addEventListener("click", async () => {
+  checkUpdateButton.disabled = true;
+  updateStatusEl.textContent = "checking...";
+  showUpdateButtons();
+  const result = await window.emb3r.checkForUpdates();
+  checkUpdateButton.disabled = false;
+  if (!result.success) updateStatusEl.textContent = result.error;
+  // success just means the check started - the actual outcome (available /
+  // not-available / error) arrives asynchronously via onUpdateStatus
+});
+
+downloadUpdateButton.addEventListener("click", async () => {
+  downloadUpdateButton.disabled = true;
+  const result = await window.emb3r.downloadUpdate();
+  if (!result.success) {
+    updateStatusEl.textContent = result.error;
+    downloadUpdateButton.disabled = false;
+  }
+});
+
+installUpdateButton.addEventListener("click", () => {
+  window.emb3r.installUpdate();
+});
+
+openReleasesButton.addEventListener("click", () => {
+  window.emb3r.openReleasesPage();
+});
+
+window.emb3r.onUpdateStatus((status) => {
+  switch (status.state) {
+    case "checking":
+      updateStatusEl.textContent = "checking for updates...";
+      showUpdateButtons();
+      break;
+    case "not-available":
+      updateStatusEl.textContent = `you're up to date (v${status.version})`;
+      showUpdateButtons();
+      break;
+    case "available":
+      updateStatusEl.textContent = `update available: v${status.version}`;
+      showUpdateButtons({ download: true });
+      break;
+    case "downloading": {
+      const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";
+      updateProgressEl.textContent =
+        `${progressBar(Math.round(status.percent))}  ${mb(status.transferred)} / ${mb(status.total)}`;
+      updateStatusEl.textContent = "downloading update...";
+      showUpdateButtons();
+      break;
+    }
+    case "downloaded":
+      updateProgressEl.textContent = "";
+      updateStatusEl.textContent = `v${status.version} downloaded - restart to install`;
+      showUpdateButtons({ install: true });
+      break;
+    case "error":
+      updateProgressEl.textContent = "";
+      // an ad-hoc-signed macOS build cannot apply an update silently - this is
+      // the expected outcome there, not a sign anything else is broken
+      updateStatusEl.textContent =
+        `couldn't update automatically (${status.message}). ` +
+        `You can still download it directly.`;
+      showUpdateButtons({ openReleases: true });
+      break;
+  }
 });
 
 consentAllow.addEventListener("click", async () => {

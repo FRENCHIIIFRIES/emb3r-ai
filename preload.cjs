@@ -1,5 +1,14 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("emb3r", {
+  getAppVersion: () => ipcRenderer.invoke("emb3r:get-app-version"),
+  checkForUpdates: () => ipcRenderer.invoke("emb3r:check-for-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("emb3r:download-update"),
+  installUpdate: () => ipcRenderer.invoke("emb3r:install-update"),
+  openReleasesPage: () => ipcRenderer.invoke("emb3r:open-releases-page"),
+  onUpdateStatus: (callback) => {
+    ipcRenderer.on("emb3r:update-status", (_event, data) => callback(data));
+  },
+
   sendMessage: (message) => ipcRenderer.invoke("emb3r:send-message", message),
   stopGeneration: () => ipcRenderer.invoke("emb3r:stop-generation"),
   contextUsage: () => ipcRenderer.invoke("emb3r:context-usage"),
