@@ -1,8 +1,11 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
-## If you have v1.0.3, please re-download
+## New since v1.0.4
 
-v1.0.3 does not launch at all, on any platform — it crashes immediately with a JavaScript error, before the window even opens. This release fixes that. Because the crash happens before the app finishes starting up, **the in-app update checker cannot fix this one for you** — you'll need to download v1.0.4 directly from this page.
+- **Settings is now a full page with tabs** (Account, Personality, Spotify, Web access, Models, Hardware, Updates, Display) instead of a small overlay panel you had to scroll through
+- The clipboard icon on each message is **always visible** now, instead of only appearing on hover
+- Fixed **Gemini web access returning an error for everyone** — it was pointed at a model Google has since retired
+- Custom accent colors are now kept **readable against the background** — picking a very dark color in dark mode (or very light in light mode) could previously make the whole app illegible
 
 ## New since v1.0.2
 
