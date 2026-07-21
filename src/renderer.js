@@ -398,10 +398,15 @@ uploadButton.addEventListener("click", () => fileInput.click());
 // context window.
 const CHARS_PER_TOKEN = 4;
 
+// a hard floor regardless of context size - on the smallest context (the
+// 4096-token CPU fallback in main.js) the proportional budget alone still
+// rejects perfectly ordinary files well under this size
+const MIN_ATTACHMENT_CHARS = 20 * 1024;
+
 // leave room for the system prompt, the question, and Ember's reply
 function attachmentCharBudget() {
   const size = lastContext && lastContext.size ? lastContext.size : 4096;
-  return Math.floor(size * 0.7) * CHARS_PER_TOKEN;
+  return Math.max(Math.floor(size * 0.7) * CHARS_PER_TOKEN, MIN_ATTACHMENT_CHARS);
 }
 
 // readAsText happily decodes a PDF or a PNG into mojibake and hands it over as
