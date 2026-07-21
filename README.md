@@ -34,10 +34,15 @@ ember > ( ^_^ )  it's a shopping list. mostly cheese.
 
 ## Features
 
-- **Fully offline.** After the first model download, emb3r never opens a socket. No telemetry, no update pings, no analytics.
+- **Fully offline where it matters.** Nothing you type, no file you attach, and no conversation ever leaves the machine — there is no telemetry and no analytics. The one exception is checking GitHub for a new version on launch, which sends nothing about you or your usage; see [Updates](#updates) below.
+- **Replies stream in**, token by token, instead of a blank wait — with a stop button if it's going the wrong way, and a live tokens/sec and context-usage readout.
+- **Remembers your conversations.** Each profile keeps its own history, saved to disk and restored on launch — with real memory of what was said, not just the old text on screen. Switch between past chats or start a new one from the History panel.
 - **Matched to your machine.** On first launch it reads your CPU, RAM and free disk, recommends a model that will actually run, and refuses ones that would exhaust your memory.
 - **A shelf of open models.** Llama, Qwen and Mistral in several sizes, fetched on demand and switchable in Settings.
-- **Reads files you attach.** Drop in a text file and ask about it — read locally, never uploaded.
+- **Reads files you attach.** Drop in a text file and ask about it — read locally, never uploaded. Rejects anything that isn't actually text, and anything too large for the model's context.
+- **Copy anything** — a single message or the whole conversation — with one click.
+- **Shape its personality.** The system prompt that defines "Ember" is editable in Settings, not hardcoded.
+- **Checks for updates** and lets you download them from inside the app — see [Updates](#updates).
 - **Profiles**, so it can address different people differently.
 - **Optional Spotify now-playing**, if you want it to know what you're listening to.
 
@@ -62,6 +67,13 @@ emb3r isn't signed with a paid developer certificate, so both systems flag it. E
   *(On macOS 15 Sequoia and later, right-click → Open no longer works.)*
 - **Windows** — SmartScreen shows a blue dialog. **More info** → **Run anyway**.
 
+## Updates
+
+emb3r checks GitHub for a new version a few seconds after launch, and again any time you click **Check for Updates** in Settings. Checking is automatic; downloading is not — you decide when to pull it down.
+
+- **Windows** — downloaded updates install the next time you restart the app.
+- **macOS** — installing automatically needs a paid Apple Developer certificate, which these builds don't have (see [First launch will warn you](#first-launch-will-warn-you) above — same underlying reason). If the automatic install can't complete, emb3r tells you and offers a direct link to the new version instead, same as installing it the first time.
+
 ## The models
 
 emb3r ships **without** a model — they're large, and the right one depends on your hardware. On first launch it recommends one and fetches it for you. All are 4-bit quantized (Q4_K_M) GGUF weights from Hugging Face.
@@ -79,14 +91,14 @@ emb3r won't offer a model your machine can't hold — with 8 GB of RAM, the 14B 
 
 ## Where your data lives
 
-Models and settings sit outside the app bundle, so they survive updates:
+Models, settings and conversation history sit outside the app bundle, so they survive updates:
 
 | Platform | Location |
 |---|---|
 | macOS | `~/Library/Application Support/emb3r/` |
 | Windows | `%APPDATA%\emb3r\` |
 
-Delete that folder to reset emb3r completely, downloaded models included.
+Conversations live in a `conversations/` subfolder there, one folder per profile. Delete the whole thing to reset emb3r completely — models, settings and every saved chat.
 
 ## Building from source
 

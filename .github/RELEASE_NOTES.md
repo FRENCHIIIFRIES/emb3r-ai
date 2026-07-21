@@ -1,5 +1,14 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
+## New since v1.0.2
+
+- **Replies stream in** as they're generated, with a stop button and a live tokens/sec + context readout
+- **Conversation history** — each profile now keeps its own chats, saved to disk and restored on launch
+- **Copy buttons** on every message and for the whole conversation
+- **Editable personality** — the instructions that define Ember are no longer hardcoded; change them in Settings
+- **Checks for updates from inside the app** (see below)
+- File attachments are validated — rejects anything that isn't actually text, and anything too large for the model's context window
+
 ## Which file do I want?
 
 | Your machine | Download |
