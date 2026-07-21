@@ -517,6 +517,113 @@ copyAllButton.addEventListener("click", async () => {
   }
   setTimeout(() => { copyAllButton.textContent = "⧉ Copy chat"; }, 1200);
 });
+
+// =============================
+// Conversation history
+// =============================
+
+const historyWrap   = document.getElementById("historyWrap");
+const historyButton = document.getElementById("historyButton");
+const historyPanel  = document.getElementById("historyPanel");
+const historyList   = document.getElementById("historyList");
+const newChatButton = document.getElementById("newChatButton");
+
+let activeConversationId = null;
+
+// static rendering of a saved reply - the streaming machinery (beginStream /
+// writeStream) exists to grow a line token by token, which restored history
+// does not need since the full text is already known
+function appendStaticBotLine(text) {
+  const line = document.createElement("div");
+  line.className = "bot";
+  const span = document.createElement("span");
+  span.className = "msgText";
+  span.textContent = `ember > ${text}`;
+  line.appendChild(span);
+  line.appendChild(makeCopyButton(() => text));
+  chat.appendChild(line);
+}
+
+// repaints #chat from whatever conversation the main process currently has
+// active. Called after boot, and again every time emb3r:model-ready fires -
+// which covers profile switches and model switches too, since those all funnel
+// through the same main-process path that can change which conversation is
+// active.
+async function renderActiveConversationHistory() {
+  const conv = await window.emb3r.getActiveConversation();
+  activeConversationId = conv ? conv.id : null;
+  chat.replaceChildren();
+  if (!conv || !conv.messages.length) return;
+  for (const m of conv.messages) {
+    if (m.role === "user") append("you", "you", m.text, { copyable: true });
+    else appendStaticBotLine(m.text);
+  }
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function refreshHistoryList() {
+  const conversations = await window.emb3r.listConversations();
+  historyList.replaceChildren();
+
+  if (!conversations.length) {
+    const empty = document.createElement("div");
+    empty.className = "historyEmpty";
+    empty.textContent = "No saved chats yet";
+    historyList.appendChild(empty);
+    return;
+  }
+
+  for (const c of conversations) {
+    const row = document.createElement("div");
+    row.className = "historyRow" + (c.id === activeConversationId ? " active" : "");
+
+    const title = document.createElement("span");
+    title.className = "historyTitle";
+    title.textContent = c.title || "New chat";
+    row.appendChild(title);
+
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "✕";
+    delBtn.title = "Delete this chat";
+    delBtn.addEventListener("click", async (e) => {
+      e.stopPropagation(); // don't also trigger the row's own load-on-click
+      await window.emb3r.deleteConversation(c.id);
+      await renderActiveConversationHistory();
+      await refreshHistoryList();
+    });
+    row.appendChild(delBtn);
+
+    row.addEventListener("click", async () => {
+      await window.emb3r.loadConversation(c.id);
+      await renderActiveConversationHistory();
+      historyWrap.classList.remove("open");
+    });
+
+    historyList.appendChild(row);
+  }
+}
+
+historyButton.addEventListener("click", () => {
+  const opening = !historyWrap.classList.contains("open");
+  historyWrap.classList.toggle("open");
+  if (opening) refreshHistoryList();
+});
+
+newChatButton.addEventListener("click", async () => {
+  await window.emb3r.newConversation();
+  await renderActiveConversationHistory();
+  await refreshHistoryList();
+  historyWrap.classList.remove("open");
+});
+
+// the very first thing to happen after the model finishes loading - or fails
+// to - is that the active conversation may have changed, so always repaint.
+// if the history popover happens to be open (e.g. it was open while switching
+// profiles), refresh it too so it cannot show another profile's chats.
+window.emb3r.onModelReady(() => {
+  renderActiveConversationHistory();
+  if (historyWrap.classList.contains("open")) refreshHistoryList();
+});
 closeSettings.addEventListener("click", () => settingsPanel.classList.remove("open"));
 
 document.addEventListener("click", (e) => {
@@ -525,6 +632,9 @@ document.addEventListener("click", (e) => {
     const clickedModal = document.getElementById("consentModal").contains(e.target);
     if (settingsPanel.classList.contains("open") && !clickedInsidePanel && !clickedButton && !clickedModal) {
         settingsPanel.classList.remove("open");
+    }
+    if (historyWrap.classList.contains("open") && !historyWrap.contains(e.target)) {
+        historyWrap.classList.remove("open");
     }
 });
 

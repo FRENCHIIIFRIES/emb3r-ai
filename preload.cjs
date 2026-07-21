@@ -18,6 +18,19 @@ contextBridge.exposeInMainWorld("emb3r", {
   onGenStats: (callback) => {
     ipcRenderer.on("emb3r:gen-stats", (_event, data) => callback(data));
   },
+
+  getActiveConversation: () => ipcRenderer.invoke("emb3r:get-active-conversation"),
+  listConversations: () => ipcRenderer.invoke("emb3r:list-conversations"),
+  newConversation: () => ipcRenderer.invoke("emb3r:new-conversation"),
+  loadConversation: (id) => ipcRenderer.invoke("emb3r:load-conversation", id),
+  deleteConversation: (id) => ipcRenderer.invoke("emb3r:delete-conversation", id),
+  onConversationSaved: (callback) => {
+    ipcRenderer.on("emb3r:conversation-saved", (_event, data) => callback(data));
+  },
+  onModelReady: (callback) => {
+    ipcRenderer.on("emb3r:model-ready", (_event, data) => callback(data));
+  },
+
   getConfig: () => ipcRenderer.invoke("emb3r:get-config"),
   setInternetConsent: (granted) => ipcRenderer.invoke("emb3r:set-internet-consent", granted),
 
