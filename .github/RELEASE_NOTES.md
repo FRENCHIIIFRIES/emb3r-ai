@@ -1,5 +1,9 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
+## New since v1.0.7
+
+- Gemini web access now **falls back to the local model instead of dead-ending** when it fails (rate limit, bad key, etc.), with a plain-English explanation instead of a raw API error
+
 ## New since v1.0.6
 
 - File attachments **now always accept ordinary ~20KB files**, regardless of which model is loaded — the previous fix still fell short of that on the smallest context size
