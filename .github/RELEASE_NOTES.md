@@ -1,5 +1,9 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
+## New since v1.0.8
+
+- **It's now obvious when a message is going to the web.** Automatic web-access detection only asks permission once, ever — after that it silently routes matching messages to Gemini. Now you get an unmissable notice the moment it happens, not just a subtle label after the fact, and past conversations show which replies used the web too
+
 ## New since v1.0.7
 
 - Gemini web access now **falls back to the local model instead of dead-ending** when it fails (rate limit, bad key, etc.), with a plain-English explanation instead of a raw API error
