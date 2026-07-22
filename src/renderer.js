@@ -349,12 +349,36 @@ window.emb3r.onAnswerSource(({ source }) => {
   if (streamTextEl) streamTextEl.textContent = currentAnswerPrefix;
 });
 
+// a plain append() would land these below the (already on-screen, still
+// empty) reply line that beginStream() creates before sendMessage is even
+// called, reading as if the notice followed the reply it's actually about.
+// Inserting before streamLine keeps chat order chronological.
+function appendBeforeStream(kind, text) {
+  const line = document.createElement("div");
+  line.className = kind;
+  const span = document.createElement("span");
+  span.className = "msgText";
+  span.textContent = `${kind} > ${text}`;
+  line.appendChild(span);
+  if (streamLine) chat.insertBefore(line, streamLine);
+  else chat.appendChild(line);
+  chat.scrollTop = chat.scrollHeight;
+}
+
 // fires when Gemini fails for any reason (quota, bad key, etc.) and main.js
 // has already fallen back to the local model rather than dead-ending the
 // conversation - onAnswerSource fires again right after this with "local",
 // which corrects the prefix above on its own
 window.emb3r.onGeminiFallback(({ reason }) => {
-  append("sys", "sys", reason);
+  appendBeforeStream("sys", reason);
+});
+
+// automatic web-access detection is silent by design - consent is asked once
+// ever, not per message - so this is the one moment a user finds out *this*
+// message is leaving the machine, rather than noticing after the fact from
+// the subtler "ember (web) >" label on the reply itself
+window.emb3r.onWebSearchStart(() => {
+  appendBeforeStream("sys", "🌐 this looks like it needs current info - asking the web (Gemini)");
 });
 
 // swaps the send button for a stop button while Ember is talking
@@ -585,13 +609,15 @@ let activeConversationId = null;
 
 // static rendering of a saved reply - the streaming machinery (beginStream /
 // writeStream) exists to grow a line token by token, which restored history
-// does not need since the full text is already known
-function appendStaticBotLine(text) {
+// does not need since the full text is already known. Carries the same
+// "(web)" label a live Gemini reply gets, so scrolling back still shows
+// which answers left the machine - not just the live moment it happened.
+function appendStaticBotLine(text, source) {
   const line = document.createElement("div");
   line.className = "bot";
   const span = document.createElement("span");
   span.className = "msgText";
-  span.textContent = `ember > ${text}`;
+  span.textContent = `${source === "gemini" ? "ember (web) > " : "ember > "}${text}`;
   line.appendChild(span);
   line.appendChild(makeCopyButton(() => text));
   chat.appendChild(line);
@@ -609,7 +635,7 @@ async function renderActiveConversationHistory() {
   if (!conv || !conv.messages.length) return;
   for (const m of conv.messages) {
     if (m.role === "user") append("you", "you", m.text, { copyable: true });
-    else appendStaticBotLine(m.text);
+    else appendStaticBotLine(m.text, m.source);
   }
   chat.scrollTop = chat.scrollHeight;
 }

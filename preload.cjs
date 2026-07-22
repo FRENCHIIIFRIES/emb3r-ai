@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("emb3r", {
   onGeminiFallback: (callback) => {
     ipcRenderer.on("emb3r:gemini-fallback", (_event, data) => callback(data));
   },
+  onWebSearchStart: (callback) => {
+    ipcRenderer.on("emb3r:web-search-start", () => callback());
+  },
 
   geminiKeyStatus: () => ipcRenderer.invoke("emb3r:gemini-key-status"),
   setGeminiKey: (key) => ipcRenderer.invoke("emb3r:set-gemini-key", key),

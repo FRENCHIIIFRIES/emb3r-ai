@@ -1133,6 +1133,12 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
 
     if (wantsGemini) {
+      // the automatic keyword detection that got here is silent by design -
+      // consent for it is only ever asked once, not per message - so this is
+      // the one place a user finds out *this specific message* is about to
+      // leave the machine, rather than discovering it after the fact from a
+      // subtle "(web)" label on the reply
+      if (mainWindow) mainWindow.webContents.send("emb3r:web-search-start");
       try {
         ({ text, sources } = await answerWithGemini(userMessage, onTextChunk, controller.signal));
       } catch (geminiErr) {
