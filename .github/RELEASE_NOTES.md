@@ -1,5 +1,9 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
 
+## New since v1.0.9
+
+- The **Gemini model is now overridable** in Settings → Web access, instead of a single hardcoded default — useful if your account doesn't have access to "gemini-flash-latest" but does work with a specific model like "gemini-2.5-flash"
+
 ## New since v1.0.8
 
 - **It's now obvious when a message is going to the web.** Automatic web-access detection only asks permission once, ever — after that it silently routes matching messages to Gemini. Now you get an unmissable notice the moment it happens, not just a subtle label after the fact, and past conversations show which replies used the web too
