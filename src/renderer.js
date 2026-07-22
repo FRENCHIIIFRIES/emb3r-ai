@@ -349,6 +349,14 @@ window.emb3r.onAnswerSource(({ source }) => {
   if (streamTextEl) streamTextEl.textContent = currentAnswerPrefix;
 });
 
+// fires when Gemini fails for any reason (quota, bad key, etc.) and main.js
+// has already fallen back to the local model rather than dead-ending the
+// conversation - onAnswerSource fires again right after this with "local",
+// which corrects the prefix above on its own
+window.emb3r.onGeminiFallback(({ reason }) => {
+  append("sys", "sys", reason);
+});
+
 // swaps the send button for a stop button while Ember is talking
 function setGenerating(on) {
   send.disabled = on;

@@ -1016,6 +1016,38 @@ async function answerWithGemini(userMessage, onTextChunk, signal) {
   return { text, sources };
 }
 
+// GoogleGenAI's ApiError.message is JSON.stringify(errorBody) (confirmed by
+// reading node_modules/@google/genai's throwErrorIfNotOK), and when the
+// response wasn't JSON content-type, errorBody.error.message is itself the
+// raw response text - which for Gemini's own error responses is another
+// layer of JSON. Drilling through both layers turns that into a message a
+// non-technical user can actually read.
+function describeGeminiError(err) {
+  let inner = null;
+  try {
+    inner = JSON.parse(err.message).error;
+  } catch {
+    // not JSON at all - fall through to the generic message below
+  }
+  if (inner && typeof inner.message === "string") {
+    try {
+      const reParsed = JSON.parse(inner.message).error;
+      if (reParsed) inner = reParsed;
+    } catch {
+      // inner.message wasn't itself JSON - use it as-is
+    }
+  }
+  const status = inner?.status || "";
+  const code = inner?.code || err.status;
+  if (status === "RESOURCE_EXHAUSTED" || code === 429) {
+    return "Gemini's free-tier quota is used up right now (rate limit). Answering with the local model instead.";
+  }
+  if (code === 401 || code === 403 || status === "PERMISSION_DENIED" || status === "UNAUTHENTICATED") {
+    return "Gemini rejected the API key (invalid or revoked). Answering with the local model instead - check the key in Settings.";
+  }
+  return `Gemini couldn't answer (${inner?.message || err.message || String(err)}). Answering with the local model instead.`;
+}
+
 ipcMain.handle("emb3r:gemini-key-status", () => ({ configured: Boolean(config.geminiApiKey) }));
 
 ipcMain.handle("emb3r:set-gemini-key", (_e, key) => {
@@ -1095,13 +1127,31 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
 
   try {
     let text, sources;
-    const source = wantsGemini ? "gemini" : "local";
+    let source = wantsGemini ? "gemini" : "local";
     // sent explicitly either way, so the renderer never has to assume "no
     // event means local" - it always knows which one is about to answer
     if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
 
     if (wantsGemini) {
-      ({ text, sources } = await answerWithGemini(userMessage, onTextChunk, controller.signal));
+      try {
+        ({ text, sources } = await answerWithGemini(userMessage, onTextChunk, controller.signal));
+      } catch (geminiErr) {
+        // Gemini is a nice-to-have, never a hard dependency - a quota limit,
+        // a bad key, or Google having a bad day shouldn't dead-end the
+        // conversation when the local model can still answer. Re-send
+        // answer-source so the renderer's label matches what's actually
+        // about to happen.
+        if (mainWindow) {
+          mainWindow.webContents.send("emb3r:gemini-fallback", { reason: describeGeminiError(geminiErr) });
+        }
+        source = "local";
+        if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
+        text = await chatSession.prompt(userMessage, {
+          signal: controller.signal,
+          stopOnAbortSignal: true,
+          onTextChunk,
+        });
+      }
     } else {
       text = await chatSession.prompt(userMessage, {
         signal: controller.signal,
@@ -1132,8 +1182,11 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // a Gemini exchange never went through chatSession.prompt(), so the
       // local model's own history has no idea it happened. Replaying the
       // full persisted transcript keeps a mixed conversation coherent if the
-      // next message goes back to the local model.
-      if (wantsGemini) {
+      // next message goes back to the local model. Checked against the
+      // actual source, not the original wantsGemini intent - a fallback to
+      // local after a Gemini failure did go through chatSession.prompt(),
+      // so re-syncing here would be redundant.
+      if (source === "gemini") {
         try {
           chatSession.setChatHistory(toChatHistory(activeConversation));
         } catch (err) {
