@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("emb3r", {
   geminiKeyStatus: () => ipcRenderer.invoke("emb3r:gemini-key-status"),
   setGeminiKey: (key) => ipcRenderer.invoke("emb3r:set-gemini-key", key),
   clearGeminiKey: () => ipcRenderer.invoke("emb3r:clear-gemini-key"),
+  setGeminiModel: (model) => ipcRenderer.invoke("emb3r:set-gemini-model", model),
 
   getActiveConversation: () => ipcRenderer.invoke("emb3r:get-active-conversation"),
   listConversations: () => ipcRenderer.invoke("emb3r:list-conversations"),

@@ -512,6 +512,24 @@ pre{
     opacity:0.75;
 }
 
+#geminiModelButtons{
+    display:flex;
+    gap:8px;
+    margin-top:8px;
+}
+
+#geminiModelButtons button{
+    flex:1;
+    width:auto;
+}
+
+#geminiModelStatus{
+    font-size:13px;
+    min-height:1.2em;
+    margin-top:4px;
+    opacity:0.75;
+}
+
 #updateVersion{
     opacity:0.75;
     margin-bottom:4px;
@@ -1040,6 +1058,14 @@ pre{
             <button id="geminiKeyClear">Clear</button>
         </div>
         <div id="geminiKeyStatus"></div>
+
+        <label>Gemini model — defaults to "gemini-flash-latest". Override this if your account doesn't have access to that (e.g. it works with "gemini-2.5-flash" instead) or you just want a different one.</label>
+        <input type="text" id="geminiModelInput" placeholder="gemini-flash-latest" autocomplete="off">
+        <div id="geminiModelButtons">
+            <button id="geminiModelSave">Save</button>
+            <button id="geminiModelReset">Reset to default</button>
+        </div>
+        <div id="geminiModelStatus"></div>
     </div>
 
     <div class="settingsSection" data-tab="models">

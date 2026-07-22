@@ -805,6 +805,9 @@ async function loadConfigIntoUI() {
   await refreshPersonality();
   await initUpdateUI();
   await refreshGeminiKeyStatus();
+  // unlike the key, the model name isn't secret, so it's shown directly
+  // rather than reduced to a configured/not-configured state
+  geminiModelInput.value = currentConfig.geminiModel || "";
 }
 
 // =============================
@@ -881,6 +884,27 @@ geminiKeySave.addEventListener("click", async () => {
 geminiKeyClear.addEventListener("click", async () => {
   await window.emb3r.clearGeminiKey();
   await refreshGeminiKeyStatus();
+});
+
+const geminiModelInput  = document.getElementById("geminiModelInput");
+const geminiModelSave   = document.getElementById("geminiModelSave");
+const geminiModelReset  = document.getElementById("geminiModelReset");
+const geminiModelStatus = document.getElementById("geminiModelStatus");
+
+geminiModelSave.addEventListener("click", async () => {
+  const model = geminiModelInput.value.trim();
+  await window.emb3r.setGeminiModel(model);
+  currentConfig.geminiModel = model;
+  geminiModelStatus.textContent = model ? "saved" : "reset to default";
+  setTimeout(() => { geminiModelStatus.textContent = ""; }, 1500);
+});
+
+geminiModelReset.addEventListener("click", async () => {
+  geminiModelInput.value = "";
+  await window.emb3r.setGeminiModel("");
+  currentConfig.geminiModel = "";
+  geminiModelStatus.textContent = "reset to default";
+  setTimeout(() => { geminiModelStatus.textContent = ""; }, 1500);
 });
 
 // =============================

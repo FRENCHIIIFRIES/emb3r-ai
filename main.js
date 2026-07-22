@@ -52,6 +52,9 @@ function defaultConfig() {
     // a secret, same handling as the spotify tokens below: written from the
     // renderer, never read back to it, and excluded from emb3r:get-config
     geminiApiKey: "",
+    // empty means "use the default" (see DEFAULT_GEMINI_MODEL below) - not a
+    // secret, so unlike geminiApiKey this one does flow through get-config
+    geminiModel: "",
     spotifyClientId: "",
     spotifyAccessToken: null,
     spotifyRefreshToken: null,
@@ -984,8 +987,11 @@ function getGeminiClient() {
 
 // "-latest" aliases track whatever Google currently recommends for this tier,
 // so this doesn't go stale the way a dated snapshot (e.g. "gemini-2.5-flash")
-// does once Google retires it for new users.
-const GEMINI_MODEL = "gemini-flash-latest";
+// does once Google retires it for new users. Some accounts still have access
+// to a pinned snapshot that "-latest" doesn't resolve to for them (older
+// accounts, specific tiers, etc.), so this is only the default - a user can
+// override it with any model name their own key actually has access to.
+const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
 // answers one message via Gemini with Google Search grounding enabled,
 // streaming through the same onTextChunk shape the local model uses so the
@@ -995,7 +1001,7 @@ async function answerWithGemini(userMessage, onTextChunk, signal) {
   if (!client) throw new Error("No Gemini API key configured.");
 
   const stream = await client.models.generateContentStream({
-    model: GEMINI_MODEL,
+    model: config.geminiModel || DEFAULT_GEMINI_MODEL,
     contents: userMessage,
     config: { tools: [{ googleSearch: {} }] },
   });
@@ -1063,6 +1069,14 @@ ipcMain.handle("emb3r:clear-gemini-key", () => {
   config.geminiApiKey = "";
   saveConfig(config);
   geminiClient = null;
+  return { success: true };
+});
+
+// an empty string is valid here (means "use the default") - unlike the key,
+// there's nothing to reject on empty input
+ipcMain.handle("emb3r:set-gemini-model", (_e, model) => {
+  config.geminiModel = typeof model === "string" ? model.trim() : "";
+  saveConfig(config);
   return { success: true };
 });
 
