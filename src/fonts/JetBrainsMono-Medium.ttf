@@ -1,5 +1,0 @@
-@font-face {
-  font-family: "JetBrains Mono";
-  src: url("./fonts/JetBrainsMono-Medium.ttf") format("truetype");
-  font-weight: 500;
-}

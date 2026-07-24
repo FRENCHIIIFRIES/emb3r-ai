@@ -808,6 +808,7 @@ async function loadConfigIntoUI() {
   // unlike the key, the model name isn't secret, so it's shown directly
   // rather than reduced to a configured/not-configured state
   geminiModelInput.value = currentConfig.geminiModel || "";
+  renderNetStatus(await window.emb3r.netStatus());
 }
 
 // =============================
@@ -905,6 +906,92 @@ geminiModelReset.addEventListener("click", async () => {
   currentConfig.geminiModel = "";
   geminiModelStatus.textContent = "reset to default";
   setTimeout(() => { geminiModelStatus.textContent = ""; }, 1500);
+});
+
+// =============================
+// Network activity + offline lock
+// =============================
+
+const netIndicator      = document.getElementById("netIndicator");
+const netLabel          = document.getElementById("netLabel");
+const netLogEl          = document.getElementById("netLog");
+const offlineLockToggle = document.getElementById("offlineLockToggle");
+const offlineLockStatus = document.getElementById("offlineLockStatus");
+
+function renderNetLog(recent) {
+  netLogEl.replaceChildren();
+
+  if (!recent.length) {
+    const empty = document.createElement("div");
+    empty.className = "netEmpty";
+    empty.textContent = "nothing has left this machine since launch";
+    netLogEl.appendChild(empty);
+    return;
+  }
+
+  for (const entry of recent) {
+    const row = document.createElement("div");
+    row.className = "netRow";
+    if (entry.outcome === "blocked") row.classList.add("blocked");
+    if (entry.outcome === "blocked-renderer") row.classList.add("blockedRenderer");
+
+    const what = document.createElement("span");
+    what.className = "netWhat";
+    what.textContent = entry.outcome === "open" ? entry.what : `blocked: ${entry.what}`;
+    row.appendChild(what);
+
+    const meta = document.createElement("span");
+    meta.className = "netMeta";
+    const time = new Date(entry.at).toLocaleTimeString();
+    meta.textContent = entry.count > 1 ? `×${entry.count}  ${time}` : time;
+    row.appendChild(meta);
+
+    netLogEl.appendChild(row);
+  }
+}
+
+function renderNetStatus(status) {
+  const active = Boolean(status.active);
+  const locked = Boolean(status.locked);
+  const recent = status.recent || [];
+
+  netIndicator.classList.toggle("active", active);
+  // the lock is only worth announcing when nothing is in flight - if something
+  // is, that is the more urgent thing for the light to be saying
+  netIndicator.classList.toggle("locked", locked && !active);
+
+  if (active) {
+    // name what is actually happening rather than a generic "connecting"
+    const open = recent.find((r) => r.outcome === "open");
+    netLabel.textContent = open ? open.what : "network activity";
+  } else if (locked) {
+    netLabel.textContent = "offline lock on";
+  } else {
+    netLabel.textContent = "no network activity";
+  }
+
+  offlineLockToggle.checked = locked;
+  renderNetLog(recent);
+}
+
+window.emb3r.onNetActivity(renderNetStatus);
+
+offlineLockToggle.addEventListener("change", async () => {
+  const wanted = offlineLockToggle.checked;
+  const result = await window.emb3r.setOfflineLock(wanted);
+
+  if (!result.success) {
+    // main refuses to lock with no model on disk - reflect that rather than
+    // leaving the box showing a state that was not applied
+    offlineLockToggle.checked = false;
+    offlineLockStatus.textContent = result.error;
+    return;
+  }
+
+  offlineLockStatus.textContent = wanted
+    ? "on — outbound connections are refused"
+    : "off — emb3r can connect for downloads, updates, and anything you enable";
+  renderNetStatus(await window.emb3r.netStatus());
 });
 
 // =============================

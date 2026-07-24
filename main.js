@@ -42,6 +42,9 @@ const MAX_PERSONALITY_LENGTH = 2000;
 function defaultConfig() {
   return {
     internetConsent: false,
+    // hard-disables every outbound connection from the main process. Off by
+    // default because a fresh install still has to fetch a model.
+    offlineLock: false,
     activeModel: DEFAULT_MODEL_FILE,
     profiles: [{ id: "default", name: "" }],
     activeProfileId: "default",
@@ -78,6 +81,156 @@ let chatSession = null;
 let chatSequence = null;
 let modelLoadError = null;
 let mainWindow = null;
+
+// ============================================================
+// Network guard: activity reporting and the offline lock
+// ============================================================
+//
+// Everything this app sends out - the model download, the update check,
+// Gemini, Spotify - leaves through Node's http/https stack or global fetch.
+// Wrapping all three here, rather than checking a flag at each call site,
+// means the lock and the indicator also cover code we did not write
+// (electron-updater, @google/genai) and cannot be defeated by a new call site
+// that forgets to ask. Libraries that resolve https.request at call time -
+// which is the normal pattern - go through this; the renderer is covered
+// separately by connect-src 'none' and the webRequest block in createWindow().
+
+class OfflineLockError extends Error {
+  constructor(host) {
+    super(`Offline lock is on, so emb3r blocked a connection to ${host}. Turn it off in Settings if you want this.`);
+    this.name = "OfflineLockError";
+    this.isOfflineLock = true;
+  }
+}
+
+// what a hostname actually means, so the indicator can say "checking for
+// updates" instead of making the user recognise api.github.com
+function describeHost(host) {
+  const h = String(host || "").toLowerCase();
+  if (h.includes("huggingface.co") || h.includes("hf.co") || h.includes("cdn-lfs")) return "downloading a model";
+  if (h.includes("github.com") || h.includes("githubusercontent.com")) return "checking for updates";
+  if (h.includes("generativelanguage.googleapis.com")) return "asking the web (Gemini)";
+  if (h.includes("spotify.com")) return "Spotify now-playing";
+  return h || "unknown";
+}
+
+// the Spotify sign-in flow runs a callback server on 127.0.0.1. Loopback never
+// leaves the machine, so it is neither blocked nor reported as network activity
+function isLoopback(host) {
+  const h = String(host || "").toLowerCase();
+  return h === "localhost" || h === "::1" || h === "[::1]" || h.startsWith("127.");
+}
+
+function hostFromRequestArgs(args) {
+  const first = args[0];
+  if (typeof first === "string") {
+    try { return new URL(first).hostname; } catch { return first; }
+  }
+  if (first instanceof URL) return first.hostname;
+  if (first && typeof first === "object") return first.hostname || first.host || "unknown";
+  return "unknown";
+}
+
+function hostFromFetchInput(input) {
+  try {
+    if (typeof input === "string") return new URL(input).hostname;
+    if (input instanceof URL) return input.hostname;
+    if (input && typeof input.url === "string") return new URL(input.url).hostname;
+  } catch { /* fall through to unknown */ }
+  return "unknown";
+}
+
+let netInFlight = 0;
+const netHistory = []; // newest first - the receipts for "it only talks when it says it does"
+
+function broadcastNet() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("emb3r:net-activity", {
+    active: netInFlight > 0,
+    inFlight: netInFlight,
+    locked: Boolean(config.offlineLock),
+    recent: netHistory.slice(0, 25),
+  });
+}
+
+function noteNet(host, outcome) {
+  // Spotify polls every 10s and the update check retries, so an un-collapsed
+  // log would bury the one entry someone actually wants to find. Same host and
+  // same outcome in quick succession becomes a count on the existing row.
+  const last = netHistory[0];
+  if (last && last.host === host && last.outcome === outcome && Date.now() - last.at < 30_000) {
+    last.at = Date.now();
+    last.count += 1;
+  } else {
+    netHistory.unshift({ host, what: describeHost(host), outcome, at: Date.now(), count: 1 });
+    if (netHistory.length > 100) netHistory.length = 100;
+  }
+  broadcastNet();
+}
+
+// false means the lock refused it and the caller must not proceed
+function netBegin(host) {
+  if (isLoopback(host)) return true;
+  if (config.offlineLock) {
+    noteNet(host, "blocked");
+    return false;
+  }
+  netInFlight++;
+  noteNet(host, "open");
+  return true;
+}
+
+function netEnd(host) {
+  if (isLoopback(host)) return;
+  netInFlight = Math.max(0, netInFlight - 1);
+  broadcastNet();
+}
+
+function guardRequestFn(original) {
+  return function guarded(...args) {
+    const host = hostFromRequestArgs(args);
+    if (!netBegin(host)) throw new OfflineLockError(host);
+    let req;
+    try {
+      req = original(...args);
+    } catch (err) {
+      netEnd(host);
+      throw err;
+    }
+    // "close" fires for both success and failure, but errors can arrive first,
+    // so guard against decrementing twice for one request
+    let settled = false;
+    const finish = () => { if (!settled) { settled = true; netEnd(host); } };
+    req.on("close", finish);
+    req.on("error", finish);
+    return req;
+  };
+}
+
+const _httpsRequest = https.request.bind(https);
+const _httpsGet = https.get.bind(https);
+const _httpRequest = http.request.bind(http);
+const _httpGet = http.get.bind(http);
+const _fetch = globalThis.fetch;
+
+// https.get calls the module's own request internally, so patching request
+// alone would leave get unguarded - both need wrapping
+https.request = guardRequestFn(_httpsRequest);
+https.get = guardRequestFn(_httpsGet);
+http.request = guardRequestFn(_httpRequest);
+http.get = guardRequestFn(_httpGet);
+
+globalThis.fetch = async function guardedFetch(input, init) {
+  const host = hostFromFetchInput(input);
+  if (!netBegin(host)) throw new OfflineLockError(host);
+  try {
+    return await _fetch(input, init);
+  } finally {
+    // the body may still be streaming here, but for an activity light the
+    // response headers landing is the honest end of "a request is in flight"
+    netEnd(host);
+  }
+};
 
 function activeProfile() {
   return config.profiles.find((p) => p.id === config.activeProfileId) || config.profiles[0];
@@ -321,6 +474,22 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  // The renderer has no legitimate reason to reach the network - every
+  // privileged operation goes through IPC - so refuse anything that is not a
+  // local scheme, always, lock or no lock. connect-src 'none' in index.html
+  // says the same thing one layer up; this one is enforced by the browser
+  // process, so a CSP mistake in the markup cannot quietly re-open the door.
+  win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+    const url = details.url || "";
+    if (/^(file|devtools|data|blob|chrome-extension):/i.test(url)) {
+      return callback({ cancel: false });
+    }
+    let host = url;
+    try { host = new URL(url).hostname; } catch { /* keep the raw url */ }
+    noteNet(host, "blocked-renderer");
+    callback({ cancel: true });
+  });
+
   win.loadFile(path.join(__dirname, "src", "index.html"));
   return win;
 }
@@ -425,7 +594,9 @@ app.whenReady().then(async () => {
 
   // a few seconds after launch, not competing with model loading for
   // attention, and not the very first thing a user sees
-  if (app.isPackaged) {
+  // the guard would block this anyway, but asking at all when locked just
+  // writes a "blocked" row every launch for something the user already said no to
+  if (app.isPackaged && !config.offlineLock) {
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch((err) => console.error("Startup update check failed:", err));
     }, 5000);
@@ -442,6 +613,32 @@ ipcMain.handle("emb3r:get-config", () => {
   // never leak spotify tokens or the gemini key to the renderer
   const { spotifyAccessToken, spotifyRefreshToken, geminiApiKey, ...safe } = config;
   return safe;
+});
+
+ipcMain.handle("emb3r:net-status", () => ({
+  active: netInFlight > 0,
+  inFlight: netInFlight,
+  locked: Boolean(config.offlineLock),
+  recent: netHistory.slice(0, 25),
+}));
+
+ipcMain.handle("emb3r:set-offline-lock", (_e, on) => {
+  const wanted = Boolean(on);
+  // locking with nothing on disk would strand the app: no model to answer
+  // with, and the lock itself blocking the download that would fix it
+  if (wanted) {
+    const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)));
+    if (!anyDownloaded) {
+      return {
+        success: false,
+        error: "Download a model first — locking now would leave emb3r unable to answer and unable to fetch one.",
+      };
+    }
+  }
+  config.offlineLock = wanted;
+  saveConfig(config);
+  broadcastNet();
+  return { success: true, locked: wanted };
 });
 
 ipcMain.handle("emb3r:set-internet-consent", (_e, granted) => {
