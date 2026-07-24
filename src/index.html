@@ -3,9 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+
+<!-- The renderer must never reach the network. Every privileged operation
+     already goes through IPC to the main process, so connect-src 'none' costs
+     nothing and turns "we don't phone home" into something the browser engine
+     enforces rather than something you have to take on faith.
+
+     This replaces a <link> to fonts.googleapis.com that ran on every launch:
+     the wordmark's typeface was fetched from Google's CDN each time the app
+     opened, which leaked IP and launch timing and silently degraded to a
+     system font when offline. Both faces are bundled in ./fonts now.
+
+     The app is loaded with loadFile(), so the document origin is file://, where
+     Chromium does not reliably treat 'self' as matching sibling files. Each
+     local-resource directive therefore names file: explicitly - that is local
+     disk, not the network, so it does not loosen anything that matters here.
+     connect-src 'none' is the line doing the privacy work, and it stays. -->
+<meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self' file:;
+    style-src 'self' 'unsafe-inline' file:;
+    font-src 'self' file:;
+    img-src 'self' data: file:;
+    connect-src 'none';
+    form-action 'none';
+    base-uri 'none';
+">
 
 <title>emb3r</title>
 
@@ -33,22 +56,43 @@
     margin-bottom:8px;
 }
 
+/* VT323 is the wordmark and body face. It used to come from Google's CDN on
+   every launch; it is bundled now, so the app looks identical online and off.
+   Both faces are SIL Open Font License - see the LICENSE files in ./fonts. */
 @font-face {
-    font-family: "JetBrains Mono";
-    src: url("./fonts/JetBrainsMono-Regular.ttf") format("truetype");
+    font-family: "VT323";
+    src: url("./fonts/vt323-latin-400-normal.woff2") format("woff2"),
+         url("./fonts/vt323-latin-400-normal.woff") format("woff");
     font-weight: 400;
+    font-display: swap;
+}
+
+/* the previous three rules pointed at .ttf files that were never fonts - they
+   contained the text of this very @font-face block, saved with a .ttf
+   extension - so JetBrains Mono silently fell back to the system monospace.
+   The ASCII progress bars depend on this face for even cell widths. */
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("./fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"),
+         url("./fonts/jetbrains-mono-latin-400-normal.woff") format("woff");
+    font-weight: 400;
+    font-display: swap;
 }
 
 @font-face {
     font-family: "JetBrains Mono";
-    src: url("./fonts/JetBrainsMono-Medium.ttf") format("truetype");
+    src: url("./fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2"),
+         url("./fonts/jetbrains-mono-latin-500-normal.woff") format("woff");
     font-weight: 500;
+    font-display: swap;
 }
 
 @font-face {
     font-family: "JetBrains Mono";
-    src: url("./fonts/JetBrainsMono-Bold.ttf") format("truetype");
+    src: url("./fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2"),
+         url("./fonts/jetbrains-mono-latin-700-normal.woff") format("woff");
     font-weight: 700;
+    font-display: swap;
 }
 
 html,
@@ -302,6 +346,108 @@ pre{
     align-items:center;
     gap:8px;
     margin-bottom:12px;
+}
+
+#netIndicator{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-right:auto; /* status light hugs the left, buttons stay right */
+    font-size:13px;
+    opacity:0.6;
+    white-space:nowrap;
+    transition:opacity .2s ease, color .2s ease;
+}
+
+#netDot{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:var(--text-color);
+    opacity:0.3;
+    flex:0 0 auto;
+}
+
+/* amber and moving for the one state worth noticing: bytes are leaving */
+#netIndicator.active{
+    opacity:1;
+    color:#ffb020;
+}
+
+#netIndicator.active #netDot{
+    background:#ffb020;
+    opacity:1;
+    box-shadow:0 0 6px #ffb020;
+    animation:netPulse 1s ease-in-out infinite;
+}
+
+#netIndicator.locked{
+    opacity:1;
+}
+
+#netIndicator.locked #netDot{
+    background:var(--text-color);
+    opacity:1;
+    box-shadow:0 0 6px var(--text-color);
+}
+
+@keyframes netPulse{
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.5); }
+}
+
+#offlineLockRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+/* the width:auto reset for this checkbox lives beside #soundToggleRow's, far
+   enough down the sheet to actually beat "#settingsPanel input { width:100% }" */
+
+#offlineLockStatus{
+    font-size:13px;
+    min-height:1.2em;
+    margin-top:4px;
+    opacity:0.75;
+}
+
+.settingsNote{
+    font-size:13px;
+    opacity:0.7;
+    line-height:1.5;
+    margin:8px 0 0;
+}
+
+/* the receipts: monospace so hostnames and counts line up as a scannable list */
+#netLog{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    max-height:220px;
+    overflow-y:auto;
+    border:1px solid var(--hover-color);
+    padding:8px;
+}
+
+.netRow{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    padding:2px 0;
+}
+
+.netRow .netMeta{
+    opacity:0.55;
+    white-space:nowrap;
+}
+
+.netRow.blocked .netWhat,
+.netRow.blockedRenderer .netWhat{
+    color:#ff7c7c;
+}
+
+.netEmpty{
+    opacity:0.55;
 }
 
 #historyWrap{
@@ -626,7 +772,8 @@ pre{
     font-size:13px;
 }
 
-#soundToggleRow input{
+#soundToggleRow input,
+#offlineLockRow input{
     padding:0;
     width:auto;
 }
@@ -995,6 +1142,12 @@ pre{
 <div id="app">
 
 <div id="topbar">
+    <!-- the whole privacy claim in one glance: this only lights up while
+         something is actually leaving the machine. Sits left of the buttons
+         because it is a status light, not a control. -->
+    <div id="netIndicator" title="Network activity">
+        <span id="netDot"></span><span id="netLabel">no network activity</span>
+    </div>
     <div id="historyWrap">
         <button id="historyButton" title="Conversation history">🕘 History</button>
         <div id="historyPanel">
@@ -1013,6 +1166,7 @@ pre{
 
     <div id="settingsTabs">
         <button class="settingsTab active" data-tab="account">Account</button>
+        <button class="settingsTab" data-tab="privacy">Privacy</button>
         <button class="settingsTab" data-tab="personality">Personality</button>
         <button class="settingsTab" data-tab="spotify">Spotify</button>
         <button class="settingsTab" data-tab="web">Web access</button>
@@ -1028,6 +1182,22 @@ pre{
         <label>New profile name</label>
         <input type="text" id="newProfileName" placeholder="e.g. Ziyan">
         <button id="addProfileButton">Add Profile</button>
+    </div>
+
+    <div class="settingsSection" data-tab="privacy">
+        <h3>Privacy</h3>
+
+        <div id="offlineLockRow">
+            <input type="checkbox" id="offlineLockToggle">
+            <label for="offlineLockToggle">Offline lock — refuse all outbound connections</label>
+        </div>
+        <div id="offlineLockStatus"></div>
+
+        <p class="settingsNote">While this is on, emb3r refuses every connection it would otherwise make: model downloads, update checks, Gemini web access and Spotify all stop working until you turn it off. It is enforced in the place the connections are actually made, so it holds even for code inside the app's dependencies — not just hidden in this interface.</p>
+        <p class="settingsNote">It does not firewall the rest of your computer. Your operating system and other apps are unaffected.</p>
+
+        <label>Connections since launch</label>
+        <div id="netLog"></div>
     </div>
 
     <div class="settingsSection" data-tab="personality">

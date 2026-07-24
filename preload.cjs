@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld("emb3r", {
   getConfig: () => ipcRenderer.invoke("emb3r:get-config"),
   setInternetConsent: (granted) => ipcRenderer.invoke("emb3r:set-internet-consent", granted),
 
+  netStatus: () => ipcRenderer.invoke("emb3r:net-status"),
+  setOfflineLock: (on) => ipcRenderer.invoke("emb3r:set-offline-lock", on),
+  onNetActivity: (callback) => {
+    ipcRenderer.on("emb3r:net-activity", (_event, data) => callback(data));
+  },
+
   getPersonality: () => ipcRenderer.invoke("emb3r:get-personality"),
   setPersonality: (text) => ipcRenderer.invoke("emb3r:set-personality", text),
   resetPersonality: () => ipcRenderer.invoke("emb3r:reset-personality"),
