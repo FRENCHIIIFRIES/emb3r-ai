@@ -311,10 +311,21 @@ async function loadLocalModel(filename, { conversationId } = {}) {
   notifyModelReady();
 }
 
+// electron-builder embeds the icon into the packaged exe and app bundle, which
+// is what the installed shortcut and taskbar use. This is for the window itself
+// and for `npm start`, where nothing is packaged and the default Electron
+// diamond would otherwise show up in the taskbar. Guarded because a missing
+// icon should never be the reason the window fails to open.
+function appIconPath() {
+  const candidate = path.join(__dirname, "build", "icon.png");
+  return fs.existsSync(candidate) ? candidate : undefined;
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 900,
     height: 700,
+    icon: appIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
