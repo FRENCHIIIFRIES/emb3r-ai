@@ -1,4 +1,24 @@
-A small terminal-dwelling AI companion that runs a language model entirely on your own machine. Nothing you type is sent to a server.
+A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
+
+## v1.1.0 — you can now check the "offline" claim, not just take it
+
+**emb3r was quietly contacting Google on every launch.** Its typeface was being fetched from `fonts.googleapis.com` each time the app opened, which sent your IP address and the time you opened it. The font files bundled in the app that were supposed to prevent this turned out not to be fonts at all — they were 136-byte text files with the wrong extension, so they had never worked. Both typefaces are now genuinely bundled, so the app looks the same online and off, and that connection is gone.
+
+While fixing it we audited everything else the app sends out and found two more things the docs never mentioned: Spotify was being polled every 10 seconds while connected, and Gemini web access (opt-in, but undisclosed here).
+
+So now:
+
+- **A network light in the top-left.** Dim when nothing is happening, amber only while something is genuinely leaving your machine — and it says what, in plain words: "downloading a model", "checking for updates".
+- **An offline lock** in Settings → Privacy. Turn it on and emb3r refuses every outbound connection. It's enforced where the connections are actually made, so it applies even to code inside the app's dependencies — not just greyed-out buttons.
+- **A log of every connection since launch**, so you can check for yourself rather than trusting a claim.
+
+The lock covers this app, not your whole computer, and the interface says so plainly rather than implying more.
+
+**It picks a model that suits your machine.** emb3r now reads your GPU and its memory, not just your RAM, and recommends the largest model that will actually run *well* — not the smallest that fits. A machine with a decent graphics card gets offered something worth its hardware; a laptop without one is still kept out of trouble, because a model that technically fits but answers at a crawl is worse than a smaller one that doesn't.
+
+The model list is legible now too: each one says what it's good at, where it gives up, and how it'll perform *on your machine specifically* — plus a download-time estimate measured from your actual connection.
+
+**It has its own icon.** The app, taskbar, shortcut and installer no longer show Electron's default diamond.
 
 ## New since v1.0.9
 

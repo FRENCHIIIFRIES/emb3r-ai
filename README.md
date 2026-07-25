@@ -34,7 +34,7 @@ ember > ( ^_^ )  it's a shopping list. mostly cheese.
 
 ## Features
 
-- **Fully offline where it matters.** Nothing you type, no file you attach, and no conversation ever leaves the machine — there is no telemetry and no analytics. The one exception is checking GitHub for a new version on launch, which sends nothing about you or your usage; see [Updates](#updates) below.
+- **Fully offline where it matters, and you can check.** Nothing you type, no file you attach, and no conversation ever leaves the machine by default — there is no telemetry and no analytics. A network light shows the moment anything does go out and names what it is, Settings → Privacy logs every connection since launch, and an **offline lock** refuses all outbound connections outright, enforced where the requests are made rather than in the interface. The things that can reach the network, all visible in that log: checking GitHub for a new version on launch, downloading a model, Spotify if you connect it, and Gemini web access if you enable it. The last two are off unless you turn them on.
 - **Replies stream in**, token by token, instead of a blank wait — with a stop button if it's going the wrong way, and a live tokens/sec and context-usage readout.
 - **Remembers your conversations.** Each profile keeps its own history, saved to disk and restored on launch — with real memory of what was said, not just the old text on screen. Switch between past chats or start a new one from the History panel.
 - **Matched to your machine.** On first launch it reads your CPU, RAM and free disk, recommends a model that will actually run, and refuses ones that would exhaust your memory.
