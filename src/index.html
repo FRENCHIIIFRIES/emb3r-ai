@@ -289,6 +289,84 @@ pre{
     line-height:1.2;
 }
 
+/* ============================= */
+/* Reactions: sparkle, heart, thinking, topic change */
+/* ============================= */
+/* All of these are decoration. Every one is switched off by the Animations
+   toggle in Settings and by prefers-reduced-motion at the bottom of this
+   block, and none of them carry information that is not also in the text. */
+
+/* Chat lines are already position:relative for the copy button, so these can
+   be dropped straight into the reply they belong to and rise off it. */
+.sparkle{
+    position:absolute;
+    top:0;
+    line-height:1;
+    opacity:0;
+    pointer-events:none;
+    white-space:pre;
+    animation: sparkleFloat var(--dur, 900ms) ease-out forwards;
+    /* promoted once: several animate together */
+    will-change: transform, opacity;
+}
+
+@keyframes sparkleFloat{
+    0%   { opacity:0; transform: translate(0, 0) scale(0.55); }
+    25%  { opacity:0.9; }
+    70%  { opacity:0.65; }
+    100% { opacity:0; transform: translate(var(--dx, 0), var(--dy, -26px)) scale(1); }
+}
+
+/* Deliberately different in shape from the sparkle - it pops out before it
+   drifts, so "pleased" reads as distinct from "finished" rather than looking
+   like the same effect in another colour. */
+.heartPop{
+    position:absolute;
+    top:0;
+    line-height:1;
+    opacity:0;
+    pointer-events:none;
+    animation: heartRise var(--dur, 1400ms) ease-out forwards;
+    will-change: transform, opacity;
+}
+
+@keyframes heartRise{
+    0%   { opacity:0; transform: translate(0, 4px) scale(0.5); }
+    18%  { opacity:1; transform: translate(0, 0) scale(1.15); }
+    35%  {            transform: translate(0, -6px) scale(1); }
+    100% { opacity:0; transform: translate(var(--dx, 0), var(--dy, -42px)) scale(0.9); }
+}
+
+/* The face already alternates between two expressions while thinking. This is
+   the small bob on top, so it reads as working rather than just blinking. */
+#face.thinking{
+    animation: faceBob 1.2s ease-in-out infinite;
+}
+
+@keyframes faceBob{
+    0%,100% { transform: translateY(0); }
+    50%     { transform: translateY(-3px); }
+}
+
+/* Switching conversations replaced the transcript in a single frame, which
+   read as a glitch. This gives the change somewhere to land. */
+#chat{
+    transition: opacity .18s ease, transform .18s ease;
+}
+
+#chat.swapping{
+    opacity:0;
+    transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce){
+    .sparkle,
+    .heartPop{ display:none; }
+    #face.thinking{ animation:none; }
+    #chat{ transition:none; }
+    #chat.swapping{ opacity:1; transform:none; }
+}
+
 #row{
     display:flex;
     align-items:center;
@@ -740,7 +818,8 @@ pre{
     font-size:18px;
 }
 
-#soundToggleRow{
+#soundToggleRow,
+#animToggleRow{
     display:flex;
     align-items:center;
     gap:8px;
@@ -805,7 +884,8 @@ pre{
 }
 
 #soundToggleRow input,
-#offlineLockRow input{
+#offlineLockRow input,
+#animToggleRow input{
     padding:0;
     width:auto;
 }
@@ -1319,6 +1399,11 @@ pre{
         <div id="soundToggleRow">
             <input type="checkbox" id="soundToggle" checked>
             <label for="soundToggle">Sound effects</label>
+        </div>
+
+        <div id="animToggleRow">
+            <input type="checkbox" id="animToggle" checked>
+            <label for="animToggle">Reactions — sparkles, hearts and transitions</label>
         </div>
     </div>
 </div>
