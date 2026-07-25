@@ -59,6 +59,9 @@ function defaultConfig() {
     spotifyAccessToken: null,
     spotifyRefreshToken: null,
     spotifyTokenExpiry: 0,
+    // remembered result of the GPU probe, which is slow enough (~17s) that
+    // repeating it every launch would be felt. null until first probed.
+    gpuInfo: null,
   };
 }
 
@@ -92,43 +95,188 @@ function systemPrompt() {
 
 // ---- Model catalog (real, verified Hugging Face GGUF repos) ----
 
+// "params" drives the speed judgement below; "strength" and "limit" are shown
+// verbatim in the picker, because a list of filenames and sizes does not tell
+// anyone which model to actually choose.
 const MODEL_CATALOG = [
-  { id: "llama-3.2-3b", name: "Llama 3.2 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.0,
+  { id: "llama-3.2-3b", name: "Llama 3.2 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.0, params: 3,
+    strength: "Fastest to answer. Good for everyday questions, rewriting and short summaries.",
+    limit: "Loses the thread on long multi-step reasoning.",
     repo: "bartowski/Llama-3.2-3B-Instruct-GGUF", file: "Llama-3.2-3B-Instruct-Q4_K_M.gguf" },
-  { id: "qwen2.5-3b", name: "Qwen2.5 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 1.9,
+  { id: "qwen2.5-3b", name: "Qwen2.5 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 1.9, params: 3,
+    strength: "As quick as the 3B above, a little stronger on code and maths.",
+    limit: "Same ceiling: short tasks rather than long reasoning.",
     repo: "bartowski/Qwen2.5-3B-Instruct-GGUF", file: "Qwen2.5-3B-Instruct-Q4_K_M.gguf" },
-  { id: "qwen2.5-7b", name: "Qwen2.5 7B Instruct", tier: "Medium", minRamGB: 8, sizeGB: 4.7,
+  { id: "qwen2.5-7b", name: "Qwen2.5 7B Instruct", tier: "Medium", minRamGB: 8, sizeGB: 4.7, params: 7,
+    strength: "Clear step up in reasoning, code and longer writing.",
+    limit: "Noticeably slower than a 3B without a GPU.",
     repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", file: "Qwen2.5-7B-Instruct-Q4_K_M.gguf" },
-  { id: "llama-3.1-8b", name: "Llama 3.1 8B Instruct", tier: "Medium", minRamGB: 8, sizeGB: 4.9,
+  { id: "llama-3.1-8b", name: "Llama 3.1 8B Instruct", tier: "Medium", minRamGB: 8, sizeGB: 4.9, params: 8,
+    strength: "Strong general-purpose answers and instruction following.",
+    limit: "Wants 8GB of RAM free, and a GPU to feel quick.",
     repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", file: "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf" },
-  { id: "mistral-7b", name: "Mistral 7B Instruct v0.3", tier: "Medium", minRamGB: 8, sizeGB: 4.4,
+  { id: "mistral-7b", name: "Mistral 7B Instruct v0.3", tier: "Medium", minRamGB: 8, sizeGB: 4.4, params: 7,
+    strength: "Concise, fast for its size, good at following a format.",
+    limit: "Weaker at maths than the Qwen models.",
     repo: "bartowski/Mistral-7B-Instruct-v0.3-GGUF", file: "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf" },
-  { id: "qwen2.5-14b", name: "Qwen2.5 14B Instruct", tier: "Large", minRamGB: 16, sizeGB: 9.0,
+  { id: "qwen2.5-14b", name: "Qwen2.5 14B Instruct", tier: "Large", minRamGB: 16, sizeGB: 9.0, params: 14,
+    strength: "Best reasoning and code here by a clear margin.",
+    limit: "Slow to answer unless most of it fits in GPU memory.",
     repo: "bartowski/Qwen2.5-14B-Instruct-GGUF", file: "Qwen2.5-14B-Instruct-Q4_K_M.gguf" },
 ];
 
-// the smallest model the machine can run, not the biggest it could hold.
-// recommending the largest that fits meant a 16GB machine was offered a 9GB
-// download on first launch, which is a poor first run: slow to fetch, slow to
-// answer, and the most likely thing to fail. bigger models stay one click away
-// in Settings.
-function recommendModel(totalRamGB) {
-  const fits = MODEL_CATALOG
-    .filter((m) => m.minRamGB <= totalRamGB)
-    .sort((a, b) => a.sizeGB - b.sizeGB);
-  if (!fits.length) return null;
-  // prefer the shipped default when it runs here - it is within 0.1GB of the
-  // smallest entry, so there is no real cost to picking the better-known model
-  return fits.find((m) => m.file === DEFAULT_MODEL_FILE) || fits[0];
+// Above this, a CPU-only machine answers slowly enough that the app feels
+// broken rather than thoughtful, however much RAM is installed. Fitting in
+// memory and running acceptably are different questions, and only the second
+// one matters to someone waiting for a reply.
+const MAX_CPU_ONLY_PARAMS = 8;
+
+// weights need room for the context and the runtime on top of the file itself
+const MEMORY_HEADROOM = 1.3;
+
+// How much memory the GPU can actually give a model. On unified-memory Macs the
+// GPU shares system RAM, so VRAM "total" is not a separate pool to add on.
+function gpuMemoryBudgetGB(ram, gpu) {
+  if (!gpu || !gpu.backend) return 0;
+  if (gpu.unifiedMemory) return ram * 0.7; // leave the OS its share
+  return gpu.totalVramGB;
 }
 
-function recommendTier(totalRamGB) {
-  const model = recommendModel(totalRamGB);
+// Picks the largest model the machine can run *well*, rather than the smallest
+// that fits. The previous behaviour deliberately picked the smallest, because a
+// 16GB machine being offered a 9GB download was a bad first run - but it also
+// meant a 64GB workstation with a discrete GPU was recommended a 2GB 3B model
+// and never told it could do better. This keeps the caution for CPU-only
+// machines and lets accelerated ones use what they have.
+function recommendModel(ram, gpu) {
+  const runnable = MODEL_CATALOG.filter((m) => m.minRamGB <= ram);
+  if (!runnable.length) return null;
+
+  const biggestFirst = [...runnable].sort((a, b) => b.sizeGB - a.sizeGB);
+  const budget = gpuMemoryBudgetGB(ram, gpu);
+
+  if (budget > 0) {
+    const accelerated = biggestFirst.find((m) => m.sizeGB * MEMORY_HEADROOM <= budget);
+    if (accelerated) return accelerated;
+  }
+
+  // CPU-only, or a GPU too small to hold anything: stay conservative
+  const cpuPick = biggestFirst.find(
+    (m) => m.params <= MAX_CPU_ONLY_PARAMS && m.sizeGB * MEMORY_HEADROOM * 2 <= ram
+  );
+  if (cpuPick) return cpuPick;
+
+  const smallest = [...runnable].sort((a, b) => a.sizeGB - b.sizeGB);
+  return smallest.find((m) => m.file === DEFAULT_MODEL_FILE) || smallest[0];
+}
+
+// why the pick is what it is, in one sentence the setup screen can show
+function explainRecommendation(model, ram, gpu) {
+  if (!model) return "";
+  const budget = gpuMemoryBudgetGB(ram, gpu);
+
+  if (budget > 0 && model.sizeGB * MEMORY_HEADROOM <= budget) {
+    const where = gpu.unifiedMemory ? `${gpu.name || "your GPU"} (unified memory)` : gpu.name || "your GPU";
+    return `Picked because it fits in ${where}, so it should answer quickly.`;
+  }
+
+  // Only claim bigger models were held back for speed if bigger models were
+  // actually available - on a 4GB machine nothing larger fits in the first
+  // place, and saying otherwise would be untrue.
+  const heldBack = MODEL_CATALOG.some((m) => m.minRamGB <= ram && m.sizeGB > model.sizeGB);
+
+  if (!gpu || !gpu.backend) {
+    return heldBack
+      ? `Picked for a CPU-only machine: larger models fit in ${ram}GB but answer too slowly to be pleasant.`
+      : `Picked because it is the most this machine's ${ram}GB will run comfortably without a GPU.`;
+  }
+  return heldBack
+    ? `Picked because your GPU has too little memory to hold a larger one quickly.`
+    : `Picked because it is the most this machine will run comfortably.`;
+}
+
+function recommendTier(ram, gpu) {
+  const model = recommendModel(ram, gpu);
   return model ? model.tier : "None";
 }
 
 function totalRamGB() {
   return Math.round((os.totalmem() / (1024 ** 3)) * 10) / 10;
+}
+
+// Probing the GPU means initialising node-llama-cpp's native binding, which
+// measured at ~17 seconds on an Intel Iris Xe / Vulkan machine. That is far too
+// long to sit in front of anything the user is waiting for, so:
+//   - the result is cached in memory for the session,
+//   - and persisted to config, because a machine's GPU rarely changes, so only
+//     the very first launch ever pays the cost,
+//   - and the probe is kicked off at startup without being awaited, so it is
+//     usually already done by the time anything asks.
+// Callers that must stay responsive use gpuForRecommendation(), which will give
+// up and return null rather than block.
+let gpuInfoCache = null;
+let gpuProbeInFlight = null;
+
+async function probeGpu() {
+  try {
+    const llama = await getLlama();
+    const vram = await llama.getVramState();
+    const names = await llama.getGpuDeviceNames();
+    return {
+      backend: llama.gpu || null, // "cuda" | "vulkan" | "metal", or false when absent
+      name: names && names.length ? names[0] : null,
+      names: names || [],
+      totalVramGB: Math.round((vram.total / 1024 ** 3) * 10) / 10,
+      freeVramGB: Math.round((vram.free / 1024 ** 3) * 10) / 10,
+      // 0 on discrete cards; >0 means the GPU shares system RAM (Apple Silicon)
+      unifiedMemory: (vram.unifiedSize || 0) > 0,
+      mathCores: llama.cpuMathCores || null,
+    };
+  } catch (err) {
+    // no GPU, or the binding could not load. Either way the recommendation
+    // falls back to the CPU path rather than the scan failing outright.
+    console.error("GPU probe failed, treating as CPU-only:", err.message);
+    return {
+      backend: null, name: null, names: [], totalVramGB: 0, freeVramGB: 0,
+      unifiedMemory: false, mathCores: null, probeError: err.message || String(err),
+    };
+  }
+}
+
+// full probe - only for callers that can afford to wait (the explicit
+// "Scan Hardware" button, and the background warm-up at startup)
+async function detectGpu() {
+  if (gpuInfoCache) return gpuInfoCache;
+  if (!gpuProbeInFlight) {
+    gpuProbeInFlight = probeGpu().then((info) => {
+      gpuInfoCache = info;
+      gpuProbeInFlight = null;
+      // remember it so no future launch pays the initialisation cost again
+      config.gpuInfo = info;
+      saveConfig(config);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("emb3r:hardware-updated", { gpu: info });
+      }
+      return info;
+    });
+  }
+  return gpuProbeInFlight;
+}
+
+// Never blocks for long. Returns whatever is already known - this session's
+// probe, or the one remembered from a previous launch - and otherwise waits
+// only briefly before giving up so boot is not held hostage to a 17s probe.
+async function gpuForRecommendation(waitMs = 1500) {
+  if (gpuInfoCache) return gpuInfoCache;
+  if (config.gpuInfo) {
+    gpuInfoCache = config.gpuInfo;
+    return gpuInfoCache;
+  }
+  detectGpu(); // start it if nothing has yet, but do not wait on it
+  return Promise.race([
+    gpuProbeInFlight,
+    new Promise((resolve) => setTimeout(() => resolve(null), waitMs)),
+  ]);
 }
 
 async function freeDiskGB(dir) {
@@ -416,12 +564,22 @@ app.whenReady().then(async () => {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
   clearPartialDownloads();
   mainWindow = createWindow();
+
   try {
     await loadLocalModel();
   } catch (err) {
     console.error("Unexpected error during model load:", err);
     modelLoadError = err.message || String(err);
   }
+
+  // Warm the GPU probe, deliberately not awaited, and deliberately *after* the
+  // model load rather than alongside it: both call getLlama(), and racing two
+  // initialisations of the same native backend is not a bet worth taking. This
+  // ordering also makes it cheap in the common case - loading a model has
+  // already initialised the binding, so the probe has little left to do. On a
+  // first run with no model on disk, loadLocalModel returns immediately and the
+  // probe gets the machine to itself.
+  if (!config.gpuInfo) detectGpu();
 
   // a few seconds after launch, not competing with model loading for
   // attention, and not the very first thing a user sees
@@ -531,34 +689,55 @@ ipcMain.handle("emb3r:delete-profile", (_e, id) => {
 
 // ---- Hardware scanning ----
 
-ipcMain.handle("emb3r:scan-hardware", () => {
-  const totalRamGB = Math.round((os.totalmem() / (1024 ** 3)) * 10) / 10;
+ipcMain.handle("emb3r:scan-hardware", async () => {
+  const ram = totalRamGB();
   const freeRamGB = Math.round((os.freemem() / (1024 ** 3)) * 10) / 10;
   const cpus = os.cpus();
-  const cpuModel = cpus.length ? cpus[0].model : "Unknown CPU";
-  const cpuCores = cpus.length;
-  const platform = `${os.platform()} ${os.arch()}`;
-  const recommendedTier = recommendTier(totalRamGB);
-  return { totalRamGB, freeRamGB, cpuModel, cpuCores, platform, recommendedTier };
+  // the user pressed a button called "Scan Hardware" and is watching, so this
+  // one waits for the real answer rather than settling for what is already known
+  const gpu = await detectGpu();
+  return {
+    totalRamGB: ram,
+    freeRamGB,
+    cpuModel: cpus.length ? cpus[0].model : "Unknown CPU",
+    cpuCores: cpus.length,
+    platform: `${os.platform()} ${os.arch()}`,
+    gpu,
+    recommendedTier: recommendTier(ram, gpu),
+  };
 });
 
 // ---- Model catalog / download / select ----
 
-ipcMain.handle("emb3r:list-models", () => {
+// whether a model can be held in GPU memory, which is the difference between
+// "answers while you read the question" and "answers while you make tea"
+function modelSpeedNote(model, ram, gpu) {
+  const budget = gpuMemoryBudgetGB(ram, gpu);
+  if (budget > 0 && model.sizeGB * MEMORY_HEADROOM <= budget) return "fast here (fits in GPU memory)";
+  if (!gpu || !gpu.backend) {
+    return model.params > MAX_CPU_ONLY_PARAMS ? "very slow here (CPU only)" : "workable here (CPU only)";
+  }
+  return "slower here (too big for GPU memory)";
+}
+
+ipcMain.handle("emb3r:list-models", async () => {
   const ram = totalRamGB();
-  const best = recommendModel(ram);
+  const gpu = await gpuForRecommendation();
+  const best = recommendModel(ram, gpu);
   const models = MODEL_CATALOG.map((m) => ({
     ...m,
     downloaded: fs.existsSync(path.join(MODELS_DIR, m.file)),
     recommended: best ? m.id === best.id : false,
     fitsRam: m.minRamGB <= ram,
+    speedNote: modelSpeedNote(m, ram, gpu),
   }));
   return {
     models,
     activeModel: config.activeModel,
-    recommendedTier: recommendTier(ram),
+    recommendedTier: recommendTier(ram, gpu),
     recommendedId: best ? best.id : null,
     totalRamGB: ram,
+    gpu,
   };
 });
 
@@ -566,7 +745,8 @@ ipcMain.handle("emb3r:list-models", () => {
 // anything, so it needs to say so up front rather than surfacing a load error
 ipcMain.handle("emb3r:setup-state", async () => {
   const ram = totalRamGB();
-  const best = recommendModel(ram);
+  const gpu = await gpuForRecommendation();
+  const best = recommendModel(ram, gpu);
   const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)));
   const cpus = os.cpus();
 
@@ -577,8 +757,76 @@ ipcMain.handle("emb3r:setup-state", async () => {
     cpuModel: cpus.length ? cpus[0].model : "Unknown CPU",
     cpuCores: cpus.length,
     platform: `${os.platform()} ${os.arch()}`,
+    gpu,
     recommended: best,
+    why: explainRecommendation(best, ram, gpu),
+    speedNote: best ? modelSpeedNote(best, ram, gpu) : null,
   };
+});
+
+// Times a small ranged read from the CDN the download will actually come from,
+// so the estimate reflects the real path rather than a guess. Deliberately
+// small and short: this runs before the user has committed to anything, and a
+// slow probe would be worse than no estimate. Goes through the same network
+// guard as everything else, so it shows up in the activity indicator.
+const SPEED_PROBE_BYTES = 1_500_000;
+const SPEED_PROBE_TIMEOUT_MS = 5000;
+
+ipcMain.handle("emb3r:probe-download-speed", async () => {
+  if (!config.internetConsent) return { ok: false, reason: "no-consent" };
+  const entry = MODEL_CATALOG[0];
+  const url = `https://huggingface.co/${entry.repo}/resolve/main/${entry.file}?download=true`;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (value) => { if (!settled) { settled = true; resolve(value); } };
+
+    let received = 0;
+    const startedAt = Date.now();
+    let req;
+
+    const timer = setTimeout(() => {
+      if (req) req.destroy();
+      finish();
+    }, SPEED_PROBE_TIMEOUT_MS);
+
+    function finish() {
+      clearTimeout(timer);
+      const seconds = (Date.now() - startedAt) / 1000;
+      // too little data to say anything honest about
+      if (received < 200_000 || seconds <= 0.15) return done({ ok: false, reason: "inconclusive" });
+      const mbps = (received * 8) / seconds / 1_000_000;
+      done({ ok: true, mbps: Math.round(mbps * 10) / 10, sampledBytes: received });
+    }
+
+    try {
+      req = https.get(url, {
+        headers: { "User-Agent": "emb3r-app", Range: `bytes=0-${SPEED_PROBE_BYTES - 1}` },
+      }, (res) => {
+        // hugging face redirects to a CDN; follow one hop rather than reimplementing
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          res.resume();
+          req = https.get(res.headers.location, {
+            headers: { "User-Agent": "emb3r-app", Range: `bytes=0-${SPEED_PROBE_BYTES - 1}` },
+          }, (res2) => {
+            res2.on("data", (c) => { received += c.length; if (received >= SPEED_PROBE_BYTES) { res2.destroy(); finish(); } });
+            res2.on("end", finish);
+            res2.on("error", finish);
+          });
+          req.on("error", () => done({ ok: false, reason: "error" }));
+          return;
+        }
+        res.on("data", (c) => { received += c.length; if (received >= SPEED_PROBE_BYTES) { res.destroy(); finish(); } });
+        res.on("end", finish);
+        res.on("error", finish);
+      });
+      // the offline lock throws synchronously from https.get
+      req.on("error", () => done({ ok: false, reason: "error" }));
+    } catch (err) {
+      clearTimeout(timer);
+      done({ ok: false, reason: err && err.isOfflineLock ? "offline-lock" : "error" });
+    }
+  });
 });
 
 // a model download is gigabytes over many minutes, so a dead connection has to

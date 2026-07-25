@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld("emb3r", {
 
   scanHardware: () => ipcRenderer.invoke("emb3r:scan-hardware"),
   setupState: () => ipcRenderer.invoke("emb3r:setup-state"),
+  probeDownloadSpeed: () => ipcRenderer.invoke("emb3r:probe-download-speed"),
+  onHardwareUpdated: (callback) => {
+    ipcRenderer.on("emb3r:hardware-updated", (_event, data) => callback(data));
+  },
   listModels: () => ipcRenderer.invoke("emb3r:list-models"),
   downloadModel: (modelId) => ipcRenderer.invoke("emb3r:download-model", modelId),
   cancelDownload: (modelId) => ipcRenderer.invoke("emb3r:cancel-download", modelId),
