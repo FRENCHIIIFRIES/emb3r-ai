@@ -1,4 +1,6 @@
 const faceEl = document.getElementById("face-text");
+// the container, for animations - the span inside is inline and ignores transforms
+const faceBox  = document.getElementById("face");
 const moodEl   = document.getElementById("mood");
 const statusEl = document.getElementById("status");
 const chat     = document.getElementById("chat");
@@ -56,12 +58,16 @@ function setFace(state) {
 
 function stopThinking() {
   if (thinkTimer) { clearInterval(thinkTimer); thinkTimer = null; }
+  // the class goes on the container, not the span - #face-text is inline and
+  // would ignore the transform
+  faceBox.classList.remove("thinking");
 }
 
 function startThinking() {
   stopThinking();
   let flip = false;
   setFace("think1");
+  faceBox.classList.add("thinking");
   thinkTimer = setInterval(() => {
     flip = !flip;
     setFace(flip ? "think2" : "think1");
@@ -86,6 +92,100 @@ function startMoodDecay() {
     renderStats();
     if (!thinkTimer && mood <= 2) setFace("sad");
   }, 45_000);
+}
+
+// =============================
+// Reactions
+// =============================
+//
+// Decoration only: nothing here carries meaning that is not already in the
+// text, so switching it all off costs the user no information. Two gates -
+// the Settings toggle, and the operating system's own reduced-motion setting,
+// which is honoured in CSS as well but checked here so we do not build DOM
+// nobody is going to see.
+
+let animationsEnabled = true;
+
+const prefersReducedMotion = () =>
+  window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function reactionsAllowed() {
+  return animationsEnabled && !prefersReducedMotion();
+}
+
+const SPARKLE_CHARS = ["·", "✦", "✧", "*", "˚"];
+
+// Sparkles rise off the reply itself rather than off the pet, because #pet is
+// overflow:hidden and would clip them - and because the reply is the thing
+// being reacted to.
+function sparkleOn(line, count = 5) {
+  if (!reactionsAllowed() || !line) return;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement("span");
+    el.className = "sparkle";
+    el.textContent = SPARKLE_CHARS[Math.floor(Math.random() * SPARKLE_CHARS.length)];
+    // spread across the line, kept off the extreme edges
+    el.style.left = (6 + Math.random() * 84).toFixed(1) + "%";
+    el.style.fontSize = (9 + Math.random() * 5).toFixed(1) + "px";
+    // inherits the theme colour, so it stays legible in light mode too
+    el.style.color = "currentColor";
+    el.style.textShadow = "0 0 6px currentColor";
+    el.style.setProperty("--dx", (Math.random() * 18 - 9).toFixed(1) + "px");
+    el.style.setProperty("--dy", (-18 - Math.random() * 16).toFixed(1) + "px");
+    el.style.setProperty("--dur", (700 + Math.random() * 500).toFixed(0) + "ms");
+    // stagger, so they twinkle rather than firing as one block
+    el.style.animationDelay = (Math.random() * 220).toFixed(0) + "ms";
+    line.appendChild(el);
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+  }
+}
+
+function heartOn(line) {
+  if (!reactionsAllowed() || !line) return;
+  const el = document.createElement("span");
+  el.className = "heartPop";
+  el.textContent = "♥";
+  el.style.left = (60 + Math.random() * 22).toFixed(1) + "%";
+  el.style.fontSize = "15px";
+  // deliberately not the theme colour: this one is meant to be noticed
+  el.style.color = "#ff8fa3";
+  el.style.textShadow = "0 0 8px #ff6b85";
+  el.style.setProperty("--dx", (Math.random() * 14 - 7).toFixed(1) + "px");
+  el.style.setProperty("--dy", (-34 - Math.random() * 14).toFixed(1) + "px");
+  el.style.setProperty("--dur", (1200 + Math.random() * 400).toFixed(0) + "ms");
+  line.appendChild(el);
+  el.addEventListener("animationend", () => el.remove(), { once: true });
+}
+
+// The heart is for "happy to help", which is a narrower thing than "finished
+// replying" - firing it on every answer would make it meaningless within a
+// minute. It needs an actual warm moment: the user being appreciative, or
+// Ember saying something plainly positive.
+const APPRECIATION = /\b(thanks|thank you|thankyou|ty|cheers|appreciate it|appreciated|nice one|good bot|well done|you're the best|youre the best|love (it|this|you)|awesome|brilliant|perfect)\b/i;
+const WARM_REPLY = /\b(happy to help|glad (i|to)|you're welcome|youre welcome|my pleasure|any time|anytime|great question|good question|nice work|well done|congratulations|congrats)\b/i;
+
+function deservesHeart(userText, replyText) {
+  if (userText && APPRECIATION.test(userText)) return true;
+  // only the opening of the reply, so the phrase is the sentiment of the answer
+  // rather than something quoted halfway down a long one
+  if (replyText && WARM_REPLY.test(replyText.slice(0, 240))) return true;
+  return false;
+}
+
+// A conversation switch used to replace the transcript within a single frame,
+// which read as a glitch rather than a change of subject. Fades out, swaps,
+// fades back in - and falls straight through to the swap when reactions are
+// off, so nothing waits on an animation that is not running.
+function withTopicTransition(repaint) {
+  if (!reactionsAllowed()) return Promise.resolve(repaint());
+  chat.classList.add("swapping");
+  return new Promise((resolve) => {
+    setTimeout(async () => {
+      await repaint();
+      chat.classList.remove("swapping");
+      resolve();
+    }, 180); // matches the CSS transition
+  });
 }
 
 // small clipboard button, revealed on hover of its containing line. copyText
@@ -191,9 +291,15 @@ input.addEventListener("keydown", (e) => {
 // (deny), so declining still gets a reply rather than silently doing nothing
 let pendingWebMessage = null;
 
+// what the user actually typed, kept apart from the prompt that gets built
+// around it - with a file attached the prompt is mostly document, and matching
+// "thanks" against that would fire the heart on someone else's prose
+let lastUserMessage = "";
+
 async function onSend() {
   const text = input.value.trim();
   if (!text && !pendingUpload) return;
+  lastUserMessage = text;
   input.value = "";
   send.disabled = true;
   petEl.classList.add("compact");
@@ -293,6 +399,11 @@ async function submitToModel(messageToSend, opts) {
       playReplyBeep();
       setFace("happy");
       setStatus("happy");
+
+      // on the reply line itself, so the reaction is attached to the thing
+      // being reacted to
+      sparkleOn(streamLine);
+      if (deservesHeart(lastUserMessage, streamText || result.text)) heartOn(streamLine);
     }
     setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
   } catch (err) {
@@ -768,6 +879,7 @@ runBoot(finishBoot);
 const settingsButton = document.getElementById("settingsButton");
 const closeSettings  = document.getElementById("closeSettings");
 const soundToggle    = document.getElementById("soundToggle");
+const animToggle     = document.getElementById("animToggle");
 const settingsTabs   = document.querySelectorAll(".settingsTab");
 
 settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
@@ -824,13 +936,16 @@ async function renderActiveConversationHistory() {
     renderAttachBar();
   }
   activeConversationId = conv ? conv.id : null;
-  chat.replaceChildren();
-  if (!conv || !conv.messages.length) return;
-  for (const m of conv.messages) {
-    if (m.role === "user") append("you", "you", m.text, { copyable: true });
-    else appendStaticBotLine(m.text, m.source);
-  }
-  chat.scrollTop = chat.scrollHeight;
+
+  await withTopicTransition(() => {
+    chat.replaceChildren();
+    if (!conv || !conv.messages.length) return;
+    for (const m of conv.messages) {
+      if (m.role === "user") append("you", "you", m.text, { copyable: true });
+      else appendStaticBotLine(m.text, m.source);
+    }
+    chat.scrollTop = chat.scrollHeight;
+  });
 }
 
 async function refreshHistoryList() {
@@ -910,6 +1025,17 @@ soundToggle.checked = soundsEnabled;
 soundToggle.addEventListener("change", (e) => {
     soundsEnabled = e.target.checked;
     localStorage.setItem("emb3rSound", String(soundsEnabled));
+});
+
+// same shape as the sound preference above: on unless turned off, remembered
+// across launches. The OS reduced-motion setting is honoured independently of
+// this, so leaving it on never overrides someone's system preference.
+const savedAnimations = localStorage.getItem("emb3rAnimations");
+animationsEnabled = savedAnimations === null ? true : savedAnimations === "true";
+animToggle.checked = animationsEnabled;
+animToggle.addEventListener("change", (e) => {
+    animationsEnabled = e.target.checked;
+    localStorage.setItem("emb3rAnimations", String(animationsEnabled));
 });
 
 // =============================
