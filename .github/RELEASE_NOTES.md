@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.11.0 — attach a whole textbook
+
+Attachments now accept files up to **20MB each**, up from about 20KB.
+
+That needed more than a bigger number. A 20MB file is roughly 5 million tokens, and the models here have a context window of a few thousand — so a whole document is around 1,300× too large to hand to the model, and no model in the list changes that. Quietly cutting it short would mean Ember answering confidently from page one of a textbook.
+
+So emb3r stops trying to read it all at once. It splits the file into sections and **searches it for each question you ask**, using only the parts that match. Searching a 20MB file takes about 40 milliseconds, happens entirely on your machine, and needs no extra download.
+
+It also tells you what it did rather than letting you assume: you'll see how many sections it searched and which ones it used, and if nothing in the file matches your question it says so instead of guessing. Files small enough to read in full are still read in full — the searching only kicks in when it has to.
+
+Your attachment also **stays available for follow-up questions** now, instead of being used up by the first message. There's a bar above the input showing what's attached, with an ✕ to remove it, and it clears itself when you switch to another conversation.
+
 ## v1.1.0 — you can now check the "offline" claim, not just take it
 
 **emb3r was quietly contacting Google on every launch.** Its typeface was being fetched from `fonts.googleapis.com` each time the app opened, which sent your IP address and the time you opened it. The font files bundled in the app that were supposed to prevent this turned out not to be fonts at all — they were 136-byte text files with the wrong extension, so they had never worked. Both typefaces are now genuinely bundled, so the app looks the same online and off, and that connection is gone.
