@@ -1137,23 +1137,73 @@ function setSetupButtonsEnabled(enabled) {
   setupSkipBtn.disabled = !enabled;
 }
 
-function describePick(recommended, totalRam) {
+// "4.9GB, roughly 13 min" beats "4.9GB" when someone is deciding whether to
+// start a download now or later
+function describeDownloadTime(sizeGB, mbps) {
+  if (!mbps || mbps <= 0) return null;
+  const minutes = (sizeGB * 8 * 1000) / mbps / 60;
+  if (minutes < 1.5) return "under a minute";
+  if (minutes < 60) return `roughly ${Math.round(minutes)} min`;
+  const hours = minutes / 60;
+  return `roughly ${hours < 2 ? hours.toFixed(1) : Math.round(hours)} hr`;
+}
+
+function describePick(state) {
+  const { recommended, totalRamGB, why, speedNote } = state;
   const title = document.createElement("div");
   title.className = "pickName";
   const meta = document.createElement("div");
   meta.className = "pickMeta";
 
-  if (recommended) {
-    title.textContent = `${recommended.name}  ★ recommended`;
-    meta.textContent = `~${recommended.sizeGB}GB download • quickest way to get started • larger models available later in Settings`;
-  } else {
+  if (!recommended) {
     // nothing in the catalog fits, so say that plainly instead of offering a
     // download that could only ever fail to load
     title.textContent = "No model fits this machine";
-    meta.textContent = `${totalRam}GB of RAM is below what the smallest model needs. You can still browse the full list in Settings.`;
+    meta.textContent = `${totalRamGB}GB of RAM is below what the smallest model needs. You can still browse the full list in Settings.`;
+    setupPickEl.replaceChildren(title, meta);
+    return;
   }
 
-  setupPickEl.replaceChildren(title, meta);
+  title.textContent = `${recommended.name}  ★ recommended`;
+
+  const lines = [
+    `${recommended.sizeGB}GB download${speedNote ? ` • ${speedNote}` : ""}`,
+    why,
+    recommended.strength,
+  ].filter(Boolean);
+  meta.textContent = lines.join("\n");
+
+  // filled in asynchronously once the speed probe returns
+  const timing = document.createElement("div");
+  timing.className = "pickMeta";
+  timing.id = "setupTiming";
+  timing.textContent = "estimating download time...";
+
+  setupPickEl.replaceChildren(title, meta, timing);
+}
+
+// runs after the modal is already visible, so a slow or blocked probe never
+// delays the thing the user is waiting to see
+async function fillDownloadEstimate(sizeGB) {
+  const el = document.getElementById("setupTiming");
+  if (!el) return;
+  const result = await window.emb3r.probeDownloadSpeed();
+  if (!result || !result.ok) {
+    el.textContent = result && result.reason === "no-consent"
+      ? "download time depends on your connection"
+      : "could not measure your connection — time will depend on it";
+    return;
+  }
+  const time = describeDownloadTime(sizeGB, result.mbps);
+  el.textContent = time
+    ? `about ${time} at your current speed (~${result.mbps} Mbps)`
+    : `measured ~${result.mbps} Mbps`;
+}
+
+function describeGpu(gpu) {
+  if (!gpu || !gpu.backend) return "no usable GPU — will run on the CPU";
+  const where = gpu.unifiedMemory ? "unified memory" : `${gpu.totalVramGB}GB VRAM`;
+  return `${gpu.name || gpu.backend} • ${where} • ${gpu.backend}`;
 }
 
 async function maybeRunFirstTimeSetup() {
@@ -1162,13 +1212,37 @@ async function maybeRunFirstTimeSetup() {
 
   const disk = state.freeDiskGB === null ? "" : ` • ${state.freeDiskGB.toFixed(0)}GB free`;
   setupHardwareEl.textContent =
-    `${state.cpuModel}\n${state.cpuCores} cores • ${state.totalRamGB}GB RAM • ${state.platform}${disk}`;
+    `${state.cpuModel}\n${state.cpuCores} cores • ${state.totalRamGB}GB RAM • ${state.platform}${disk}\n` +
+    describeGpu(state.gpu);
 
   setupModelId = state.recommended ? state.recommended.id : null;
-  describePick(state.recommended, state.totalRamGB);
+  describePick(state);
   setSetupButtonsEnabled(true);
   setupModal.classList.add("open");
+
+  if (state.recommended) fillDownloadEstimate(state.recommended.sizeGB);
 }
+
+// The GPU probe can finish after the setup screen is already up, in which case
+// the recommendation it shows was made without knowing about the GPU. Redo it
+// rather than leaving a worse suggestion on screen. Only while the modal is
+// open and untouched - never yank the choice out from under someone mid-click.
+window.emb3r.onHardwareUpdated(async () => {
+  if (!setupModal.classList.contains("open")) {
+    await refreshModelList();
+    return;
+  }
+  if (setupDownloadBtn.disabled) return; // a download is already under way
+  const state = await window.emb3r.setupState();
+  if (!state.needsSetup) return;
+  setupHardwareEl.textContent =
+    `${state.cpuModel}\n${state.cpuCores} cores • ${state.totalRamGB}GB RAM • ${state.platform}` +
+    (state.freeDiskGB === null ? "" : ` • ${state.freeDiskGB.toFixed(0)}GB free`) + "\n" +
+    describeGpu(state.gpu);
+  setupModelId = state.recommended ? state.recommended.id : null;
+  describePick(state);
+  if (state.recommended) fillDownloadEstimate(state.recommended.sizeGB);
+});
 
 setupDownloadBtn.addEventListener("click", () => {
   if (!setupModelId) return;
@@ -1216,13 +1290,20 @@ function renderModelList() {
 
     const metaEl = document.createElement("div");
     metaEl.className = "modelMeta";
-    metaEl.textContent = `${m.tier} tier • ~${m.sizeGB}GB • needs ${m.minRamGB}GB+ RAM`;
+    metaEl.textContent =
+      `~${m.sizeGB}GB • needs ${m.minRamGB}GB+ RAM` + (m.speedNote ? ` • ${m.speedNote}` : "");
+
+    // the whole point of the list is choosing between them, which a tier label
+    // and a filesize cannot help anyone do
+    const tradeoffEl = document.createElement("div");
+    tradeoffEl.className = "modelTradeoff";
+    tradeoffEl.textContent = [m.strength, m.limit].filter(Boolean).join(" ");
 
     const rowProgressEl = document.createElement("div");
     rowProgressEl.className = "modelProgress";
     rowProgressEl.id = `progress-${m.id}`;
 
-    row.append(nameEl, metaEl, rowProgressEl);
+    row.append(nameEl, metaEl, tradeoffEl, rowProgressEl);
 
     const btn = document.createElement("button");
     if (downloadingIds.has(m.id)) {

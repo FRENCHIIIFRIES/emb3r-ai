@@ -753,6 +753,13 @@ pre{
     text-shadow:0 0 4px #8fd6ff;
 }
 
+.modelRow .modelTradeoff{
+    font-size:13px;
+    opacity:0.7;
+    line-height:1.45;
+    margin-top:3px;
+}
+
 .modelRow button{
     margin-top:6px;
     width:auto;
@@ -912,6 +919,10 @@ pre{
     font-size:15px;
     opacity:0.75;
     margin-top:3px;
+    /* the reason for the pick and its strengths are separate lines set via
+       textContent, so the newlines have to survive */
+    white-space:pre-line;
+    line-height:1.45;
 }
 
 #setupProgress{
