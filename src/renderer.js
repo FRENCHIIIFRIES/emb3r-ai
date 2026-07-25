@@ -12,6 +12,7 @@ const bootScreen = document.getElementById("bootScreen");
 const bootThree = document.getElementById("bootThree");
 const stopButton = document.getElementById("stopButton");
 const statsEl    = document.getElementById("genStats");
+const attachBar  = document.getElementById("attachBar");
 
 const FACES = {
   idle:     "( ^_^ )",
@@ -201,16 +202,40 @@ async function onSend() {
 
   let messageToSend = text;
   if (pendingUpload) {
-    append("sys", "sys", `attached: ${pendingUpload.name}`);
-    // fence the contents so the model can tell file from instruction. the old
-    // form opened with a label and never closed it, leaving the question
-    // looking like part of the document
-    messageToSend =
-      `The user attached a file named "${pendingUpload.name}". Its full contents are between the markers below.\n` +
-      `--- BEGIN ${pendingUpload.name} ---\n` +
-      `${pendingUpload.content}\n` +
-      `--- END ${pendingUpload.name} ---\n\n` +
-      `${text || "Summarise this file."}`;
+    const question = text || "Summarise this file.";
+    const budget = attachmentCharBudget();
+
+    if (pendingUpload.text.length <= budget) {
+      // it fits, so retrieval would only lose information. Fence the contents
+      // so the model can tell file from instruction - the original form opened
+      // with a label and never closed it, leaving the question looking like
+      // part of the document.
+      messageToSend =
+        `The user attached a file named "${pendingUpload.name}". Its full contents are between the markers below.\n` +
+        `--- BEGIN ${pendingUpload.name} ---\n` +
+        `${pendingUpload.text}\n` +
+        `--- END ${pendingUpload.name} ---\n\n` +
+        `${question}`;
+      append("sys", "sys", `reading ${pendingUpload.name} in full`);
+    } else {
+      const result = retrieveExcerpts(pendingUpload, question, budget);
+      messageToSend = buildRetrievalPrompt(pendingUpload, question, result);
+
+      // say what was actually searched and used, so an answer drawn from three
+      // sections of a large document is never mistaken for one drawn from all
+      // of it
+      if (!result.excerpts.length) {
+        append("sys", "sys",
+          result.searchedAll
+            ? `searched all ${result.sectionCount} sections of ${pendingUpload.name} — nothing matched that question`
+            : `that question has no searchable words in it — try naming something from ${pendingUpload.name}`);
+      } else {
+        const which = result.excerpts.map((e) => e.i + 1).join(", ");
+        append("sys", "sys",
+          `searched ${result.sectionCount} sections of ${pendingUpload.name}, using ${result.excerpts.length} ` +
+          `(section${result.excerpts.length > 1 ? "s" : ""} ${which})`);
+      }
+    }
   }
 
   if (text) append("you", "you", text, { copyable: true });
@@ -219,7 +244,8 @@ async function onSend() {
   renderStats();
 
   await submitToModel(messageToSend);
-  pendingUpload = null;
+  // the attachment deliberately survives, so follow-ups can query it again.
+  // Cleared with the ✕ on the attachment bar.
   input.focus();
 }
 
@@ -435,10 +461,121 @@ const CHARS_PER_TOKEN = 4;
 // rejects perfectly ordinary files well under this size
 const MIN_ATTACHMENT_CHARS = 20 * 1024;
 
-// leave room for the system prompt, the question, and Ember's reply
+// How much of the prompt the file's excerpts may occupy. This is the limit on
+// what reaches the *model*, and is unrelated to how large a file may be - see
+// MAX_ATTACHMENT_BYTES. Leaves room for the system prompt, the question and
+// Ember's reply.
 function attachmentCharBudget() {
   const size = lastContext && lastContext.size ? lastContext.size : 4096;
   return Math.max(Math.floor(size * 0.7) * CHARS_PER_TOKEN, MIN_ATTACHMENT_CHARS);
+}
+
+// ============================================================
+// Large attachments: retrieval, not stuffing
+// ============================================================
+//
+// A 20MB file is roughly 5 million tokens. The smallest context here is 4096,
+// so a whole document is about 1,300x too large to put in a prompt - no model
+// in the catalogue changes that, and truncating it silently would mean Ember
+// answering confidently from page one of a textbook.
+//
+// So the file is never sent whole. It is split into fixed-size sections, and
+// each question retrieves only the sections that look relevant, by keyword.
+// Keyword rather than semantic search because embedding 20MB locally would take
+// hours on a CPU, while this is instant and needs no extra model download.
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+// Big enough to hold a coherent passage, small enough that a handful fit in a
+// 4096-token context. Also the scoring granularity: a match's position divided
+// by this gives its section, so no separate index of offsets is needed.
+const SECTION_CHARS = 1500;
+const MAX_EXCERPTS = 6;
+
+// words too common to say anything about relevance, plus the question-asking
+// vocabulary that appears in nearly every prompt
+const STOPWORDS = new Set(("the a an and or of to in on at by for with from as is are was were be been being " +
+  "it its this that these those there here what which who whom whose how why when where do does did done " +
+  "can could should would will shall may might must have has had i me my we our you your he she they them " +
+  "not no nor so if then than too very just about into over under again more most some such only own same")
+  .split(" "));
+
+function tokenizeQuery(s) {
+  // \p{L}\p{N} so this is not English-only
+  return (String(s).toLowerCase().match(/[\p{L}\p{N}_]{2,}/gu) || []);
+}
+
+// Scores every section against the question and returns the best few, in
+// document order so they read naturally rather than in score order.
+//
+// Deliberately avoids building an inverted index: for a 20MB file that is
+// millions of Map entries and hundreds of megabytes of overhead. Scanning one
+// pre-lowercased copy of the text with indexOf is native-speed, needs one extra
+// copy of the string, and is fast enough to run per question.
+function retrieveExcerpts(doc, question, budgetChars) {
+  const terms = [...new Set(tokenizeQuery(question))]
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+
+  const sectionCount = Math.max(1, Math.ceil(doc.lowerText.length / SECTION_CHARS));
+  const scores = new Float64Array(sectionCount);
+  const matchedTerms = [];
+
+  for (const term of terms) {
+    const positions = [];
+    let from = 0;
+    for (;;) {
+      const at = doc.lowerText.indexOf(term, from);
+      if (at === -1) break;
+      positions.push(at);
+      from = at + term.length;
+      // a term this common is noise, not signal - stop rather than spend
+      // the rest of the budget counting it
+      if (positions.length >= 20000) break;
+    }
+    if (!positions.length) continue;
+    matchedTerms.push(term);
+    // rarer terms are the informative ones
+    const idf = Math.log(1 + sectionCount / positions.length);
+    for (const pos of positions) scores[Math.floor(pos / SECTION_CHARS)] += idf;
+  }
+
+  const ranked = [];
+  for (let i = 0; i < sectionCount; i++) if (scores[i] > 0) ranked.push({ i, score: scores[i] });
+  ranked.sort((a, b) => b.score - a.score);
+
+  const picked = [];
+  let used = 0;
+  for (const { i } of ranked.slice(0, MAX_EXCERPTS)) {
+    const text = doc.text.slice(i * SECTION_CHARS, (i + 1) * SECTION_CHARS);
+    if (used + text.length > budgetChars) break;
+    used += text.length;
+    picked.push({ i, text });
+  }
+  picked.sort((a, b) => a.i - b.i);
+
+  return { excerpts: picked, sectionCount, matchedTerms, searchedAll: terms.length > 0 };
+}
+
+// Builds the prompt from retrieved sections rather than the whole file, and is
+// explicit with the model that it is seeing extracts - otherwise it answers as
+// though it had read everything and the gaps become invented.
+function buildRetrievalPrompt(doc, question, result) {
+  const label = `${doc.name}`;
+  if (!result.excerpts.length) {
+    return `The user attached a file named "${label}" and asked a question, but no section of it matched the question.\n` +
+      `Say plainly that you could not find anything relevant in the file, and do not guess at its contents.\n\n` +
+      `Question: ${question}`;
+  }
+
+  const blocks = result.excerpts
+    .map((e) => `--- ${label} · section ${e.i + 1} of ${result.sectionCount} ---\n${e.text}`)
+    .join("\n\n");
+
+  return `The user attached a file named "${label}". It is too large to include in full, so these are the ` +
+    `${result.excerpts.length} section(s) most relevant to their question, out of ${result.sectionCount}. ` +
+    `Other parts of the file are not shown.\n\n` +
+    `${blocks}\n\n--- end of extracts ---\n\n` +
+    `Answer using only these extracts. If they do not contain the answer, say so rather than assuming ` +
+    `the rest of the file agrees with you.\n\nQuestion: ${question}`;
 }
 
 // readAsText happily decodes a PDF or a PNG into mojibake and hands it over as
@@ -453,38 +590,87 @@ function looksBinary(text) {
   return replacements / sample.length > 0.02;
 }
 
+function humanSize(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + "MB";
+  return Math.max(1, Math.round(bytes / 1024)) + "KB";
+}
+
+// the attachment stays available for follow-up questions rather than being
+// consumed by one send - the point of attaching a large document is asking
+// several things about it
+function renderAttachBar() {
+  attachBar.replaceChildren();
+  if (!pendingUpload) {
+    attachBar.hidden = true;
+    return;
+  }
+  attachBar.hidden = false;
+
+  const label = document.createElement("span");
+  label.className = "attachLabel";
+  label.textContent =
+    `📎 ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
+  attachBar.appendChild(label);
+
+  const clear = document.createElement("button");
+  clear.id = "attachClear";
+  clear.type = "button";
+  clear.title = "Remove this attachment";
+  clear.textContent = "✕";
+  clear.addEventListener("click", () => {
+    pendingUpload = null;
+    renderAttachBar();
+    append("sys", "sys", "attachment removed");
+  });
+  attachBar.appendChild(clear);
+}
+
 fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
   fileInput.value = "";
   if (!file) return;
+
+  // checked before reading: pulling a 500MB file into a string to discover it
+  // is too large would hang the window first and report second
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    append("err", "err",
+      `${file.name} is ${humanSize(file.size)}, over the ${humanSize(MAX_ATTACHMENT_BYTES)} limit for one file. ` +
+      `Split it up or attach a smaller part — Ember will not read half a file and pretend otherwise.`);
+    return;
+  }
 
   const reader = new FileReader();
   reader.onload = () => {
     const content = String(reader.result || "");
 
     if (looksBinary(content)) {
-      pendingUpload = null;
       append("err", "err",
         `${file.name} isn't a text file. Ember can only read text — try .txt, .md, code, .csv or .json.`);
       return;
     }
-
-    const budget = attachmentCharBudget();
-    if (content.length > budget) {
-      pendingUpload = null;
-      const kb = (n) => Math.round(n / 1024) + "KB";
-      append("err", "err",
-        `${file.name} is too big to read (${kb(content.length)}; the limit is about ${kb(budget)}). ` +
-        `Send a smaller file or an excerpt — truncating it would make Ember answer from a fragment without telling you.`);
+    if (!content.trim()) {
+      append("err", "err", `${file.name} looks empty — nothing to read.`);
       return;
     }
 
-    pendingUpload = { name: file.name, content };
+    // one lowercased copy is the whole search index; see retrieveExcerpts
+    pendingUpload = {
+      name: file.name,
+      sizeBytes: file.size,
+      text: content,
+      lowerText: content.toLowerCase(),
+      sectionCount: Math.max(1, Math.ceil(content.length / SECTION_CHARS)),
+    };
+    renderAttachBar();
+
+    const whole = content.length <= attachmentCharBudget();
     append("sys", "sys",
-      `ready to send: ${file.name} (${Math.round(content.length / 1024)}KB) — type a message and hit send`);
+      whole
+        ? `attached ${file.name} (${humanSize(file.size)}) — small enough to read in full. Ask away.`
+        : `attached ${file.name} (${humanSize(file.size)}, ${pendingUpload.sectionCount} sections) — too big to read at ` +
+          `once, so each question will search it and use the most relevant parts. Ask away.`);
   };
   reader.onerror = () => {
-    pendingUpload = null;
     append("err", "err", `couldn't read file: ${file.name}`);
   };
   reader.readAsText(file);
@@ -630,6 +816,13 @@ function appendStaticBotLine(text, source) {
 // active.
 async function renderActiveConversationHistory() {
   const conv = await window.emb3r.getActiveConversation();
+  // an attachment belongs to the conversation it was added to. This is the one
+  // funnel every switch passes through, so dropping it here stops a document
+  // quietly following the user into an unrelated chat.
+  if (pendingUpload) {
+    pendingUpload = null;
+    renderAttachBar();
+  }
   activeConversationId = conv ? conv.id : null;
   chat.replaceChildren();
   if (!conv || !conv.messages.length) return;

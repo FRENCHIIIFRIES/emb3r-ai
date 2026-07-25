@@ -264,6 +264,31 @@ pre{
     color:#7CFF9E;
 }
 
+#attachBar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:8px;
+    padding:5px 8px;
+    border:1px solid var(--hover-color);
+    font-size:13px;
+}
+
+#attachBar .attachLabel{
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    opacity:0.8;
+}
+
+#attachClear{
+    width:auto;
+    padding:1px 7px;
+    font-size:13px;
+    line-height:1.2;
+}
+
 #row{
     display:flex;
     align-items:center;
@@ -1328,6 +1353,10 @@ status: <span id="status">idle</span>
 <div id="chat">
 <span class="dim">// ember terminal ready. type below and hit enter.</span>
 </div>
+
+<!-- persists between messages: a large attachment is worth several questions,
+     so it is not consumed by the first send -->
+<div id="attachBar" hidden></div>
 
 <div id="row">
 <span id="prompt">&gt;</span>
