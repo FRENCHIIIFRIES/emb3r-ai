@@ -1,5 +1,16 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.12.0 — Ember reacts
+
+A few small touches to make Ember feel more like it's actually there:
+
+- **A sparkle** drifts up off each reply as it lands
+- **A heart** appears when Ember is genuinely glad to help — not on every reply, only when you're appreciative or the answer is a warm one, so it stays meaningful
+- **A gentle bob** while Ember is thinking, on top of the face animation that was already there
+- **A soft fade** when you switch between conversations, instead of the transcript changing in a single jump
+
+All of it is decoration — nothing here changes what Ember says. If you'd rather not have it, there's a **Reactions** toggle in Settings → Display right next to Sound effects, and it also respects your system's reduce-motion setting automatically.
+
 ## v1.11.0 — attach a whole textbook
 
 Attachments now accept files up to **20MB each**, up from about 20KB.
