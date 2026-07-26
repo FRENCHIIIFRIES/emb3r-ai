@@ -210,6 +210,8 @@ pre{
     overflow-y:auto;
     white-space:pre-wrap;
     word-break:break-word;
+    /* the topic-transition fade below animates this */
+    transition: opacity .18s ease, transform .18s ease;
 }
 
 #chat .you{
@@ -349,11 +351,8 @@ pre{
 }
 
 /* Switching conversations replaced the transcript in a single frame, which
-   read as a glitch. This gives the change somewhere to land. */
-#chat{
-    transition: opacity .18s ease, transform .18s ease;
-}
-
+   read as a glitch. This gives the change somewhere to land (the transition
+   itself is on #chat's own rule, above). */
 #chat.swapping{
     opacity:0;
     transform: translateY(6px);
@@ -1030,8 +1029,9 @@ pre{
     line-height:1.45;
 }
 
+/* font-size intentionally not set here - the shared rule below (which needs
+   JetBrains Mono for the ASCII bar) sets 13px and would win anyway */
 #setupProgress{
-    font-size:15px;
     min-height:1.2em;
     margin-bottom:6px;
 }

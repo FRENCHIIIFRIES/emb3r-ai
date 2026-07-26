@@ -1648,12 +1648,6 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       activeConversation.updatedAt = now;
       if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
       saveConversationFile(activeConversation.profileId, activeConversation);
-      if (mainWindow) {
-        mainWindow.webContents.send("emb3r:conversation-saved", {
-          id: activeConversation.id,
-          title: activeConversation.title,
-        });
-      }
 
       // a Gemini exchange never went through chatSession.prompt(), so the
       // local model's own history has no idea it happened. Replaying the
