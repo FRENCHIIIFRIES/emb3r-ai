@@ -1,5 +1,11 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.13.0 — attachment limit adjusted, internal cleanup
+
+The per-file attachment limit introduced in v1.11.0 is now **5MB**, down from 20MB. Files above that are still refused with a clear message rather than silently cut short — that part hasn't changed, just the number. Anything up to 5MB that doesn't fit in the model's context window is still handled the same way: split into sections and searched per question, rather than pasted in whole.
+
+No user-facing feature changes beyond that. The rest of this release is internal housekeeping — some dead code and a couple of silently-overridden CSS properties that never actually did anything, cleaned up while looking for exactly that.
+
 ## v1.12.0 — Ember reacts
 
 A few small touches to make Ember feel more like it's actually there:
