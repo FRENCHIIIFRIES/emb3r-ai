@@ -38,9 +38,6 @@ contextBridge.exposeInMainWorld("emb3r", {
   newConversation: () => ipcRenderer.invoke("emb3r:new-conversation"),
   loadConversation: (id) => ipcRenderer.invoke("emb3r:load-conversation", id),
   deleteConversation: (id) => ipcRenderer.invoke("emb3r:delete-conversation", id),
-  onConversationSaved: (callback) => {
-    ipcRenderer.on("emb3r:conversation-saved", (_event, data) => callback(data));
-  },
   onModelReady: (callback) => {
     ipcRenderer.on("emb3r:model-ready", (_event, data) => callback(data));
   },

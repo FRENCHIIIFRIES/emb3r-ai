@@ -585,16 +585,17 @@ function attachmentCharBudget() {
 // Large attachments: retrieval, not stuffing
 // ============================================================
 //
-// A 20MB file is roughly 5 million tokens. The smallest context here is 4096,
-// so a whole document is about 1,300x too large to put in a prompt - no model
-// in the catalogue changes that, and truncating it silently would mean Ember
-// answering confidently from page one of a textbook.
+// A 5MB file is roughly 1.3 million tokens. The smallest context here is
+// 4096, so a whole document is still well over 300x too large to put in a
+// prompt - no model in the catalogue changes that, and truncating it silently
+// would mean Ember answering confidently from page one of a textbook.
 //
 // So the file is never sent whole. It is split into fixed-size sections, and
 // each question retrieves only the sections that look relevant, by keyword.
-// Keyword rather than semantic search because embedding 20MB locally would take
-// hours on a CPU, while this is instant and needs no extra model download.
-const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+// Keyword rather than semantic search because embedding it locally would take
+// minutes to hours on a CPU, while this is instant and needs no extra model
+// download.
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 // Big enough to hold a coherent passage, small enough that a handful fit in a
 // 4096-token context. Also the scoring granularity: a match's position divided
