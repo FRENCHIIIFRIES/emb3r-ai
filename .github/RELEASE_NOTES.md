@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.15.0 — new app icon
+
+emb3r has a new icon: a pixel-art salamander with three flames rising from its spine, replacing the previous ASCII-grid design. It's used for the taskbar, the app window, and the installer on both Windows and macOS.
+
+The in-app wordmark (the ASCII banner on the boot screen and in the pet display) is unchanged — this is an icon-only update.
+
+Note for Windows users: after installing, if the taskbar or Start Menu still briefly shows the old icon, that's Windows' own icon cache, not a bad update — it clears on its own, or immediately after a sign-out/sign-in.
+
 ## v1.14.0 — the boot screen actually waits for the model now
 
 Previously, the loading screen faded out on a fixed timer whether or not the model had actually finished loading — on a slower machine or a bigger model, you could land in the chat before there was anything behind it to answer.
