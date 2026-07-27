@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.16.0 — a bigger icon, and the salamander comes inside
+
+The app icon was sitting small in the taskbar — the artwork only filled about 79% of the width and 53% of the height of its own canvas, so a good chunk of what you saw was empty space. It's now cropped in to fill the frame properly, about 13% larger with no loss of detail.
+
+The salamander also joins the ASCII EMB3R banner inside the app, sitting just to its left. The wordmark itself is untouched. The salamander picks up whatever accent colour and theme you've chosen, so it stays legible in light and dark alike rather than being a fixed colour pasted on top.
+
+Windows users: if the taskbar or Start Menu still shows the old icon after updating, that's Windows' own icon cache rather than a bad update — it clears on its own, or immediately after a sign-out and back in.
+
 ## v1.15.0 — new app icon
 
 emb3r has a new icon: a pixel-art salamander with three flames rising from its spine, replacing the previous ASCII-grid design. It's used for the taskbar, the app window, and the installer on both Windows and macOS.
