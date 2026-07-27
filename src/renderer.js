@@ -803,7 +803,9 @@ const SPARK_COLORS = ["#ff6a00", "#ff8000", "#ffb020", "#ffd964", "#fff4c2"];
 
 const SPARK_START_MS = 550;   // let the logo finish zooming first
 const SPARK_STOP_MS = 2000;   // stop emitting
-const BOOT_FADE_MS = 2350;    // begin fading the boot screen
+// no fixed fade timer any more - see waitForModelThenReveal(). The wordmark's
+// own zoom/chime/glow beat is still timed, since that part is pure branding
+// and has nothing to do with whether a model is loading.
 
 function spawnSpark(layer) {
   const el = document.createElement("span");
@@ -829,7 +831,7 @@ function spawnSpark(layer) {
   el.addEventListener("animationend", () => el.remove(), { once: true });
 }
 
-function runBoot(onDone) {
+function runBoot() {
   const layer = document.getElementById("sparkLayer");
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -849,11 +851,6 @@ function runBoot(onDone) {
     const started = performance.now();
     emit();
   }, SPARK_START_MS);
-
-  setTimeout(() => {
-    bootScreen.classList.add("fade-out");
-    setTimeout(onDone, 500);
-  }, BOOT_FADE_MS);
 }
 
 async function finishBoot() {
@@ -871,7 +868,144 @@ async function finishBoot() {
   input.focus();
 }
 
-runBoot(finishBoot);
+// =============================
+// Boot progress: the fire spirit
+// =============================
+//
+// The old boot screen faded out on a fixed timer regardless of whether the
+// model had actually finished loading - on a slow disk or a big model, the
+// chat UI could appear before there was anything to chat with, and typing
+// into it just produced "Ember can't reply right now: still loading" instead
+// of feeling broken outright. This waits for the real thing.
+//
+// getLlama() itself (the native binding / GPU probe, measured at ~17s on real
+// hardware in the hardware-aware work) has no progress signal at all - there
+// is a real stretch here with genuinely nothing to report. The spirit's idle
+// fidgeting exists specifically to cover that gap: the alternative is a
+// frozen-looking screen for several seconds before any real number arrives.
+
+const bootProgressEl  = document.getElementById("bootProgress");
+const bootSpiritEl    = document.getElementById("bootSpirit");
+const bootStatusEl    = document.getElementById("bootStatusLine");
+const torchFlameEls   = [...document.querySelectorAll("#torchRow .torchFlame")];
+
+// how far the simulated warm-up creep is allowed to go before it must stop
+// and wait for a real number - matches LOAD_PHASE_SPAN.weights[0] in main.js,
+// since real weights-loading progress will always start at or above this
+const WARMUP_CAP = 0.05;
+
+let bootOverall = 0;
+let bootFinished = false;
+let warmupCreepTimer = null;
+let fidgetTimer = null;
+
+function stopWarmupCreep() {
+  if (warmupCreepTimer) { clearInterval(warmupCreepTimer); warmupCreepTimer = null; }
+}
+
+// Approaches WARMUP_CAP but never reaches it - an honest "something is
+// happening, we just don't know how far along" rather than a fabricated
+// percentage. Real progress always starts at or above the cap, so it can
+// never be overtaken by this.
+function startWarmupCreep() {
+  stopWarmupCreep();
+  warmupCreepTimer = setInterval(() => {
+    updateBootProgress(bootOverall + (WARMUP_CAP - bootOverall) * 0.04, bootStatusEl.textContent);
+  }, 150);
+}
+
+function scheduleFidget() {
+  if (bootFinished) return;
+  fidgetTimer = setTimeout(() => {
+    if (bootFinished || !bootSpiritEl) return;
+    // remove-reflow-readd, not just add: the class may still be present from
+    // the previous fidget, and re-adding an already-present class does not
+    // restart a CSS animation
+    bootSpiritEl.classList.remove("fidget");
+    void bootSpiritEl.offsetWidth;
+    bootSpiritEl.classList.add("fidget");
+    scheduleFidget();
+  }, 900 + Math.random() * 1300);
+}
+
+function stopFidget() {
+  if (fidgetTimer) { clearTimeout(fidgetTimer); fidgetTimer = null; }
+}
+
+function updateBootProgress(fraction, status) {
+  bootOverall = Math.max(0, Math.min(1, fraction));
+  if (bootSpiritEl) bootSpiritEl.style.left = (bootOverall * 100).toFixed(1) + "%";
+  const lit = Math.min(torchFlameEls.length, Math.floor(bootOverall * torchFlameEls.length + 1e-6));
+  torchFlameEls.forEach((el, i) => { if (i < lit) el.classList.add("lit"); });
+  if (status && bootStatusEl) bootStatusEl.textContent = status;
+}
+
+function handleLoadProgress({ phase, overall, status }) {
+  if (bootFinished) return;
+  if (phase === "warmup") {
+    // a genuine restart (first warm-up, or a GPU->CPU fallback) - the torches
+    // un-light too, since leaving one lit while the status says "retrying"
+    // would show something that did not actually happen
+    stopWarmupCreep();
+    torchFlameEls.forEach((el) => el.classList.remove("lit"));
+    updateBootProgress(0, status);
+    startWarmupCreep();
+  } else {
+    stopWarmupCreep();
+    updateBootProgress(overall, status);
+  }
+}
+
+// Registers listeners before the state check below, not after - if the load
+// finishes in the gap while that check is in flight, the event still lands on
+// a listener that was already there. Checking first and listening second
+// would leave a real race.
+async function waitForModelThenReveal() {
+  const MIN_BOOT_MS = 1400; // let the wordmark's own beat finish even on an instant load
+  const started = performance.now();
+  let revealed = false;
+
+  const reveal = () => {
+    if (revealed) return;
+    revealed = true;
+    bootFinished = true;
+    stopWarmupCreep();
+    stopFidget();
+    const elapsed = performance.now() - started;
+    setTimeout(() => {
+      bootScreen.classList.add("fade-out");
+      setTimeout(finishBoot, 500);
+    }, Math.max(0, MIN_BOOT_MS - elapsed));
+  };
+
+  window.emb3r.onModelLoadProgress(handleLoadProgress);
+  // model-ready firing at all - regardless of success or failure - is the
+  // signal that the attempt is over. What to do about a failure is the
+  // existing "can't reply right now" handling once the user actually sends
+  // something; this only decides when it is safe to show the chat UI at all.
+  window.emb3r.onModelReady(() => {
+    if (revealed) return; // this listener also covers later profile/model switches
+    // a satisfying "fully lit" moment before the fade, rather than cutting
+    // straight from "in progress" to gone
+    updateBootProgress(1, "ready");
+    setTimeout(reveal, 400);
+  });
+
+  const state = await window.emb3r.getModelState();
+  if (state.needsSetup || state.ready || state.error) {
+    reveal();
+    return;
+  }
+
+  // there is a real load in flight - show the torch row and start waiting
+  setTimeout(() => bootProgressEl && bootProgressEl.classList.add("visible"), 650);
+  updateBootProgress(0, "warming up");
+  startWarmupCreep();
+  scheduleFidget();
+}
+
+runBoot();
+waitForModelThenReveal();
 
 // =============================
 // Settings Panel

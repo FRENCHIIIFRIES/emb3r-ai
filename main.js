@@ -563,6 +563,28 @@ function notifyModelReady() {
   }
 }
 
+// Real progress, not a fabricated one: node-llama-cpp's loadModel() and
+// createContext() both take an onLoadProgress(0..1) callback (confirmed in
+// node_modules/node-llama-cpp/dist/evaluator/LlamaModel/LlamaModel.d.ts and
+// .../LlamaContext/types.d.ts). Weights loading is the dominant cost for any
+// model worth downloading, so it gets most of the bar; context creation is
+// comparatively fast and gets the tail end. This is a judgement call about
+// how to divide one bar between two real signals, not an invented number.
+const LOAD_PHASE_SPAN = { weights: [0.05, 0.90], context: [0.90, 1.0] };
+
+// getLlama() itself has no progress callback - on a cold start it is the
+// GPU/VRAM probe from the hardware-aware work, measured at ~17s on real
+// hardware - so there is a real stretch with no signal at all. Reported once,
+// deliberately not incrementing: the renderer creeps this itself and is not
+// allowed to invent a number here either.
+function sendLoadProgress(phase, phaseProgress, status) {
+  if (!mainWindow) return;
+  let overall = 0;
+  const span = LOAD_PHASE_SPAN[phase];
+  if (span) overall = span[0] + phaseProgress * (span[1] - span[0]);
+  mainWindow.webContents.send("emb3r:model-load-progress", { phase, phaseProgress, overall, status });
+}
+
 async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   const modelPath = path.join(MODELS_DIR, target);
@@ -575,10 +597,16 @@ async function loadLocalModel(filename, { conversationId } = {}) {
   }
 
   console.log("Loading local model from:", modelPath);
+  sendLoadProgress("warmup", 0, "warming up");
   try {
     const llama = await getLlama();
-    const model = await llama.loadModel({ modelPath: modelPath });
-    const context = await model.createContext();
+    const model = await llama.loadModel({
+      modelPath: modelPath,
+      onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
+    });
+    const context = await model.createContext({
+      onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
+    });
     // keep the sequence: it is the only way to read how full the context is
     chatSequence = context.getSequence();
     chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
@@ -586,10 +614,19 @@ async function loadLocalModel(filename, { conversationId } = {}) {
     console.log("Local model loaded:", target);
   } catch (err) {
     console.error("GPU load failed, retrying on CPU only:", err.message);
+    // a genuinely fresh attempt, not a continuation - the bar resetting here
+    // is honest, not a bug, because loading really is starting over
+    sendLoadProgress("warmup", 0, "retrying on CPU");
     try {
       const llama = await getLlama({ gpu: false });
-      const model = await llama.loadModel({ modelPath: modelPath });
-      const context = await model.createContext({ contextSize: 4096 });
+      const model = await llama.loadModel({
+        modelPath: modelPath,
+        onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
+      });
+      const context = await model.createContext({
+        contextSize: 4096,
+        onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
+      });
       chatSequence = context.getSequence();
       chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
       modelLoadError = null;
@@ -971,6 +1008,19 @@ ipcMain.handle("emb3r:setup-state", async () => {
     speedNote: best ? modelSpeedNote(best, ram, gpu) : null,
   };
 });
+
+// Deliberately cheap and synchronous-feeling (no GPU probe, no disk-space
+// check) - the boot screen calls this once to find out whether it needs to
+// wait for anything at all, and a slow answer here would defeat the purpose.
+// Registering the onModelLoadProgress/onModelReady listeners before calling
+// this closes the race where the load finishes between the check and the
+// listener being attached: even if it does, the event still lands on a
+// listener that was already there.
+ipcMain.handle("emb3r:get-model-state", () => ({
+  ready: Boolean(chatSession),
+  error: modelLoadError,
+  needsSetup: !MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file))),
+}));
 
 // Times a small ranged read from the CDN the download will actually come from,
 // so the estimate reflects the real path rather than a guess. Deliberately

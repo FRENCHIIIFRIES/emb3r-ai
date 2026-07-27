@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld("emb3r", {
   onModelReady: (callback) => {
     ipcRenderer.on("emb3r:model-ready", (_event, data) => callback(data));
   },
+  getModelState: () => ipcRenderer.invoke("emb3r:get-model-state"),
+  onModelLoadProgress: (callback) => {
+    ipcRenderer.on("emb3r:model-load-progress", (_event, data) => callback(data));
+  },
 
   getConfig: () => ipcRenderer.invoke("emb3r:get-config"),
   setInternetConsent: (granted) => ipcRenderer.invoke("emb3r:set-internet-consent", granted),

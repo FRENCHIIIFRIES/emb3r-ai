@@ -1172,10 +1172,112 @@ pre{
     100% { color:#ffd964; text-shadow: 0 0 8px #ffb020, 0 0 20px #ff8000; }
 }
 
+/* Only shown when there is genuinely something to wait for - a fresh install
+   with no model downloaded yet skips straight past this, since there is
+   nothing loading. Hidden by default; JS adds .visible once it knows. */
+#bootProgress{
+    margin-top:22px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    opacity:0;
+    transition:opacity .3s ease;
+    pointer-events:none;
+}
+
+#bootProgress.visible{
+    opacity:1;
+}
+
+#torchRow{
+    position:relative;
+    display:flex;
+    gap:22px;
+}
+
+.torch{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:2px;
+    font-family:"JetBrains Mono", monospace;
+}
+
+.torchFlame{
+    font-size:13px;
+    line-height:1;
+    color:#3a3a3a;
+    transition:color .3s ease, text-shadow .3s ease;
+}
+
+.torchPost{
+    font-size:11px;
+    line-height:1;
+    color:#3a3a3a;
+}
+
+/* the moment a torch crosses its threshold, not a loop - real progress lighting
+   one specific torch, so it only plays once per torch via animation-fill-mode */
+.torchFlame.lit{
+    color:#ffb020;
+    text-shadow:0 0 6px #ff8000, 0 0 14px #ff6a00;
+    animation:torchCatch .5s ease-out;
+}
+
+@keyframes torchCatch{
+    0%   { transform:scale(0.6); }
+    45%  { transform:scale(1.35); }
+    100% { transform:scale(1); }
+}
+
+/* the spirit itself: one glowing glyph that travels left-to-right across the
+   row as real progress comes in, and visibly fidgets while it waits so a long
+   silent stretch (getLlama()'s own startup has no progress signal at all -
+   see main.js) never reads as the screen having frozen */
+#bootSpirit{
+    position:absolute;
+    top:-20px;
+    left:0%;
+    font-size:15px;
+    color:#ffd964;
+    text-shadow:0 0 6px #ffb020, 0 0 14px #ff8000;
+    transform:translateX(-50%);
+    transition:left .5s cubic-bezier(.3,.6,.3,1);
+    animation:spiritBob 1.6s ease-in-out infinite;
+}
+
+@keyframes spiritBob{
+    0%,100% { transform:translateX(-50%) translateY(0) rotate(0deg); }
+    50%     { transform:translateX(-50%) translateY(-3px) rotate(-6deg); }
+}
+
+/* a one-off nudge, toggled briefly by JS at random intervals while waiting -
+   distinct from the constant bob above, so idling reads as "doing something"
+   rather than a single repeating loop */
+#bootSpirit.fidget{
+    animation:spiritFidget .4s ease-in-out;
+}
+
+@keyframes spiritFidget{
+    0%,100% { transform:translateX(-50%) rotate(0deg) scale(1); }
+    30%     { transform:translateX(-50%) rotate(14deg) scale(1.15); }
+    60%     { transform:translateX(-50%) rotate(-10deg) scale(0.95); }
+}
+
+#bootStatusLine{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    color:#8a6a4a;
+    min-height:1.2em;
+}
+
 @media (prefers-reduced-motion: reduce){
     #bootThree.glowing{ animation: none; }
     #bootLogo{ animation-duration: 0.01ms; }
     .spark{ display:none; }
+    #bootSpirit{ animation:none; transition:none; }
+    .torchFlame.lit{ animation:none; }
 }
 
 #app{
@@ -1226,6 +1328,18 @@ pre{
 ██╔══██╗
 ██║  ██║
 ╚═╝  ╚═╝</pre>
+    </div>
+    <div id="bootProgress" aria-hidden="true">
+      <div id="torchRow">
+        <div class="torch"><span class="torchFlame">▲</span><span class="torchPost">┃</span></div>
+        <div class="torch"><span class="torchFlame">▲</span><span class="torchPost">┃</span></div>
+        <div class="torch"><span class="torchFlame">▲</span><span class="torchPost">┃</span></div>
+        <div class="torch"><span class="torchFlame">▲</span><span class="torchPost">┃</span></div>
+        <div class="torch"><span class="torchFlame">▲</span><span class="torchPost">┃</span></div>
+        <div class="torch"><span class="torchFlame">▲</span><span class="torchPost">┃</span></div>
+      </div>
+      <div id="bootSpirit">✺</div>
+      <div id="bootStatusLine">warming up</div>
     </div>
   </div>
 </div>
