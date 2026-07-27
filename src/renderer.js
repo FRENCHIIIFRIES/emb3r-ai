@@ -887,7 +887,25 @@ async function finishBoot() {
 const bootProgressEl  = document.getElementById("bootProgress");
 const bootSpiritEl    = document.getElementById("bootSpirit");
 const bootStatusEl    = document.getElementById("bootStatusLine");
-const torchFlameEls   = [...document.querySelectorAll("#torchRow .torchFlame")];
+const bootDetailEl    = document.getElementById("bootStatusDetail");
+const bootFirstRunEl  = document.getElementById("bootFirstRun");
+const bootBrazierEl   = document.getElementById("bootBrazier");
+const bootLetterEls   = [...document.querySelectorAll("#bootLogo .bootLetter")];
+// the brazier is the arrival point, not a progress step - the torches are the
+// ones the spirit walks past, so it is excluded from the count that lights them
+const torchFlameEls   = [...document.querySelectorAll("#torchRow .torch:not(.brazier) .torchFlame")];
+
+// Two lines: a themed one that says what the fire is doing, and a factual one
+// underneath naming the real step. The theme is decoration; the detail line is
+// the part that has to stay true, so it carries the actual phase and, where a
+// genuine number exists, the percentage.
+const PHASE_THEME = {
+  "warming up":        "striking the flint",
+  "retrying on CPU":   "relighting on the hearth",
+  "loading weights":   "feeding the fire",
+  "preparing context": "banking the coals",
+  "ready":             "lit",
+};
 
 // how far the simulated warm-up creep is allowed to go before it must stop
 // and wait for a real number - matches LOAD_PHASE_SPAN.weights[0] in main.js,
@@ -910,7 +928,11 @@ function stopWarmupCreep() {
 function startWarmupCreep() {
   stopWarmupCreep();
   warmupCreepTimer = setInterval(() => {
-    updateBootProgress(bootOverall + (WARMUP_CAP - bootOverall) * 0.04, bootStatusEl.textContent);
+    // no status argument: the creep moves the bar, it does not change what the
+    // screen claims is happening. Re-reading the visible text and passing it
+    // back would feed the themed headline through the phase lookup and end up
+    // mirroring it into the factual line.
+    updateBootProgress(bootOverall + (WARMUP_CAP - bootOverall) * 0.04);
   }, 150);
 }
 
@@ -932,15 +954,34 @@ function stopFidget() {
   if (fidgetTimer) { clearTimeout(fidgetTimer); fidgetTimer = null; }
 }
 
-function updateBootProgress(fraction, status) {
+// The themed headline and the factual line move together, so they can never
+// disagree about which phase is running.
+function setBootStatus(status, detail) {
+  if (!status) return;
+  if (bootStatusEl) bootStatusEl.textContent = PHASE_THEME[status] || status;
+  if (bootDetailEl) bootDetailEl.textContent = detail || status;
+}
+
+function updateBootProgress(fraction, status, detail) {
   bootOverall = Math.max(0, Math.min(1, fraction));
   if (bootSpiritEl) bootSpiritEl.style.left = (bootOverall * 100).toFixed(1) + "%";
   const lit = Math.min(torchFlameEls.length, Math.floor(bootOverall * torchFlameEls.length + 1e-6));
   torchFlameEls.forEach((el, i) => { if (i < lit) el.classList.add("lit"); });
-  if (status && bootStatusEl) bootStatusEl.textContent = status;
+
+  // heat runs through the wordmark at the same rate, so the letters and the
+  // torches are visibly the same process
+  const caught = Math.min(bootLetterEls.length,
+                          Math.floor(bootOverall * bootLetterEls.length + 1e-6));
+  bootLetterEls.forEach((el, i) => el.classList.toggle("caught", i < caught));
+
+  // the brazier is the arrival, so it only catches on genuine completion -
+  // never on the creep, which deliberately never reaches 1
+  if (bootBrazierEl) bootBrazierEl.classList.toggle("lit", bootOverall >= 1);
+
+  setBootStatus(status, detail);
 }
 
-function handleLoadProgress({ phase, overall, status }) {
+function handleLoadProgress({ phase, phaseProgress, overall, status }) {
   if (bootFinished) return;
   if (phase === "warmup") {
     // a genuine restart (first warm-up, or a GPU->CPU fallback) - the torches
@@ -948,11 +989,17 @@ function handleLoadProgress({ phase, overall, status }) {
     // would show something that did not actually happen
     stopWarmupCreep();
     torchFlameEls.forEach((el) => el.classList.remove("lit"));
-    updateBootProgress(0, status);
+    bootLetterEls.forEach((el) => el.classList.remove("caught"));
+    updateBootProgress(0, status, status);
     startWarmupCreep();
   } else {
     stopWarmupCreep();
-    updateBootProgress(overall, status);
+    // only weights and context carry a real per-phase number; the warm-up
+    // deliberately has none, so no percentage is shown for it
+    const pct = typeof phaseProgress === "number"
+      ? ` · ${Math.round(phaseProgress * 100)}%`
+      : "";
+    updateBootProgress(overall, status, status + pct);
   }
 }
 
@@ -986,20 +1033,29 @@ async function waitForModelThenReveal() {
   window.emb3r.onModelReady(() => {
     if (revealed) return; // this listener also covers later profile/model switches
     // a satisfying "fully lit" moment before the fade, rather than cutting
-    // straight from "in progress" to gone
-    updateBootProgress(1, "ready");
-    setTimeout(reveal, 400);
+    // straight from "in progress" to gone - the brazier flare needs a beat of
+    // its own or it is gone before it has been seen
+    updateBootProgress(1, "ready", "model loaded");
+    setTimeout(reveal, 650);
   });
 
   const state = await window.emb3r.getModelState();
-  if (state.needsSetup || state.ready || state.error) {
+  if (state.needsSetup) {
+    // a fresh install has no model to wait for, so the torches would never
+    // light. Naming that beats cutting silently to the setup screen and
+    // leaving the boot sequence looking like it was skipped.
+    if (bootFirstRunEl) bootFirstRunEl.hidden = false;
+    setTimeout(reveal, 900);
+    return;
+  }
+  if (state.ready || state.error) {
     reveal();
     return;
   }
 
   // there is a real load in flight - show the torch row and start waiting
   setTimeout(() => bootProgressEl && bootProgressEl.classList.add("visible"), 650);
-  updateBootProgress(0, "warming up");
+  updateBootProgress(0, "warming up", "starting up");
   startWarmupCreep();
   scheduleFidget();
 }
