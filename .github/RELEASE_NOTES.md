@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.14.0 — the boot screen actually waits for the model now
+
+Previously, the loading screen faded out on a fixed timer whether or not the model had actually finished loading — on a slower machine or a bigger model, you could land in the chat before there was anything behind it to answer.
+
+It now waits for the real thing, dressed up to match: a small ember spirit travels across a row of torches, lighting each one as the model genuinely loads, with the last torch reserved for true completion rather than "close enough." While the app is warming up its hardware detection (a stretch with no progress signal to report at all), the spirit fidgets around so the screen never looks frozen.
+
+A fresh install with nothing downloaded yet skips all of this and goes straight to the usual first-run setup — there's nothing to wait for.
+
 ## v1.13.0 — attachment limit adjusted, internal cleanup
 
 The per-file attachment limit introduced in v1.11.0 is now **5MB**, down from 20MB. Files above that are still refused with a clear message rather than silently cut short — that part hasn't changed, just the number. Anything up to 5MB that doesn't fit in the model's context window is still handled the same way: split into sections and searched per question, rather than pasted in whole.
