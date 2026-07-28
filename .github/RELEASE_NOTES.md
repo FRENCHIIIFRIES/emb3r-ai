@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.19.0 — delete models you don't want, and a tidier window
+
+You can now delete a model from Settings → Models. Six models at 1.9–9GB each add up quickly, and until now the only way to get one back off your disk was to go hunting for the folder yourself.
+
+The model you're currently using can't be deleted — switch to another one first. That's deliberate: pulling the model out from under a running session would leave emb3r unable to answer anything. Deleting takes two clicks rather than a dialog box, and it clears up any half-finished download left behind from an earlier attempt, which was otherwise invisible and still taking up space.
+
+The File / Edit / View / Window menu bar is gone on Windows and Linux. It came from Electron by default and had nothing to do with emb3r — there's no file to open and no view to change. On macOS a minimal menu stays, because that's where ⌘C, ⌘V and ⌘Q actually live and removing it would quietly break them.
+
 ## v1.18.0 — Ember has more to say with its face
 
 Seven new expressions, each tied to something actually happening rather than added for variety. Ember winks when a copy works, looks surprised at a file too big to read in one go, and scans left and right while answering from a document you've attached. It looks delighted rather than merely happy when its mood is full, and wears a distinct face when a model fails to load — which is a different problem from a reply going badly, and worth being able to tell apart at a glance. Turn the offline lock on and Ember settles into a calm, deliberately shut expression.
