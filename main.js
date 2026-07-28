@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Menu } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -659,11 +659,35 @@ function appIconPath() {
   return fs.existsSync(candidate) ? candidate : undefined;
 }
 
+// Electron installs a default File/Edit/View/Window menu, which has nothing to
+// do with this app - there is no File to open and no View to change. It is
+// removed, but not the same way on both platforms:
+//
+// On Windows and Linux the menu is a strip inside our own window, so it can go
+// entirely. On macOS the menu bar belongs to the system, cannot be hidden, and
+// is where Cmd+C/V/X/A/Z and Cmd+Q are actually wired - deleting it leaves an
+// app whose clipboard shortcuts silently stop working. So macOS keeps a minimal
+// menu built only from roles: the standard shortcuts, and nothing invented.
+function installAppMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: "appMenu" },
+    { role: "editMenu" },
+    { role: "windowMenu" },
+  ]));
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 900,
     height: 700,
     icon: appIconPath(),
+    // belt and braces on Windows/Linux: with no menu set there is nothing to
+    // show, but this also stops Alt briefly revealing an empty bar
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -780,6 +804,9 @@ ipcMain.handle("emb3r:open-releases-page", () => {
 app.whenReady().then(async () => {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
   clearPartialDownloads();
+  // before the window, so it never appears with the default menu and then
+  // loses it a frame later
+  installAppMenu();
   mainWindow = createWindow();
 
   try {
@@ -1263,6 +1290,46 @@ ipcMain.handle("emb3r:cancel-download", (_e, modelId) => {
   if (!controller) return { success: false, error: "No download in progress for that model." };
   controller.abort();
   return { success: true };
+});
+
+// Models are 1.9-9GB each and the catalogue offers six of them, so a machine
+// can end up holding tens of gigabytes with no way to reclaim it from inside
+// the app. Deleting is refused for the model currently loaded: unloading it
+// mid-session would leave the app unable to answer, and "delete the thing you
+// are using" is not a decision worth making on the user's behalf. Switch first,
+// then delete.
+ipcMain.handle("emb3r:delete-model", async (_e, filename) => {
+  const entry = MODEL_CATALOG.find((m) => m.file === filename);
+  if (!entry) return { success: false, error: "Unknown model." };
+
+  if (config.activeModel === filename) {
+    return {
+      success: false,
+      error: `${entry.name} is the model in use. Switch to another one first, then delete it.`,
+    };
+  }
+  if (activeDownloads.has(entry.id)) {
+    return { success: false, error: `${entry.name} is still downloading. Cancel that first.` };
+  }
+
+  const target = path.join(MODELS_DIR, filename);
+  if (!fs.existsSync(target)) {
+    return { success: false, error: `${entry.name} is not on disk.` };
+  }
+
+  try {
+    // measured before the unlink, so the number reported back is this file
+    // rather than whatever the filesystem settles at afterwards
+    const freedGB = fs.statSync(target).size / 1024 ** 3;
+    fs.unlinkSync(target);
+    // a partial file from an earlier interrupted attempt would otherwise be
+    // invisible to the list and keep occupying space
+    const partial = target + ".part";
+    if (fs.existsSync(partial)) fs.unlinkSync(partial);
+    return { success: true, freedGB: Number(freedGB.toFixed(1)), name: entry.name };
+  } catch (err) {
+    return { success: false, error: `Could not delete ${entry.name}: ${err.message}` };
+  }
 });
 
 ipcMain.handle("emb3r:select-model", async (_e, filename) => {
