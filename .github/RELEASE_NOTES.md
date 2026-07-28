@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.17.0 — the loading screen says what it's doing
+
+The wait while a model loads now explains itself. There are two lines under the torches: one says what the fire is doing — *striking the flint*, *feeding the fire*, *banking the coals* — and the quieter line beneath names the actual step, with a real percentage where there is one to give. Where there genuinely isn't one, during the hardware probe, it doesn't invent a number.
+
+Heat now spreads through the EMB3R wordmark in step with the torches, so the letters and the row read as one thing rather than two. And the spirit that travels the row finally has somewhere to arrive: a brazier at the end that catches only when the model has genuinely finished loading.
+
+A fresh install with nothing downloaded yet has no model to wait for, so instead of skipping the sequence in silence it now says so.
+
 ## v1.16.0 — a bigger icon, and the salamander comes inside
 
 The app icon was sitting small in the taskbar — the artwork only filled about 79% of the width and 53% of the height of its own canvas, so a good chunk of what you saw was empty space. It's now cropped in to fill the frame properly, about 13% larger with no loss of detail.
