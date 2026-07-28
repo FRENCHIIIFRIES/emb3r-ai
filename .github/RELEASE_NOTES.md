@@ -1,5 +1,11 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.18.0 — Ember has more to say with its face
+
+Seven new expressions, each tied to something actually happening rather than added for variety. Ember winks when a copy works, looks surprised at a file too big to read in one go, and scans left and right while answering from a document you've attached. It looks delighted rather than merely happy when its mood is full, and wears a distinct face when a model fails to load — which is a different problem from a reply going badly, and worth being able to tell apart at a glance. Turn the offline lock on and Ember settles into a calm, deliberately shut expression.
+
+Two new effects: a puff of smoke when you stop a reply mid-sentence, and a brief flicker when something goes wrong. Both respect the Reactions toggle in Settings → Display and your system's reduce-motion setting, exactly like the sparkle and heart already did.
+
 ## v1.17.0 — the loading screen says what it's doing
 
 The wait while a model loads now explains itself. There are two lines under the torches: one says what the fire is doing — *striking the flint*, *feeding the fire*, *banking the coals* — and the quieter line beneath names the actual step, with a real percentage where there is one to give. Where there genuinely isn't one, during the hardware probe, it doesn't invent a number.
