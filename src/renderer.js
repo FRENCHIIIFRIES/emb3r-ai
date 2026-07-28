@@ -26,9 +26,22 @@ const FACES = {
   error:    "( x_x )",
   music1:   "( ᵔ◡ᵔ )♪",
   music2:   "( ᵔ◡ᵔ )♫",
+
+  // Every face below is wired to a state the app can actually be in. A face
+  // with no trigger is just a string nobody ever sees, so none are added
+  // speculatively.
+  wink:      "( ^_~ )",          // something the user did worked
+  surprised: "( o_O )",          // a file arrived
+  search1:   "( >_> )",          // reading an attachment: eyes scan across
+  search2:   "( <_< )",
+  delighted: "( ♥‿♥ )",          // replied while mood is full
+  dizzy:     "( @_@ )",          // the model failed to load, not just a bad reply
+  offline:   "( ·_· )",          // offline lock engaged: calm, deliberately shut
 };
 
 let mood   = 5;
+// mirrors the main process's offline lock, so the resting face can reflect it
+let offlineLockOn = false;
 let thinkTimer = null;
 let idleTimer  = null;
 let sleepTimer = null;
@@ -74,11 +87,42 @@ function startThinking() {
   }, 400);
 }
 
+// Reading an attachment is a different activity from thinking about a question,
+// so it gets its own animation: the eyes track across the page rather than
+// blinking in place. Reuses thinkTimer, since the two can never run at once.
+function startSearching() {
+  stopThinking();
+  let flip = false;
+  setFace("search1");
+  faceBox.classList.add("thinking");
+  thinkTimer = setInterval(() => {
+    flip = !flip;
+    setFace(flip ? "search2" : "search1");
+  }, 320);
+}
+
+// A face shown briefly and then handed back to whatever the resting state is.
+// Never fires while thinking, or it would fight the animation for the element.
+function flashFace(state, ms = 1100) {
+  if (thinkTimer) return;
+  setFace(state);
+  setTimeout(() => {
+    if (!thinkTimer) setFace(restingFace());
+  }, ms);
+}
+
+// One place that decides what "not doing anything" looks like, so the several
+// callers that return to rest cannot drift apart.
+function restingFace() {
+  if (offlineLockOn) return "offline";
+  return mood <= 2 ? "sad" : "idle";
+}
+
 function resetIdleTimers() {
   if (idleTimer)  clearTimeout(idleTimer);
   if (sleepTimer) clearTimeout(sleepTimer);
   idleTimer = setTimeout(() => {
-    if (!thinkTimer) { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }
+    if (!thinkTimer) { setFace(restingFace()); setStatus("idle"); }
   }, 60_000);
   sleepTimer = setTimeout(() => {
     if (!thinkTimer) { setFace("sleeping"); setStatus("sleeping"); }
@@ -157,6 +201,59 @@ function heartOn(line) {
   el.addEventListener("animationend", () => el.remove(), { once: true });
 }
 
+// Stopping mid-sentence leaves the reply visibly unfinished, so the effect is a
+// puff dispersing rather than anything celebratory - the answer went out, not up.
+const PUFF_CHARS = ["˚", "°", "·", "∘"];
+
+function puffOn(line, count = 6) {
+  if (!reactionsAllowed() || !line) return;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement("span");
+    el.className = "sparkle";                 // same rise-and-fade keyframe
+    el.textContent = PUFF_CHARS[Math.floor(Math.random() * PUFF_CHARS.length)];
+    el.style.left = (58 + Math.random() * 34).toFixed(1) + "%";
+    el.style.fontSize = (10 + Math.random() * 6).toFixed(1) + "px";
+    el.style.color = "currentColor";
+    el.style.opacity = "0.55";
+    // drifts sideways and barely climbs, unlike a sparkle
+    el.style.setProperty("--dx", (Math.random() * 34 - 17).toFixed(1) + "px");
+    el.style.setProperty("--dy", (-8 - Math.random() * 10).toFixed(1) + "px");
+    el.style.setProperty("--dur", (900 + Math.random() * 600).toFixed(0) + "ms");
+    el.style.animationDelay = (Math.random() * 260).toFixed(0) + "ms";
+    line.appendChild(el);
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+  }
+}
+
+// A short burst of noise on a failure. Deliberately monochrome and brief: an
+// error should read as something going wrong, not as another decoration.
+const GLITCH_CHARS = ["▚", "▞", "▘", "▝", "░", "▒"];
+
+function glitchOn(line, count = 7) {
+  if (!reactionsAllowed() || !line) return;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement("span");
+    el.className = "sparkle";
+    el.textContent = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+    el.style.left = (4 + Math.random() * 88).toFixed(1) + "%";
+    el.style.fontSize = (8 + Math.random() * 4).toFixed(1) + "px";
+    el.style.color = "#e0524a";
+    el.style.textShadow = "0 0 5px #e0524a";
+    // scatter rather than rise, so it reads as interference
+    el.style.setProperty("--dx", (Math.random() * 26 - 13).toFixed(1) + "px");
+    el.style.setProperty("--dy", (Math.random() * 18 - 9).toFixed(1) + "px");
+    el.style.setProperty("--dur", (380 + Math.random() * 220).toFixed(0) + "ms");
+    el.style.animationDelay = (Math.random() * 120).toFixed(0) + "ms";
+    line.appendChild(el);
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+  }
+}
+
+// No drifting-zZz effect to match: #pet is overflow:hidden and #face is not a
+// positioned ancestor, so anything absolutely positioned there is clipped or
+// lands against the wrong box. The sleeping face already carries "zZz" in its
+// own text, which is the same information without fighting the layout.
+
 // The heart is for "happy to help", which is a narrower thing than "finished
 // replying" - firing it on every answer would make it meaningless within a
 // minute. It needs an actual warm moment: the user being appreciative, or
@@ -202,6 +299,7 @@ function makeCopyButton(copyText) {
       await navigator.clipboard.writeText(copyText());
       btn.textContent = "✓";
       btn.classList.add("copied");
+      flashFace("wink", 900);
     } catch {
       btn.textContent = "✗";
     }
@@ -307,7 +405,11 @@ async function onSend() {
   playSendBeep();
 
   let messageToSend = text;
+  // true when the reply will be built from an attached file, either read whole
+  // or searched - both mean the answer is grounded in the document
+  let usedRetrieval = false;
   if (pendingUpload) {
+    usedRetrieval = true;
     const question = text || "Summarise this file.";
     const budget = attachmentCharBudget();
 
@@ -349,15 +451,25 @@ async function onSend() {
   mood = Math.min(5, mood + 1);
   renderStats();
 
-  await submitToModel(messageToSend);
+  await submitToModel(messageToSend, undefined, { fromDocument: usedRetrieval });
   // the attachment deliberately survives, so follow-ups can query it again.
   // Cleared with the ✕ on the attachment bar.
   input.focus();
 }
 
-async function submitToModel(messageToSend, opts) {
-  setStatus("thinking...");
-  startThinking();
+// `ui` is kept separate from `opts`: opts is forwarded to the main process,
+// and adding presentation flags to it would send them across IPC for no reason.
+async function submitToModel(messageToSend, opts, ui = {}) {
+  // The scanning face means "this answer is being built from your file", which
+  // is true for the whole reply - not "searching now", which finished in
+  // milliseconds before the model was ever called.
+  if (ui.fromDocument) {
+    setStatus("reading...");
+    startSearching();
+  } else {
+    setStatus("thinking...");
+    startThinking();
+  }
   resetIdleTimers();
 
   // reset to the default in case the previous exchange left it labelled for
@@ -397,7 +509,8 @@ async function submitToModel(messageToSend, opts) {
       if (result.stopped) append("sys", "sys", "stopped");
       if (result.source === "gemini") appendSources(result.sources);
       playReplyBeep();
-      setFace("happy");
+      // a fuller face at full mood, so the bar above it means something visible
+      setFace(mood >= 5 ? "delighted" : "happy");
       setStatus("happy");
 
       // on the reply line itself, so the reaction is attached to the thing
@@ -405,15 +518,19 @@ async function submitToModel(messageToSend, opts) {
       sparkleOn(streamLine);
       if (deservesHeart(lastUserMessage, streamText || result.text)) heartOn(streamLine);
     }
-    setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
+    setTimeout(() => { setFace(restingFace()); setStatus("idle"); }, 1500);
   } catch (err) {
     stopThinking();
     if (streamLine && !streamText) streamLine.remove();
-    append("err", "err", String(err?.message || err));
+    const errLine = append("err", "err", String(err?.message || err));
     playErrorBeep();
-    setFace("error");
+    // a model that failed to load is a different kind of wrong from a reply
+    // that went badly, and the face says which
+    const loadFailure = /load|model|memory|not found/i.test(String(err?.message || err));
+    setFace(loadFailure ? "dizzy" : "error");
     setStatus("error");
-    setTimeout(() => { setFace(mood <= 2 ? "sad" : "idle"); setStatus("idle"); }, 1500);
+    glitchOn(errLine);
+    setTimeout(() => { setFace(restingFace()); setStatus("idle"); }, 1500);
   } finally {
     setGenerating(false);
     streamLine = null;
@@ -542,7 +659,11 @@ window.emb3r.onGenStats(({ tokensPerSec, context }) => {
 
 stopButton.addEventListener("click", async () => {
   stopButton.disabled = true;
+  // the reply line is captured before awaiting: the stream finishing clears
+  // streamLine, and the puff belongs on the sentence that got cut off
+  const stopped = streamLine;
   await window.emb3r.stopGeneration();
+  puffOn(stopped);
   stopButton.disabled = false;
 });
 
@@ -781,6 +902,9 @@ fileInput.addEventListener("change", () => {
         ? `attached ${file.name} (${humanSize(file.size)}) — small enough to read in full. Ask away.`
         : `attached ${file.name} (${humanSize(file.size)}, ${pendingUpload.sectionCount} sections) — too big to read at ` +
           `once, so each question will search it and use the most relevant parts. Ask away.`);
+    // only for a file big enough to need searching - reacting to every small
+    // paste would make the expression meaningless
+    if (!whole) flashFace("surprised", 1300);
   };
   reader.onerror = () => {
     append("err", "err", `couldn't read file: ${file.name}`);
@@ -1470,6 +1594,13 @@ function renderNetStatus(status) {
   // is, that is the more urgent thing for the light to be saying
   netIndicator.classList.toggle("locked", locked && !active);
 
+  // the pet reflects the lock too, but only once it is at rest - overwriting a
+  // thinking or searching animation to announce a settings change would be the
+  // face reporting the wrong thing
+  const lockChanged = locked !== offlineLockOn;
+  offlineLockOn = locked;
+  if (lockChanged && !thinkTimer) setFace(restingFace());
+
   if (active) {
     // name what is actually happening rather than a generic "connecting"
     const open = recent.find((r) => r.outcome === "open");
@@ -2033,7 +2164,7 @@ async function pollNowPlaying() {
         setStatus("vibing");
         chat.title = `♪ ${info.track} — ${info.artist}`;
       } else {
-        setFace(mood <= 2 ? "sad" : "idle");
+        setFace(restingFace());
         setStatus("idle");
       }
     }
