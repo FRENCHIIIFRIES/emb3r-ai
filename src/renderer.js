@@ -1906,11 +1906,36 @@ const downloadingIds = new Set();
 
 function renderModelList() {
   modelListEl.innerHTML = "";
+
+  // What the six rows below cost in total. With deleting now possible this is
+  // the number that makes the feature worth having, so it leads the section
+  // rather than being buried.
+  const onDisk = modelsCache.filter((m) => m.downloaded);
+  const usedGB = onDisk.reduce((sum, m) => sum + m.sizeGB, 0);
+  const summary = document.createElement("div");
+  summary.className = "modelSummary";
+  summary.textContent = onDisk.length
+    ? `${onDisk.length} model${onDisk.length > 1 ? "s" : ""} on disk · about ${usedGB.toFixed(1)}GB`
+    : "no models downloaded yet";
+  modelListEl.appendChild(summary);
+
   modelsCache.forEach((m) => {
     const row = document.createElement("div");
     row.className = "modelRow";
 
     const isActive = m.file === modelsCache.activeModel;
+    const downloading = downloadingIds.has(m.id);
+    // main refuses a model the machine cannot hold. The list used to offer
+    // Download anyway and let the refusal arrive after the click - fitsRam was
+    // being sent across IPC and then ignored.
+    const tooBig = m.fitsRam === false;
+
+    if (isActive) row.classList.add("isActive");
+    if (tooBig) row.classList.add("tooBig");
+
+    // header: what it is on the left, what you can do on the right
+    const head = document.createElement("div");
+    head.className = "modelHead";
 
     const nameEl = document.createElement("div");
     nameEl.className = "modelName";
@@ -1929,10 +1954,46 @@ function renderModelList() {
       nameEl.append(" ", tag);
     }
 
+    const actions = document.createElement("div");
+    actions.className = "modelActions";
+
+    const btn = document.createElement("button");
+    if (downloading) {
+      btn.textContent = "Cancel";
+      btn.addEventListener("click", () => cancelDownload(m.id));
+    } else if (tooBig) {
+      // say why rather than failing on click
+      btn.textContent = `Needs ${m.minRamGB}GB RAM`;
+      btn.disabled = true;
+      btn.title = `This machine cannot hold ${m.name}.`;
+    } else if (!m.downloaded) {
+      btn.textContent = "Download";
+      btn.addEventListener("click", () => requestDownload(m.id));
+    } else if (isActive) {
+      btn.textContent = "In use";
+      btn.disabled = true;
+    } else {
+      btn.textContent = "Use this model";
+      btn.addEventListener("click", () => selectModel(m.file));
+    }
+    actions.appendChild(btn);
+
+    // Only offered for a model that is on disk and not the one in use - the
+    // active model has no Delete because unloading it mid-session would leave
+    // the app unable to answer. Main refuses that case too; this just avoids
+    // showing a button whose only outcome is an error.
+    if (m.downloaded && !isActive && !downloading) {
+      actions.appendChild(makeDeleteButton(m));
+    }
+
+    head.append(nameEl, actions);
+
     const metaEl = document.createElement("div");
     metaEl.className = "modelMeta";
-    metaEl.textContent =
-      `~${m.sizeGB}GB • needs ${m.minRamGB}GB+ RAM` + (m.speedNote ? ` • ${m.speedNote}` : "");
+    const bits = [`${m.sizeGB}GB`, `needs ${m.minRamGB}GB+ RAM`];
+    if (m.speedNote) bits.push(m.speedNote);
+    if (m.downloaded) bits.push("on disk");
+    metaEl.textContent = bits.join("  ·  ");
 
     // the whole point of the list is choosing between them, which a tier label
     // and a filesize cannot help anyone do
@@ -1944,32 +2005,7 @@ function renderModelList() {
     rowProgressEl.className = "modelProgress";
     rowProgressEl.id = `progress-${m.id}`;
 
-    row.append(nameEl, metaEl, tradeoffEl, rowProgressEl);
-
-    const btn = document.createElement("button");
-    if (downloadingIds.has(m.id)) {
-      btn.textContent = "Cancel";
-      btn.addEventListener("click", () => cancelDownload(m.id));
-    } else if (!m.downloaded) {
-      btn.textContent = "Download";
-      btn.addEventListener("click", () => requestDownload(m.id));
-    } else if (isActive) {
-      btn.textContent = "Active";
-      btn.disabled = true;
-    } else {
-      btn.textContent = "Use this model";
-      btn.addEventListener("click", () => selectModel(m.file));
-    }
-    row.appendChild(btn);
-
-    // Only offered for a model that is on disk and not the one in use - the
-    // active model has no Delete because unloading it mid-session would leave
-    // the app unable to answer. Main refuses that case too; this just avoids
-    // showing a button whose only outcome is an error.
-    if (m.downloaded && !isActive && !downloadingIds.has(m.id)) {
-      row.appendChild(makeDeleteButton(m));
-    }
-
+    row.append(head, metaEl, tradeoffEl, rowProgressEl);
     modelListEl.appendChild(row);
   });
 }

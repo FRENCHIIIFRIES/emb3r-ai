@@ -853,11 +853,48 @@ pre{
     margin-left:4px;
 }
 
+/* how much disk the rows below are costing - leads the section, since it is
+   the number that makes deleting worth having */
+.modelSummary{
+    font-size:13px;
+    opacity:.6;
+    margin-bottom:10px;
+}
+
 .modelRow{
     border:1px solid var(--hover-color);
-    padding:8px;
-    margin-bottom:8px;
+    border-left:2px solid transparent;
+    padding:10px 12px;
+    margin-bottom:10px;
     font-size:15px;
+}
+
+/* the one in use is worth finding at a glance in a list of six */
+.modelRow.isActive{
+    border-left-color:var(--text-color);
+    background:var(--hover-color);
+}
+
+/* a model this machine cannot hold is dimmed rather than hidden: it is still
+   worth knowing it exists, and why it is unavailable */
+.modelRow.tooBig{
+    opacity:.5;
+}
+
+/* name on the left, actions on the right, so the buttons line up down the
+   list instead of sitting at the end of a paragraph of varying length */
+.modelRow .modelHead{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.modelRow .modelActions{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-shrink:0;
 }
 
 .modelRow .modelName{
@@ -884,21 +921,25 @@ pre{
     text-shadow:0 0 var(--glow-small) #e0524a;
 }
 
+/* Was a hardcoded #8fd6ff, the one colour in the app that ignored the accent
+   the user picked - and its glow smeared into the line below at this size.
+   Dimming the theme colour says "secondary" without inventing a new one. */
 .modelRow .modelMeta{
     font-size:13px;
-    color:#8fd6ff;
-    text-shadow:0 0 4px #8fd6ff;
+    opacity:.55;
+    margin-top:5px;
+    text-shadow:none;
 }
 
 .modelRow .modelTradeoff{
     font-size:13px;
-    opacity:0.7;
-    line-height:1.45;
-    margin-top:3px;
+    opacity:0.75;
+    line-height:1.5;
+    margin-top:5px;
+    text-shadow:none;
 }
 
 .modelRow button{
-    margin-top:6px;
     width:auto;
     padding:4px 10px;
     font-size:14px;
@@ -1080,7 +1121,17 @@ pre{
     letter-spacing:0;
     white-space:pre;
     color:#ffb020;
-    text-shadow:0 0 4px #ff6a00;
+    /* Measured: this sits exactly 0px below the description. The bar is drawn
+       from full-em block glyphs, so with no gap they visually touch the text
+       above and read as a strikethrough through it. The glow made it worse.
+       Both go. */
+    margin-top:7px;
+    text-shadow:none;
+}
+
+/* only takes vertical space while something is actually downloading */
+.modelProgress:empty{
+    display:none;
 }
 
 #setupButtons{
