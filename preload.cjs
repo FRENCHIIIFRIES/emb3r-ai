@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld("emb3r", {
   downloadModel: (modelId) => ipcRenderer.invoke("emb3r:download-model", modelId),
   cancelDownload: (modelId) => ipcRenderer.invoke("emb3r:cancel-download", modelId),
   selectModel: (filename) => ipcRenderer.invoke("emb3r:select-model", filename),
+  deleteModel: (filename) => ipcRenderer.invoke("emb3r:delete-model", filename),
   onDownloadProgress: (callback) => {
     ipcRenderer.on("emb3r:download-progress", (_event, data) => callback(data));
   },

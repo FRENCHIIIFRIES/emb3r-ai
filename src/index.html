@@ -864,6 +864,26 @@ pre{
     font-weight:700;
 }
 
+/* Deliberately quieter than the row's main action - deleting is the rare case,
+   and the primary button should stay the obvious one to reach for. */
+.modelRow .modelDelete{
+    margin-left:8px;
+    opacity:.65;
+    border-color:var(--hover-color);
+}
+
+.modelRow .modelDelete:hover{
+    opacity:1;
+}
+
+/* second click state: now it is destructive, so it stops being quiet */
+.modelRow .modelDelete.armed{
+    opacity:1;
+    color:#e0524a;
+    border-color:#e0524a;
+    text-shadow:0 0 var(--glow-small) #e0524a;
+}
+
 .modelRow .modelMeta{
     font-size:13px;
     color:#8fd6ff;

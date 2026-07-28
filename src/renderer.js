@@ -1962,8 +1962,56 @@ function renderModelList() {
     }
     row.appendChild(btn);
 
+    // Only offered for a model that is on disk and not the one in use - the
+    // active model has no Delete because unloading it mid-session would leave
+    // the app unable to answer. Main refuses that case too; this just avoids
+    // showing a button whose only outcome is an error.
+    if (m.downloaded && !isActive && !downloadingIds.has(m.id)) {
+      row.appendChild(makeDeleteButton(m));
+    }
+
     modelListEl.appendChild(row);
   });
+}
+
+// Two-step rather than a modal: the first click arms, the second deletes, and
+// it disarms itself after a few seconds. Deleting several gigabytes is worth a
+// deliberate second action, but not worth a dialog box for.
+function makeDeleteButton(m) {
+  const del = document.createElement("button");
+  del.className = "modelDelete";
+  del.textContent = "Delete";
+  let armed = false;
+  let disarmTimer = null;
+
+  const disarm = () => {
+    armed = false;
+    del.textContent = "Delete";
+    del.classList.remove("armed");
+    if (disarmTimer) { clearTimeout(disarmTimer); disarmTimer = null; }
+  };
+
+  del.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      del.textContent = `Delete ${m.sizeGB}GB?`;
+      del.classList.add("armed");
+      disarmTimer = setTimeout(disarm, 4000);
+      return;
+    }
+    disarm();
+    del.disabled = true;
+    const result = await window.emb3r.deleteModel(m.file);
+    if (!result.success) {
+      append("err", "err", result.error);
+      del.disabled = false;
+      return;
+    }
+    append("sys", "sys", `deleted ${result.name} — ${result.freedGB}GB freed`);
+    await refreshModelList();
+  });
+
+  return del;
 }
 
 async function refreshModelList() {
