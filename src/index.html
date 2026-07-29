@@ -1588,7 +1588,14 @@ pre{
     font-size:13px;
     color:#ffb020;
     letter-spacing:.04em;
-    min-height:1.2em;
+    /* two lines' worth: the facts that rotate through here are much longer than
+       the phrases, and without a reserved height the torch row below would jump
+       every time one appeared. Bounded so a long one wraps rather than widening
+       the whole boot stage. */
+    min-height:2.6em;
+    max-width:52ch;
+    text-align:center;
+    line-height:1.3;
 }
 
 /* the honest line underneath: the actual step, and a real percentage where
@@ -1780,7 +1787,7 @@ pre{
             <div id="historyList"></div>
         </div>
     </div>
-    <button id="settingsButton">⚙ Settings</button>
+    <button id="settingsButton">* Settings</button>
 </div>
 
 <div id="settingsPanel">
@@ -2001,7 +2008,7 @@ status: <span id="status">idle</span>
     autocomplete="off"
     placeholder="say something..."
 >
-<button id="uploadButton" title="Attach a file">📎</button>
+<button id="uploadButton" title="Attach a file">[+]</button>
 <input type="file" id="fileInput"
     accept=".txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.xml,.log,.ini,.cfg,.toml,.js,.mjs,.cjs,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.hpp,.cs,.php,.sh,.bash,.sql,.html,.css,.scss,text/*">
 <button id="send">[ send ]</button>

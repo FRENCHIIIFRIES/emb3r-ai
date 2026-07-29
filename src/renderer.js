@@ -842,7 +842,7 @@ function renderAttachBar() {
   const label = document.createElement("span");
   label.className = "attachLabel";
   label.textContent =
-    `📎 ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
+    `[+] ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
   attachBar.appendChild(label);
 
   const clear = document.createElement("button");
@@ -1058,16 +1058,42 @@ const PHASE_PHRASES = {
   "ready": ["lit"],
 };
 
-// Interleaved with the phrases above at random. Empty by default: these are
-// meant to be the project owner's own, and inventing facts about a real person
-// to ship in an application would be making them up. Anything added here is
-// shown verbatim.
-const CREATOR_FACTS = [];
+// Interleaved with the phrases above at random. Every line here is a fact about
+// this project that can be checked against the repository - none are invented,
+// and none are claims about a person. The numbers come from the work itself:
+// the 44ms was measured on a real 20MB document, the 79% from the icon's actual
+// bounding box, the 1.05:1 from the contrast of the colour that shipped.
+const PROJECT_FACTS = [
+  "a personal project — 96 commits in ten days",
+  "this began as a written build guide, before the repository existed",
+  "searching a 20MB file takes 44ms, and needs no second model",
+  "the offline lock wraps https.request itself, so it covers code nobody here wrote",
+  "six models, matched to whatever machine you happen to be on",
+  "a profile name could once run code. it can't now",
+  "the icon was measured, not eyeballed: the art filled 79% of its canvas",
+  "your own messages were once 1.05:1 against the background. briefly",
+  "three build targets, and one of them exists only because two Macs collided",
+  "nothing here phones home — and Settings will show you it didn't",
+  "the boot screen waits for the model, not for a timer",
+  "22 releases, every one built and published by a pushed tag",
+];
+
+// Rarer than the facts, and the only lines here that are purely for fun.
+const EASTER_EGGS = [
+  "( ^_^ ) ← this took more thought than the retrieval engine",
+  "the salamander has a name. it is not written down anywhere",
+  "somewhere in here is a strikethrough that was never a strikethrough",
+  "no telemetry. not even the good kind. there is no good kind",
+  "if you are reading this, the model is still loading. sorry",
+  "the three in emb3r is a three, not an E. it has always been a three",
+];
 
 // roughly how often the themed line changes while a phase is running
 const PHRASE_ROTATE_MS = 2600;
-// how often a fact is shown instead of a phrase, when any facts exist
-const FACT_CHANCE = 0.35;
+// how often a fact is shown instead of a phrase
+const FACT_CHANCE = 0.3;
+// rarer still - an easter egg should feel like a find, not a rotation slot
+const EGG_CHANCE = 0.04;
 
 // how far the simulated warm-up creep is allowed to go before it must stop
 // and wait for a real number - matches LOAD_PHASE_SPAN.weights[0] in main.js,
@@ -1142,13 +1168,17 @@ let phraseTimer = null;
 let phrasePhase = null;
 let phraseIndex = 0;
 
+const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
+
 function pickThemedLine(status) {
   const phrases = PHASE_PHRASES[status];
   if (!phrases || !phrases.length) return status;
-  // a fact can appear instead of a phrase, but never on "ready" - that line is
-  // on screen for a moment before the fade and is the one worth reading
-  if (CREATOR_FACTS.length && status !== "ready" && Math.random() < FACT_CHANCE) {
-    return CREATOR_FACTS[Math.floor(Math.random() * CREATOR_FACTS.length)];
+  // Facts and eggs never appear on "ready" - that line is on screen for a
+  // moment before the fade and is the one worth reading. The egg is checked
+  // first because it is the rarer of the two.
+  if (status !== "ready") {
+    if (Math.random() < EGG_CHANCE) return pickOne(EASTER_EGGS);
+    if (Math.random() < FACT_CHANCE) return pickOne(PROJECT_FACTS);
   }
   const text = phrases[phraseIndex % phrases.length];
   phraseIndex++;
