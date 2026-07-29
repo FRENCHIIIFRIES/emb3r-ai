@@ -682,20 +682,73 @@ pre{
     display:none;
 }
 
+/* Nine tabs already filled the width as a wrapping row, and a tenth would have
+   started a second line. A column holds far more and keeps the current section
+   visible without counting along a strip. */
+#settingsBody{
+    display:flex;
+    align-items:flex-start;
+    gap:20px;
+    min-height:0;
+}
+
+#settingsNav{
+    flex:0 0 172px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    border-right:1px solid var(--hover-color);
+    padding-right:16px;
+}
+
+#settingsContent{
+    flex:1;
+    min-width:0;
+}
+
+#settingsSearch{
+    width:100%;
+    font-size:13px;
+    padding:5px 8px;
+}
+
 #settingsTabs{
     display:flex;
-    flex-wrap:wrap;
-    gap:6px;
-    margin-bottom:6px;
-    padding-bottom:12px;
-    border-bottom:1px solid var(--hover-color);
+    flex-direction:column;
+    gap:3px;
+}
+
+#settingsNoMatch{
+    font-size:12.5px;
+    opacity:.55;
+    padding:4px 2px;
 }
 
 .settingsTab{
-    width:auto;
-    padding:6px 12px;
+    width:100%;
+    text-align:left;
+    padding:6px 10px;
     font-size:14px;
     opacity:0.6;
+    border-color:transparent;
+}
+
+/* the section you are in, marked on the edge nearest the content it belongs to */
+.settingsTab.active{
+    border-left:2px solid var(--text-color);
+}
+
+/* narrow windows cannot spare 172px for navigation, so it goes back to a row */
+@media (max-width: 700px){
+    #settingsBody{ flex-direction:column; gap:12px; }
+    #settingsNav{
+        flex:1 1 auto; width:100%;
+        border-right:none; padding-right:0;
+        border-bottom:1px solid var(--hover-color); padding-bottom:12px;
+    }
+    #settingsTabs{ flex-direction:row; flex-wrap:wrap; gap:6px; }
+    .settingsTab{ width:auto; }
+    .settingsTab.active{ border-left:none; }
 }
 
 .settingsTab:hover{
@@ -853,11 +906,48 @@ pre{
     margin-left:4px;
 }
 
+/* how much disk the rows below are costing - leads the section, since it is
+   the number that makes deleting worth having */
+.modelSummary{
+    font-size:13px;
+    opacity:.6;
+    margin-bottom:10px;
+}
+
 .modelRow{
     border:1px solid var(--hover-color);
-    padding:8px;
-    margin-bottom:8px;
+    border-left:2px solid transparent;
+    padding:10px 12px;
+    margin-bottom:10px;
     font-size:15px;
+}
+
+/* the one in use is worth finding at a glance in a list of six */
+.modelRow.isActive{
+    border-left-color:var(--text-color);
+    background:var(--hover-color);
+}
+
+/* a model this machine cannot hold is dimmed rather than hidden: it is still
+   worth knowing it exists, and why it is unavailable */
+.modelRow.tooBig{
+    opacity:.5;
+}
+
+/* name on the left, actions on the right, so the buttons line up down the
+   list instead of sitting at the end of a paragraph of varying length */
+.modelRow .modelHead{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.modelRow .modelActions{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-shrink:0;
 }
 
 .modelRow .modelName{
@@ -884,21 +974,25 @@ pre{
     text-shadow:0 0 var(--glow-small) #e0524a;
 }
 
+/* Was a hardcoded #8fd6ff, the one colour in the app that ignored the accent
+   the user picked - and its glow smeared into the line below at this size.
+   Dimming the theme colour says "secondary" without inventing a new one. */
 .modelRow .modelMeta{
     font-size:13px;
-    color:#8fd6ff;
-    text-shadow:0 0 4px #8fd6ff;
+    opacity:.55;
+    margin-top:5px;
+    text-shadow:none;
 }
 
 .modelRow .modelTradeoff{
     font-size:13px;
-    opacity:0.7;
-    line-height:1.45;
-    margin-top:3px;
+    opacity:0.75;
+    line-height:1.5;
+    margin-top:5px;
+    text-shadow:none;
 }
 
 .modelRow button{
-    margin-top:6px;
     width:auto;
     padding:4px 10px;
     font-size:14px;
@@ -1010,6 +1104,10 @@ pre{
 }
 
 /* first-run model picker - shares the consent modal's look */
+/* The introduction and the what's-new screen share the setup modal's shell, so
+   a fresh install reads as one flow: intro, then pick a model. */
+#introModal,
+#whatsNewModal,
 #setupModal{
     position:fixed;
     top:0; left:0; width:100%; height:100%;
@@ -1018,6 +1116,145 @@ pre{
     align-items:center;
     justify-content:center;
     z-index:3000;
+}
+
+#introModal.open,
+#whatsNewModal.open{
+    display:flex;
+}
+
+#introBox,
+#whatsNewBox{
+    background:var(--bg-color);
+    border:1px solid var(--text-color);
+    padding:24px;
+    width:460px;
+    max-width:calc(100% - 48px);
+    text-shadow:0 0 4px var(--text-color);
+}
+
+#introBox h3,
+#whatsNewBox h3{
+    margin-top:0;
+}
+
+/* fixed height so the footer does not jump between slides of different length */
+#introSlides{
+    min-height:210px;
+}
+
+.introSlide{
+    display:none;
+}
+
+.introSlide.active{
+    display:block;
+}
+
+.introSlide p{
+    line-height:1.5;
+}
+
+/* secondary detail: present, but not competing with the point of the slide */
+.introQuiet{
+    font-size:13px;
+    opacity:.6;
+    text-shadow:none;
+}
+
+.introSlide label{
+    display:block;
+    margin-top:14px;
+    font-size:13px;
+    opacity:.7;
+}
+
+#introName{
+    width:100%;
+    margin-top:4px;
+}
+
+#introFooter{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:20px;
+    gap:12px;
+}
+
+#introDots{
+    display:flex;
+    gap:6px;
+}
+
+.introDot{
+    width:7px;
+    height:7px;
+    border:1px solid var(--text-color);
+    border-radius:50%;
+    opacity:.35;
+}
+
+.introDot.on{
+    opacity:1;
+    background:var(--text-color);
+}
+
+#introButtons{
+    display:flex;
+    gap:8px;
+}
+
+#introButtons button,
+#whatsNewButtons button{
+    width:auto;
+    padding:5px 14px;
+}
+
+/* Back is a way out of a mistake, not something to reach for */
+#introBack{
+    opacity:.6;
+}
+
+#introBack:hover{
+    opacity:1;
+}
+
+#whatsNewBody{
+    max-height:340px;
+    overflow-y:auto;
+    margin-top:4px;
+}
+
+.whatsNewVersion{
+    font-weight:700;
+    margin-top:14px;
+}
+
+.whatsNewVersion:first-child{
+    margin-top:0;
+}
+
+.whatsNewGroup{
+    font-size:13px;
+    opacity:.7;
+    margin-top:8px;
+    text-shadow:none;
+}
+
+.whatsNewItem{
+    font-size:13px;
+    line-height:1.5;
+    margin-top:4px;
+    padding-left:14px;
+    text-indent:-14px;
+    text-shadow:none;
+}
+
+#whatsNewButtons{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:20px;
 }
 
 #setupModal.open{
@@ -1080,7 +1317,17 @@ pre{
     letter-spacing:0;
     white-space:pre;
     color:#ffb020;
-    text-shadow:0 0 4px #ff6a00;
+    /* Measured: this sits exactly 0px below the description. The bar is drawn
+       from full-em block glyphs, so with no gap they visually touch the text
+       above and read as a strikethrough through it. The glow made it worse.
+       Both go. */
+    margin-top:7px;
+    text-shadow:none;
+}
+
+/* only takes vertical space while something is actually downloading */
+.modelProgress:empty{
+    display:none;
 }
 
 #setupButtons{
@@ -1456,6 +1703,53 @@ pre{
     </div>
 </div>
 
+<!-- Shown once on a fresh install, before the model picker, so the two read as
+     one flow rather than two screens that happen to follow each other. -->
+<div id="introModal">
+    <div id="introBox">
+        <div id="introSlides">
+            <section class="introSlide active" data-slide="0">
+                <h3>This is emb3r</h3>
+                <p>A language model that runs on this computer. Not on a server, not on someone else's hardware — here, on the machine in front of you.</p>
+                <p class="introQuiet">That means no account, no API key, and no bill. It also means the model has to be downloaded once before it can answer anything.</p>
+            </section>
+
+            <section class="introSlide" data-slide="1">
+                <h3>Nothing leaves this machine</h3>
+                <p>Once a model is downloaded, emb3r can answer with the network off entirely. Your conversations and any file you attach are read here and stay here.</p>
+                <p class="introQuiet">There is an indicator in the top left that lights up only while something is genuinely being sent, and it names what is sending it. Settings&nbsp;→&nbsp;Privacy keeps a log of every connection, and an offline lock that refuses them all.</p>
+            </section>
+
+            <section class="introSlide" data-slide="2">
+                <h3>What should Ember call you?</h3>
+                <p>Ember is told your name so it can address you properly. It is stored on this machine with everything else.</p>
+                <label for="introName">Your name</label>
+                <input type="text" id="introName" placeholder="e.g. Ziyan" maxlength="60" autocomplete="off">
+                <p class="introQuiet">Optional — leave it blank and Ember simply will not use a name. You can change it later in Settings&nbsp;→&nbsp;Account.</p>
+            </section>
+        </div>
+
+        <div id="introFooter">
+            <div id="introDots" aria-hidden="true"></div>
+            <div id="introButtons">
+                <button id="introBack">Back</button>
+                <button id="introNext">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Shown after an update, never on a fresh install - see emb3r:intro-state. -->
+<div id="whatsNewModal">
+    <div id="whatsNewBox">
+        <h3 id="whatsNewTitle">What's new</h3>
+        <div id="whatsNewBody"></div>
+        <div id="whatsNewButtons">
+            <button id="whatsNewClose">Continue</button>
+        </div>
+    </div>
+</div>
+
 <div id="setupModal">
     <div id="setupBox">
         <h3>Let's pick a brain</h3>
@@ -1495,17 +1789,27 @@ pre{
         <h2>Settings</h2>
     </div>
 
-    <div id="settingsTabs">
-        <button class="settingsTab active" data-tab="account">Account</button>
-        <button class="settingsTab" data-tab="privacy">Privacy</button>
-        <button class="settingsTab" data-tab="personality">Personality</button>
-        <button class="settingsTab" data-tab="spotify">Spotify</button>
-        <button class="settingsTab" data-tab="web">Web access</button>
-        <button class="settingsTab" data-tab="models">Models</button>
-        <button class="settingsTab" data-tab="hardware">Hardware</button>
-        <button class="settingsTab" data-tab="updates">Updates</button>
-        <button class="settingsTab" data-tab="display">Display</button>
+    <!-- sidebar and content sit side by side; the sections themselves are
+         unchanged and still switch on .active -->
+    <div id="settingsBody">
+    <div id="settingsNav">
+        <input type="text" id="settingsSearch" placeholder="Search settings..."
+               autocomplete="off" spellcheck="false">
+        <div id="settingsTabs">
+            <button class="settingsTab active" data-tab="account">Account</button>
+            <button class="settingsTab" data-tab="privacy">Privacy</button>
+            <button class="settingsTab" data-tab="personality">Personality</button>
+            <button class="settingsTab" data-tab="spotify">Spotify</button>
+            <button class="settingsTab" data-tab="web">Web access</button>
+            <button class="settingsTab" data-tab="models">Models</button>
+            <button class="settingsTab" data-tab="hardware">Hardware</button>
+            <button class="settingsTab" data-tab="updates">Updates</button>
+            <button class="settingsTab" data-tab="display">Display</button>
+        </div>
+        <div id="settingsNoMatch" hidden>no setting matches that</div>
     </div>
+
+    <div id="settingsContent">
 
     <div class="settingsSection active" data-tab="account">
         <h3>Account</h3>
@@ -1621,6 +1925,9 @@ pre{
             <label for="animToggle">Reactions — sparkles, hearts and transitions</label>
         </div>
     </div>
+
+    </div><!-- /settingsContent -->
+    </div><!-- /settingsBody -->
 </div>
 
 <div id="pet">

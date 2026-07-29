@@ -38,6 +38,10 @@ const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback";
 const DEFAULT_PERSONALITY =
   "You are Ember, a small terminal-dwelling AI companion living inside a retro desktop pet app. Keep replies concise and warm.";
 const MAX_PERSONALITY_LENGTH = 2000;
+// A profile name is interpolated into the system prompt, so it is bounded for
+// the same reason the personality is - not for safety (it goes in as text, see
+// systemNote) but so it cannot crowd out the instructions that follow it.
+const MAX_PROFILE_NAME_LENGTH = 60;
 
 function defaultConfig() {
   return {
@@ -65,7 +69,63 @@ function defaultConfig() {
     // remembered result of the GPU probe, which is slow enough (~17s) that
     // repeating it every launch would be felt. null until first probed.
     gpuInfo: null,
+    // whether the introduction has been completed. Separate from lastSeenVersion
+    // below: a fresh install needs the intro, an upgrade needs the changes.
+    introSeen: false,
+    // the version whose changes have already been shown. null on a fresh
+    // install, which is what stops a first run being greeted with a changelog
+    // for software it has never run.
+    lastSeenVersion: null,
   };
+}
+
+// What each release changed, in the app rather than fetched. The whole point of
+// emb3r is that it works with the network off, so a "what's new" screen that
+// needs a request to render would be the wrong shape. Newest first.
+const CHANGELOG = [
+  { version: "1.20.0",
+    added: [
+      "An introduction on first run, so a fresh install explains itself.",
+      "This screen: a summary of what changed after an update.",
+    ],
+    fixed: [
+      "The Models page listed a model your machine cannot hold with an ordinary Download button, and only refused after you clicked it. It now says what it needs instead.",
+      "The download bar visually struck through the description above it.",
+      "Model details used a fixed blue that ignored your accent colour.",
+    ] },
+  { version: "1.19.0",
+    added: [
+      "Models can be deleted from Settings. The one in use is protected.",
+      "Settings shows how much disk your models are using.",
+    ],
+    fixed: [
+      "Removed the File / Edit / View menu bar, which came from Electron and had nothing to do with emb3r.",
+    ] },
+  { version: "1.18.0",
+    added: [
+      "Seven new expressions for Ember, each tied to something actually happening.",
+      "A puff of smoke when you stop a reply, and a flicker when something fails.",
+    ],
+    fixed: [] },
+  { version: "1.17.0",
+    added: [
+      "The loading screen names what it is doing, with a real percentage where one exists.",
+      "A fresh install with no model says so rather than skipping the sequence silently.",
+    ],
+    fixed: [] },
+  { version: "1.16.0",
+    added: ["The salamander mark sits beside the wordmark inside the app."],
+    fixed: ["The taskbar icon was too small: the artwork filled only 79% of its canvas."] },
+];
+
+// Semver-ish compare, enough for the "x.y.z" this project uses.
+function versionIsNewer(a, b) {
+  const pa = String(a).split(".").map(Number);
+  const pb = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
 }
 
 function loadConfig() {
@@ -768,6 +828,63 @@ autoUpdater.on("error", (err) => {
 });
 
 ipcMain.handle("emb3r:get-app-version", () => app.getVersion());
+
+// Decides which of the two first-screens is owed, if either. They are mutually
+// exclusive by construction: a fresh install has no lastSeenVersion, so it gets
+// the introduction and is then marked as current - it never sees a changelog
+// for releases it was never running.
+ipcMain.handle("emb3r:intro-state", () => {
+  const current = app.getVersion();
+
+  if (!config.introSeen) {
+    return { needsIntro: true, whatsNew: null, version: current };
+  }
+
+  // an install that predates this feature has introSeen true but no recorded
+  // version. Treat it as current rather than replaying every past release.
+  if (!config.lastSeenVersion) {
+    config.lastSeenVersion = current;
+    saveConfig(config);
+    return { needsIntro: false, whatsNew: null, version: current };
+  }
+
+  if (!versionIsNewer(current, config.lastSeenVersion)) {
+    return { needsIntro: false, whatsNew: null, version: current };
+  }
+
+  // everything released between what they last saw and what they are running
+  const entries = CHANGELOG.filter(
+    (c) => versionIsNewer(c.version, config.lastSeenVersion) && !versionIsNewer(c.version, current)
+  );
+  if (!entries.length) {
+    config.lastSeenVersion = current;
+    saveConfig(config);
+    return { needsIntro: false, whatsNew: null, version: current };
+  }
+  return { needsIntro: false, whatsNew: { from: config.lastSeenVersion, entries }, version: current };
+});
+
+// Marks both screens as done. Called when the introduction finishes and when a
+// what's-new screen is dismissed, so neither reappears on the next launch.
+ipcMain.handle("emb3r:intro-complete", () => {
+  config.introSeen = true;
+  config.lastSeenVersion = app.getVersion();
+  saveConfig(config);
+  return { success: true };
+});
+
+// The default profile ships with an empty name. The introduction fills it in
+// rather than creating a second profile, which would leave a nameless one
+// behind for no reason.
+ipcMain.handle("emb3r:set-profile-name", (_e, name) => {
+  if (typeof name !== "string") return { success: false, error: "Name must be text." };
+  const profile = config.profiles.find((p) => p.id === config.activeProfileId) || config.profiles[0];
+  if (!profile) return { success: false, error: "No profile to name." };
+  profile.name = name.trim().slice(0, MAX_PROFILE_NAME_LENGTH);
+  saveConfig(config);
+  refreshSystemPrompt();
+  return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
+});
 
 ipcMain.handle("emb3r:check-for-updates", async () => {
   if (!app.isPackaged) return { success: false, error: "Updates are only available in the packaged app." };

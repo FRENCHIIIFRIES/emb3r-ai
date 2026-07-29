@@ -988,6 +988,9 @@ async function finishBoot() {
   await loadConfigIntoUI();
   // know the context window before the first attachment, not after the first reply
   lastContext = await window.emb3r.contextUsage();
+  // Both of these await their own dismissal, so the model picker never opens
+  // underneath the introduction. At most one of the two ever runs.
+  await runIntroOrWhatsNew();
   await maybeRunFirstTimeSetup();
   input.focus();
 }
@@ -1199,13 +1202,70 @@ const settingsTabs   = document.querySelectorAll(".settingsTab");
 
 settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
 
+function showSettingsTab(tab) {
+  settingsTabs.forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
+  tab.classList.add("active");
+  document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+}
+
 settingsTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    settingsTabs.forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
-    tab.classList.add("active");
-    document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+  tab.addEventListener("click", () => showSettingsTab(tab));
+});
+
+// Searching by tab name alone would be nearly useless: nobody looking for the
+// sound toggle types "display". These are the words people actually reach for,
+// mapped to the section that holds the setting.
+const SETTINGS_KEYWORDS = {
+  account:     "profile profiles name user rename switch identity who",
+  privacy:     "offline lock network connections log outbound internet security airplane",
+  personality: "prompt system character instructions behaviour behavior tone persona",
+  spotify:     "music now playing track integration",
+  web:         "gemini internet search online api key current information lookup",
+  models:      "model download delete disk space storage llama qwen mistral gguf size brain",
+  hardware:    "ram cpu gpu vram memory cores detect scan specs",
+  updates:     "update version upgrade release install newer",
+  display:     "theme dark light colour color accent font size glow sound effects reactions " +
+               "animation mute appearance contrast",
+};
+
+const settingsSearch = document.getElementById("settingsSearch");
+const settingsNoMatch = document.getElementById("settingsNoMatch");
+
+settingsSearch.addEventListener("input", () => {
+  const q = settingsSearch.value.trim().toLowerCase();
+  let shown = 0;
+  let firstMatch = null;
+
+  settingsTabs.forEach((tab) => {
+    const key = tab.dataset.tab;
+    const haystack = `${tab.textContent} ${SETTINGS_KEYWORDS[key] || ""}`.toLowerCase();
+    const hit = !q || haystack.includes(q);
+    tab.hidden = !hit;
+    if (hit) {
+      shown++;
+      if (!firstMatch) firstMatch = tab;
+    }
   });
+
+  settingsNoMatch.hidden = shown > 0;
+
+  // Jump straight there once the search has narrowed to one section - typing
+  // "glow" and still having to click Display would be the search not finishing
+  // its job. Only on a unique match, so it never yanks the page around while
+  // the query is still ambiguous.
+  if (q && shown === 1 && firstMatch && !firstMatch.classList.contains("active")) {
+    showSettingsTab(firstMatch);
+  }
+});
+
+// Escape clears rather than closing settings, which is the smaller undo
+settingsSearch.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && settingsSearch.value) {
+    e.stopPropagation();
+    settingsSearch.value = "";
+    settingsSearch.dispatchEvent(new Event("input"));
+  }
 });
 
 // =============================
@@ -1254,7 +1314,16 @@ async function renderActiveConversationHistory() {
 
   await withTopicTransition(() => {
     chat.replaceChildren();
-    if (!conv || !conv.messages.length) return;
+    // The "terminal ready" line in the markup is only ever shown once: this
+    // funnel replaces the whole transcript, so after the first switch an empty
+    // conversation was a blank panel with no indication it was working.
+    if (!conv || !conv.messages.length) {
+      const empty = document.createElement("span");
+      empty.className = "dim";
+      empty.textContent = "// new chat. type below and hit enter.";
+      chat.appendChild(empty);
+      return;
+    }
     for (const m of conv.messages) {
       if (m.role === "user") append("you", "you", m.text, { copyable: true });
       else appendStaticBotLine(m.text, m.source);
@@ -1847,6 +1916,140 @@ function describeGpu(gpu) {
   return `${gpu.name || gpu.backend} • ${where} • ${gpu.backend}`;
 }
 
+// =============================
+// Introduction and what's new
+// =============================
+
+const introModal   = document.getElementById("introModal");
+const introSlideEls = [...document.querySelectorAll(".introSlide")];
+const introDotsEl  = document.getElementById("introDots");
+const introBackBtn = document.getElementById("introBack");
+const introNextBtn = document.getElementById("introNext");
+const introNameEl  = document.getElementById("introName");
+
+const whatsNewModal = document.getElementById("whatsNewModal");
+const whatsNewTitle = document.getElementById("whatsNewTitle");
+const whatsNewBody  = document.getElementById("whatsNewBody");
+const whatsNewClose = document.getElementById("whatsNewClose");
+
+let introIndex = 0;
+
+function renderIntroSlide() {
+  introSlideEls.forEach((s, i) => s.classList.toggle("active", i === introIndex));
+  introDotsEl.replaceChildren(...introSlideEls.map((_, i) => {
+    const d = document.createElement("span");
+    d.className = "introDot" + (i === introIndex ? " on" : "");
+    return d;
+  }));
+  introBackBtn.style.visibility = introIndex === 0 ? "hidden" : "visible";
+  const last = introIndex === introSlideEls.length - 1;
+  introNextBtn.textContent = last ? "Start" : "Next";
+  if (last) introNameEl.focus();
+}
+
+// Resolves when the introduction is finished, so the model picker that follows
+// does not open on top of it.
+function runIntro() {
+  return new Promise((resolve) => {
+    introIndex = 0;
+    renderIntroSlide();
+    introModal.classList.add("open");
+
+    // Enter in the name field and the Start button both land here, so without
+    // this the profile would be written twice
+    let finished = false;
+    const finish = async () => {
+      if (finished) return;
+      finished = true;
+      const name = introNameEl.value.trim();
+      // the default profile ships nameless; this fills it in rather than
+      // creating a second one
+      if (name) await window.emb3r.setProfileName(name);
+      await window.emb3r.introComplete();
+      introModal.classList.remove("open");
+      await loadConfigIntoUI();
+      resolve();
+    };
+
+    introNextBtn.addEventListener("click", () => {
+      if (introIndex < introSlideEls.length - 1) {
+        introIndex++;
+        renderIntroSlide();
+      } else {
+        finish();
+      }
+    });
+
+    introBackBtn.addEventListener("click", () => {
+      if (introIndex > 0) {
+        introIndex--;
+        renderIntroSlide();
+      }
+    });
+
+    // Enter on the name field means "done", the same as pressing Start
+    introNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") finish();
+    });
+  });
+}
+
+function renderWhatsNew(whatsNew, version) {
+  whatsNewTitle.textContent = `What's new in ${version}`;
+  whatsNewBody.replaceChildren();
+
+  for (const entry of whatsNew.entries) {
+    // more than one release can have landed since they last opened it, so each
+    // is labelled rather than merged into one undated list
+    if (whatsNew.entries.length > 1) {
+      const v = document.createElement("div");
+      v.className = "whatsNewVersion";
+      v.textContent = entry.version;
+      whatsNewBody.appendChild(v);
+    }
+    for (const [label, items] of [["Added", entry.added], ["Fixed", entry.fixed]]) {
+      if (!items || !items.length) continue;
+      const h = document.createElement("div");
+      h.className = "whatsNewGroup";
+      h.textContent = label;
+      whatsNewBody.appendChild(h);
+      for (const text of items) {
+        const li = document.createElement("div");
+        li.className = "whatsNewItem";
+        // textContent, not markup - this is the same discipline as systemNote
+        li.textContent = `— ${text}`;
+        whatsNewBody.appendChild(li);
+      }
+    }
+  }
+}
+
+function runWhatsNew(whatsNew, version) {
+  return new Promise((resolve) => {
+    renderWhatsNew(whatsNew, version);
+    whatsNewModal.classList.add("open");
+    whatsNewClose.addEventListener("click", async () => {
+      await window.emb3r.introComplete();   // also records the version seen
+      whatsNewModal.classList.remove("open");
+      resolve();
+    }, { once: true });
+  });
+}
+
+// Exactly one of the two can run: a fresh install has no recorded version, so
+// it gets the introduction and is marked current - it never sees a changelog
+// for releases it was never running. Decided in main; this only renders it.
+async function runIntroOrWhatsNew() {
+  let state;
+  try {
+    state = await window.emb3r.introState();
+  } catch {
+    return; // never block reaching the app over a welcome screen
+  }
+  if (state.needsIntro) return runIntro();
+  if (state.whatsNew) return runWhatsNew(state.whatsNew, state.version);
+}
+
 async function maybeRunFirstTimeSetup() {
   const state = await window.emb3r.setupState();
   if (!state.needsSetup) return;
@@ -1906,11 +2109,36 @@ const downloadingIds = new Set();
 
 function renderModelList() {
   modelListEl.innerHTML = "";
+
+  // What the six rows below cost in total. With deleting now possible this is
+  // the number that makes the feature worth having, so it leads the section
+  // rather than being buried.
+  const onDisk = modelsCache.filter((m) => m.downloaded);
+  const usedGB = onDisk.reduce((sum, m) => sum + m.sizeGB, 0);
+  const summary = document.createElement("div");
+  summary.className = "modelSummary";
+  summary.textContent = onDisk.length
+    ? `${onDisk.length} model${onDisk.length > 1 ? "s" : ""} on disk · about ${usedGB.toFixed(1)}GB`
+    : "no models downloaded yet";
+  modelListEl.appendChild(summary);
+
   modelsCache.forEach((m) => {
     const row = document.createElement("div");
     row.className = "modelRow";
 
     const isActive = m.file === modelsCache.activeModel;
+    const downloading = downloadingIds.has(m.id);
+    // main refuses a model the machine cannot hold. The list used to offer
+    // Download anyway and let the refusal arrive after the click - fitsRam was
+    // being sent across IPC and then ignored.
+    const tooBig = m.fitsRam === false;
+
+    if (isActive) row.classList.add("isActive");
+    if (tooBig) row.classList.add("tooBig");
+
+    // header: what it is on the left, what you can do on the right
+    const head = document.createElement("div");
+    head.className = "modelHead";
 
     const nameEl = document.createElement("div");
     nameEl.className = "modelName";
@@ -1929,10 +2157,46 @@ function renderModelList() {
       nameEl.append(" ", tag);
     }
 
+    const actions = document.createElement("div");
+    actions.className = "modelActions";
+
+    const btn = document.createElement("button");
+    if (downloading) {
+      btn.textContent = "Cancel";
+      btn.addEventListener("click", () => cancelDownload(m.id));
+    } else if (tooBig) {
+      // say why rather than failing on click
+      btn.textContent = `Needs ${m.minRamGB}GB RAM`;
+      btn.disabled = true;
+      btn.title = `This machine cannot hold ${m.name}.`;
+    } else if (!m.downloaded) {
+      btn.textContent = "Download";
+      btn.addEventListener("click", () => requestDownload(m.id));
+    } else if (isActive) {
+      btn.textContent = "In use";
+      btn.disabled = true;
+    } else {
+      btn.textContent = "Use this model";
+      btn.addEventListener("click", () => selectModel(m.file));
+    }
+    actions.appendChild(btn);
+
+    // Only offered for a model that is on disk and not the one in use - the
+    // active model has no Delete because unloading it mid-session would leave
+    // the app unable to answer. Main refuses that case too; this just avoids
+    // showing a button whose only outcome is an error.
+    if (m.downloaded && !isActive && !downloading) {
+      actions.appendChild(makeDeleteButton(m));
+    }
+
+    head.append(nameEl, actions);
+
     const metaEl = document.createElement("div");
     metaEl.className = "modelMeta";
-    metaEl.textContent =
-      `~${m.sizeGB}GB • needs ${m.minRamGB}GB+ RAM` + (m.speedNote ? ` • ${m.speedNote}` : "");
+    const bits = [`${m.sizeGB}GB`, `needs ${m.minRamGB}GB+ RAM`];
+    if (m.speedNote) bits.push(m.speedNote);
+    if (m.downloaded) bits.push("on disk");
+    metaEl.textContent = bits.join("  ·  ");
 
     // the whole point of the list is choosing between them, which a tier label
     // and a filesize cannot help anyone do
@@ -1944,32 +2208,7 @@ function renderModelList() {
     rowProgressEl.className = "modelProgress";
     rowProgressEl.id = `progress-${m.id}`;
 
-    row.append(nameEl, metaEl, tradeoffEl, rowProgressEl);
-
-    const btn = document.createElement("button");
-    if (downloadingIds.has(m.id)) {
-      btn.textContent = "Cancel";
-      btn.addEventListener("click", () => cancelDownload(m.id));
-    } else if (!m.downloaded) {
-      btn.textContent = "Download";
-      btn.addEventListener("click", () => requestDownload(m.id));
-    } else if (isActive) {
-      btn.textContent = "Active";
-      btn.disabled = true;
-    } else {
-      btn.textContent = "Use this model";
-      btn.addEventListener("click", () => selectModel(m.file));
-    }
-    row.appendChild(btn);
-
-    // Only offered for a model that is on disk and not the one in use - the
-    // active model has no Delete because unloading it mid-session would leave
-    // the app unable to answer. Main refuses that case too; this just avoids
-    // showing a button whose only outcome is an error.
-    if (m.downloaded && !isActive && !downloadingIds.has(m.id)) {
-      row.appendChild(makeDeleteButton(m));
-    }
-
+    row.append(head, metaEl, tradeoffEl, rowProgressEl);
     modelListEl.appendChild(row);
   });
 }
