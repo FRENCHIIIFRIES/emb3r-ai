@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.20.0 — an introduction, a searchable Settings, and a clearer Models page
+
+A fresh install now explains itself. Three short slides cover what emb3r is, the fact that nothing leaves your machine, and what Ember should call you — and the name you give goes straight onto your profile rather than creating a second one. It's optional; leave it blank and Ember simply won't use a name.
+
+After an update you'll get a summary of what changed, listing every release between the version you last opened and the one you're on, so skipping a version doesn't mean missing its notes. It's built into the app, not fetched, so it works with the network off like everything else here. A brand-new install never sees it — there's nothing yet to have missed.
+
+Settings is a sidebar instead of a row of tabs, and it's searchable. The search knows what things are actually called: type "glow", "mute" or "colour" and it finds Display; "key" finds Web access; "ram" finds Hardware.
+
+The Models page is easier to read. Buttons line up down the right, the model in use is marked, and a model your machine can't hold now says what it needs instead of offering a Download button that was only going to refuse. There's also a running total of how much disk your models are using.
+
+Two smaller fixes: the download bar no longer appears to strike through the description above it, model details follow your accent colour instead of a fixed blue, and starting a new chat no longer leaves you looking at a blank panel.
+
 ## v1.19.0 — delete models you don't want, and a tidier window
 
 You can now delete a model from Settings → Models. Six models at 1.9–9GB each add up quickly, and until now the only way to get one back off your disk was to go hunting for the folder yourself.
