@@ -842,7 +842,7 @@ function renderAttachBar() {
   const label = document.createElement("span");
   label.className = "attachLabel";
   label.textContent =
-    `📎 ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
+    `[+] ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
   attachBar.appendChild(label);
 
   const clear = document.createElement("button");
@@ -1026,13 +1026,74 @@ const torchFlameEls   = [...document.querySelectorAll("#torchRow .torch:not(.bra
 // underneath naming the real step. The theme is decoration; the detail line is
 // the part that has to stay true, so it carries the actual phase and, where a
 // genuine number exists, the percentage.
-const PHASE_THEME = {
-  "warming up":        "striking the flint",
-  "retrying on CPU":   "relighting on the hearth",
-  "loading weights":   "feeding the fire",
-  "preparing context": "banking the coals",
-  "ready":             "lit",
+//
+// Each phase has several phrases rather than one, cycled while that phase runs.
+// A single line held for twenty seconds reads as a frozen screen; a line that
+// changes reads as something still happening. The phrases stay within the phase
+// they belong to, so the flavour never contradicts the step underneath it.
+const PHASE_PHRASES = {
+  "warming up": [
+    "striking the flint",
+    "coaxing a spark",
+    "breathing on the tinder",
+    "the first curl of smoke",
+  ],
+  "retrying on CPU": [
+    "relighting on the hearth",
+    "a colder start, then",
+    "gathering the scattered coals",
+  ],
+  "loading weights": [
+    "feeding the fire",
+    "stacking the kindling",
+    "the flames take hold",
+    "drawing up the chimney",
+    "log by log",
+  ],
+  "preparing context": [
+    "banking the coals",
+    "settling the embers",
+    "the hearth steadies",
+  ],
+  "ready": ["lit"],
 };
+
+// Interleaved with the phrases above at random. Every line here is a fact about
+// this project that can be checked against the repository - none are invented,
+// and none are claims about a person. The numbers come from the work itself:
+// the 44ms was measured on a real 20MB document, the 79% from the icon's actual
+// bounding box, the 1.05:1 from the contrast of the colour that shipped.
+const PROJECT_FACTS = [
+  "a personal project — 96 commits in ten days",
+  "this began as a written build guide, before the repository existed",
+  "searching a 20MB file takes 44ms, and needs no second model",
+  "the offline lock wraps https.request itself, so it covers code nobody here wrote",
+  "six models, matched to whatever machine you happen to be on",
+  "a profile name could once run code. it can't now",
+  "the icon was measured, not eyeballed: the art filled 79% of its canvas",
+  "your own messages were once 1.05:1 against the background. briefly",
+  "three build targets, and one of them exists only because two Macs collided",
+  "nothing here phones home — and Settings will show you it didn't",
+  "the boot screen waits for the model, not for a timer",
+  "22 releases, every one built and published by a pushed tag",
+];
+
+// Rarer than the facts, and the only lines here that are purely for fun.
+const EASTER_EGGS = [
+  "( ^_^ ) ← this took more thought than the retrieval engine",
+  "the salamander has a name. it is not written down anywhere",
+  "somewhere in here is a strikethrough that was never a strikethrough",
+  "no telemetry. not even the good kind. there is no good kind",
+  "if you are reading this, the model is still loading. sorry",
+  "the three in emb3r is a three, not an E. it has always been a three",
+];
+
+// roughly how often the themed line changes while a phase is running
+const PHRASE_ROTATE_MS = 2600;
+// how often a fact is shown instead of a phrase
+const FACT_CHANCE = 0.3;
+// rarer still - an easter egg should feel like a find, not a rotation slot
+const EGG_CHANCE = 0.04;
 
 // how far the simulated warm-up creep is allowed to go before it must stop
 // and wait for a real number - matches LOAD_PHASE_SPAN.weights[0] in main.js,
@@ -1081,11 +1142,78 @@ function stopFidget() {
   if (fidgetTimer) { clearTimeout(fidgetTimer); fidgetTimer = null; }
 }
 
+// The sprite flickers through frames rather than sitting as one glyph. Small
+// enough to read as a flame at 15px, and paused entirely under reduced motion
+// along with everything else on this screen.
+const SPIRIT_FRAMES = ["✷", "✸", "✹", "✺", "✸"];
+let spiritFrame = 0;
+let spiritTimer = null;
+
+function startSpiritFlicker() {
+  stopSpiritFlicker();
+  if (!bootSpiritEl || prefersReducedMotion()) return;
+  spiritTimer = setInterval(() => {
+    spiritFrame = (spiritFrame + 1) % SPIRIT_FRAMES.length;
+    bootSpiritEl.textContent = SPIRIT_FRAMES[spiritFrame];
+  }, 130);
+}
+
+function stopSpiritFlicker() {
+  if (spiritTimer) { clearInterval(spiritTimer); spiritTimer = null; }
+}
+
+// Rotates the themed line while a phase runs. The phrases are per-phase, so
+// whatever is showing always belongs to the step named underneath it.
+let phraseTimer = null;
+let phrasePhase = null;
+let phraseIndex = 0;
+
+const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
+
+function pickThemedLine(status) {
+  const phrases = PHASE_PHRASES[status];
+  if (!phrases || !phrases.length) return status;
+  // Facts and eggs never appear on "ready" - that line is on screen for a
+  // moment before the fade and is the one worth reading. The egg is checked
+  // first because it is the rarer of the two.
+  if (status !== "ready") {
+    if (Math.random() < EGG_CHANCE) return pickOne(EASTER_EGGS);
+    if (Math.random() < FACT_CHANCE) return pickOne(PROJECT_FACTS);
+  }
+  const text = phrases[phraseIndex % phrases.length];
+  phraseIndex++;
+  return text;
+}
+
+function startPhraseRotation(status) {
+  stopPhraseRotation();
+  const phrases = PHASE_PHRASES[status];
+  // nothing to rotate through, and "ready" is deliberately a single line
+  if (!phrases || phrases.length < 2) return;
+  phraseTimer = setInterval(() => {
+    if (bootFinished || !bootStatusEl) return;
+    bootStatusEl.textContent = pickThemedLine(status);
+  }, PHRASE_ROTATE_MS);
+}
+
+function stopPhraseRotation() {
+  if (phraseTimer) { clearInterval(phraseTimer); phraseTimer = null; }
+}
+
 // The themed headline and the factual line move together, so they can never
 // disagree about which phase is running.
 function setBootStatus(status, detail) {
   if (!status) return;
-  if (bootStatusEl) bootStatusEl.textContent = PHASE_THEME[status] || status;
+  if (bootStatusEl) {
+    // restart the rotation only when the phase itself changes, or every
+    // progress tick would reset the cycle and the line would never move
+    if (status !== phrasePhase) {
+      phrasePhase = status;
+      phraseIndex = 0;
+      bootStatusEl.textContent = pickThemedLine(status);
+      startPhraseRotation(status);
+    }
+  }
   if (bootDetailEl) bootDetailEl.textContent = detail || status;
 }
 
@@ -1145,6 +1273,10 @@ async function waitForModelThenReveal() {
     bootFinished = true;
     stopWarmupCreep();
     stopFidget();
+    // the boot screen is about to be removed from the document; leaving these
+    // running would tick against detached nodes for the life of the session
+    stopPhraseRotation();
+    stopSpiritFlicker();
     const elapsed = performance.now() - started;
     setTimeout(() => {
       bootScreen.classList.add("fade-out");
@@ -1185,6 +1317,7 @@ async function waitForModelThenReveal() {
   updateBootProgress(0, "warming up", "starting up");
   startWarmupCreep();
   scheduleFidget();
+  startSpiritFlicker();
 }
 
 runBoot();
