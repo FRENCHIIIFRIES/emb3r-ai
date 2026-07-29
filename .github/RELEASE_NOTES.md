@@ -1,5 +1,9 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.21.1 — the Settings button loses its marker
+
+Small follow-up to v1.21.0. Settings kept an asterisk where its gear icon used to be, while History had been left as plain text — so the two buttons sitting next to each other didn't match. Both are plain now.
+
 ## v1.21.0 — something to read while it loads
 
 The loading screen used to hold one line for the whole of a phase, which on a slow start meant the same sentence sitting there for twenty seconds. It now cycles: ember-themed phrases for whatever the fire is doing, facts about how emb3r was built, and — rarely — an easter egg worth finding.
