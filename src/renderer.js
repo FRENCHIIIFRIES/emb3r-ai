@@ -1202,13 +1202,70 @@ const settingsTabs   = document.querySelectorAll(".settingsTab");
 
 settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
 
+function showSettingsTab(tab) {
+  settingsTabs.forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
+  tab.classList.add("active");
+  document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+}
+
 settingsTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    settingsTabs.forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
-    tab.classList.add("active");
-    document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+  tab.addEventListener("click", () => showSettingsTab(tab));
+});
+
+// Searching by tab name alone would be nearly useless: nobody looking for the
+// sound toggle types "display". These are the words people actually reach for,
+// mapped to the section that holds the setting.
+const SETTINGS_KEYWORDS = {
+  account:     "profile profiles name user rename switch identity who",
+  privacy:     "offline lock network connections log outbound internet security airplane",
+  personality: "prompt system character instructions behaviour behavior tone persona",
+  spotify:     "music now playing track integration",
+  web:         "gemini internet search online api key current information lookup",
+  models:      "model download delete disk space storage llama qwen mistral gguf size brain",
+  hardware:    "ram cpu gpu vram memory cores detect scan specs",
+  updates:     "update version upgrade release install newer",
+  display:     "theme dark light colour color accent font size glow sound effects reactions " +
+               "animation mute appearance contrast",
+};
+
+const settingsSearch = document.getElementById("settingsSearch");
+const settingsNoMatch = document.getElementById("settingsNoMatch");
+
+settingsSearch.addEventListener("input", () => {
+  const q = settingsSearch.value.trim().toLowerCase();
+  let shown = 0;
+  let firstMatch = null;
+
+  settingsTabs.forEach((tab) => {
+    const key = tab.dataset.tab;
+    const haystack = `${tab.textContent} ${SETTINGS_KEYWORDS[key] || ""}`.toLowerCase();
+    const hit = !q || haystack.includes(q);
+    tab.hidden = !hit;
+    if (hit) {
+      shown++;
+      if (!firstMatch) firstMatch = tab;
+    }
   });
+
+  settingsNoMatch.hidden = shown > 0;
+
+  // Jump straight there once the search has narrowed to one section - typing
+  // "glow" and still having to click Display would be the search not finishing
+  // its job. Only on a unique match, so it never yanks the page around while
+  // the query is still ambiguous.
+  if (q && shown === 1 && firstMatch && !firstMatch.classList.contains("active")) {
+    showSettingsTab(firstMatch);
+  }
+});
+
+// Escape clears rather than closing settings, which is the smaller undo
+settingsSearch.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && settingsSearch.value) {
+    e.stopPropagation();
+    settingsSearch.value = "";
+    settingsSearch.dispatchEvent(new Event("input"));
+  }
 });
 
 // =============================
@@ -1257,7 +1314,16 @@ async function renderActiveConversationHistory() {
 
   await withTopicTransition(() => {
     chat.replaceChildren();
-    if (!conv || !conv.messages.length) return;
+    // The "terminal ready" line in the markup is only ever shown once: this
+    // funnel replaces the whole transcript, so after the first switch an empty
+    // conversation was a blank panel with no indication it was working.
+    if (!conv || !conv.messages.length) {
+      const empty = document.createElement("span");
+      empty.className = "dim";
+      empty.textContent = "// new chat. type below and hit enter.";
+      chat.appendChild(empty);
+      return;
+    }
     for (const m of conv.messages) {
       if (m.role === "user") append("you", "you", m.text, { copyable: true });
       else appendStaticBotLine(m.text, m.source);

@@ -682,20 +682,73 @@ pre{
     display:none;
 }
 
+/* Nine tabs already filled the width as a wrapping row, and a tenth would have
+   started a second line. A column holds far more and keeps the current section
+   visible without counting along a strip. */
+#settingsBody{
+    display:flex;
+    align-items:flex-start;
+    gap:20px;
+    min-height:0;
+}
+
+#settingsNav{
+    flex:0 0 172px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    border-right:1px solid var(--hover-color);
+    padding-right:16px;
+}
+
+#settingsContent{
+    flex:1;
+    min-width:0;
+}
+
+#settingsSearch{
+    width:100%;
+    font-size:13px;
+    padding:5px 8px;
+}
+
 #settingsTabs{
     display:flex;
-    flex-wrap:wrap;
-    gap:6px;
-    margin-bottom:6px;
-    padding-bottom:12px;
-    border-bottom:1px solid var(--hover-color);
+    flex-direction:column;
+    gap:3px;
+}
+
+#settingsNoMatch{
+    font-size:12.5px;
+    opacity:.55;
+    padding:4px 2px;
 }
 
 .settingsTab{
-    width:auto;
-    padding:6px 12px;
+    width:100%;
+    text-align:left;
+    padding:6px 10px;
     font-size:14px;
     opacity:0.6;
+    border-color:transparent;
+}
+
+/* the section you are in, marked on the edge nearest the content it belongs to */
+.settingsTab.active{
+    border-left:2px solid var(--text-color);
+}
+
+/* narrow windows cannot spare 172px for navigation, so it goes back to a row */
+@media (max-width: 700px){
+    #settingsBody{ flex-direction:column; gap:12px; }
+    #settingsNav{
+        flex:1 1 auto; width:100%;
+        border-right:none; padding-right:0;
+        border-bottom:1px solid var(--hover-color); padding-bottom:12px;
+    }
+    #settingsTabs{ flex-direction:row; flex-wrap:wrap; gap:6px; }
+    .settingsTab{ width:auto; }
+    .settingsTab.active{ border-left:none; }
 }
 
 .settingsTab:hover{
@@ -1736,17 +1789,27 @@ pre{
         <h2>Settings</h2>
     </div>
 
-    <div id="settingsTabs">
-        <button class="settingsTab active" data-tab="account">Account</button>
-        <button class="settingsTab" data-tab="privacy">Privacy</button>
-        <button class="settingsTab" data-tab="personality">Personality</button>
-        <button class="settingsTab" data-tab="spotify">Spotify</button>
-        <button class="settingsTab" data-tab="web">Web access</button>
-        <button class="settingsTab" data-tab="models">Models</button>
-        <button class="settingsTab" data-tab="hardware">Hardware</button>
-        <button class="settingsTab" data-tab="updates">Updates</button>
-        <button class="settingsTab" data-tab="display">Display</button>
+    <!-- sidebar and content sit side by side; the sections themselves are
+         unchanged and still switch on .active -->
+    <div id="settingsBody">
+    <div id="settingsNav">
+        <input type="text" id="settingsSearch" placeholder="Search settings..."
+               autocomplete="off" spellcheck="false">
+        <div id="settingsTabs">
+            <button class="settingsTab active" data-tab="account">Account</button>
+            <button class="settingsTab" data-tab="privacy">Privacy</button>
+            <button class="settingsTab" data-tab="personality">Personality</button>
+            <button class="settingsTab" data-tab="spotify">Spotify</button>
+            <button class="settingsTab" data-tab="web">Web access</button>
+            <button class="settingsTab" data-tab="models">Models</button>
+            <button class="settingsTab" data-tab="hardware">Hardware</button>
+            <button class="settingsTab" data-tab="updates">Updates</button>
+            <button class="settingsTab" data-tab="display">Display</button>
+        </div>
+        <div id="settingsNoMatch" hidden>no setting matches that</div>
     </div>
+
+    <div id="settingsContent">
 
     <div class="settingsSection active" data-tab="account">
         <h3>Account</h3>
@@ -1862,6 +1925,9 @@ pre{
             <label for="animToggle">Reactions — sparkles, hearts and transitions</label>
         </div>
     </div>
+
+    </div><!-- /settingsContent -->
+    </div><!-- /settingsBody -->
 </div>
 
 <div id="pet">
