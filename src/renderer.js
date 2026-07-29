@@ -988,6 +988,9 @@ async function finishBoot() {
   await loadConfigIntoUI();
   // know the context window before the first attachment, not after the first reply
   lastContext = await window.emb3r.contextUsage();
+  // Both of these await their own dismissal, so the model picker never opens
+  // underneath the introduction. At most one of the two ever runs.
+  await runIntroOrWhatsNew();
   await maybeRunFirstTimeSetup();
   input.focus();
 }
@@ -1845,6 +1848,140 @@ function describeGpu(gpu) {
   if (!gpu || !gpu.backend) return "no usable GPU — will run on the CPU";
   const where = gpu.unifiedMemory ? "unified memory" : `${gpu.totalVramGB}GB VRAM`;
   return `${gpu.name || gpu.backend} • ${where} • ${gpu.backend}`;
+}
+
+// =============================
+// Introduction and what's new
+// =============================
+
+const introModal   = document.getElementById("introModal");
+const introSlideEls = [...document.querySelectorAll(".introSlide")];
+const introDotsEl  = document.getElementById("introDots");
+const introBackBtn = document.getElementById("introBack");
+const introNextBtn = document.getElementById("introNext");
+const introNameEl  = document.getElementById("introName");
+
+const whatsNewModal = document.getElementById("whatsNewModal");
+const whatsNewTitle = document.getElementById("whatsNewTitle");
+const whatsNewBody  = document.getElementById("whatsNewBody");
+const whatsNewClose = document.getElementById("whatsNewClose");
+
+let introIndex = 0;
+
+function renderIntroSlide() {
+  introSlideEls.forEach((s, i) => s.classList.toggle("active", i === introIndex));
+  introDotsEl.replaceChildren(...introSlideEls.map((_, i) => {
+    const d = document.createElement("span");
+    d.className = "introDot" + (i === introIndex ? " on" : "");
+    return d;
+  }));
+  introBackBtn.style.visibility = introIndex === 0 ? "hidden" : "visible";
+  const last = introIndex === introSlideEls.length - 1;
+  introNextBtn.textContent = last ? "Start" : "Next";
+  if (last) introNameEl.focus();
+}
+
+// Resolves when the introduction is finished, so the model picker that follows
+// does not open on top of it.
+function runIntro() {
+  return new Promise((resolve) => {
+    introIndex = 0;
+    renderIntroSlide();
+    introModal.classList.add("open");
+
+    // Enter in the name field and the Start button both land here, so without
+    // this the profile would be written twice
+    let finished = false;
+    const finish = async () => {
+      if (finished) return;
+      finished = true;
+      const name = introNameEl.value.trim();
+      // the default profile ships nameless; this fills it in rather than
+      // creating a second one
+      if (name) await window.emb3r.setProfileName(name);
+      await window.emb3r.introComplete();
+      introModal.classList.remove("open");
+      await loadConfigIntoUI();
+      resolve();
+    };
+
+    introNextBtn.addEventListener("click", () => {
+      if (introIndex < introSlideEls.length - 1) {
+        introIndex++;
+        renderIntroSlide();
+      } else {
+        finish();
+      }
+    });
+
+    introBackBtn.addEventListener("click", () => {
+      if (introIndex > 0) {
+        introIndex--;
+        renderIntroSlide();
+      }
+    });
+
+    // Enter on the name field means "done", the same as pressing Start
+    introNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") finish();
+    });
+  });
+}
+
+function renderWhatsNew(whatsNew, version) {
+  whatsNewTitle.textContent = `What's new in ${version}`;
+  whatsNewBody.replaceChildren();
+
+  for (const entry of whatsNew.entries) {
+    // more than one release can have landed since they last opened it, so each
+    // is labelled rather than merged into one undated list
+    if (whatsNew.entries.length > 1) {
+      const v = document.createElement("div");
+      v.className = "whatsNewVersion";
+      v.textContent = entry.version;
+      whatsNewBody.appendChild(v);
+    }
+    for (const [label, items] of [["Added", entry.added], ["Fixed", entry.fixed]]) {
+      if (!items || !items.length) continue;
+      const h = document.createElement("div");
+      h.className = "whatsNewGroup";
+      h.textContent = label;
+      whatsNewBody.appendChild(h);
+      for (const text of items) {
+        const li = document.createElement("div");
+        li.className = "whatsNewItem";
+        // textContent, not markup - this is the same discipline as systemNote
+        li.textContent = `— ${text}`;
+        whatsNewBody.appendChild(li);
+      }
+    }
+  }
+}
+
+function runWhatsNew(whatsNew, version) {
+  return new Promise((resolve) => {
+    renderWhatsNew(whatsNew, version);
+    whatsNewModal.classList.add("open");
+    whatsNewClose.addEventListener("click", async () => {
+      await window.emb3r.introComplete();   // also records the version seen
+      whatsNewModal.classList.remove("open");
+      resolve();
+    }, { once: true });
+  });
+}
+
+// Exactly one of the two can run: a fresh install has no recorded version, so
+// it gets the introduction and is marked current - it never sees a changelog
+// for releases it was never running. Decided in main; this only renders it.
+async function runIntroOrWhatsNew() {
+  let state;
+  try {
+    state = await window.emb3r.introState();
+  } catch {
+    return; // never block reaching the app over a welcome screen
+  }
+  if (state.needsIntro) return runIntro();
+  if (state.whatsNew) return runWhatsNew(state.whatsNew, state.version);
 }
 
 async function maybeRunFirstTimeSetup() {

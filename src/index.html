@@ -1051,6 +1051,10 @@ pre{
 }
 
 /* first-run model picker - shares the consent modal's look */
+/* The introduction and the what's-new screen share the setup modal's shell, so
+   a fresh install reads as one flow: intro, then pick a model. */
+#introModal,
+#whatsNewModal,
 #setupModal{
     position:fixed;
     top:0; left:0; width:100%; height:100%;
@@ -1059,6 +1063,145 @@ pre{
     align-items:center;
     justify-content:center;
     z-index:3000;
+}
+
+#introModal.open,
+#whatsNewModal.open{
+    display:flex;
+}
+
+#introBox,
+#whatsNewBox{
+    background:var(--bg-color);
+    border:1px solid var(--text-color);
+    padding:24px;
+    width:460px;
+    max-width:calc(100% - 48px);
+    text-shadow:0 0 4px var(--text-color);
+}
+
+#introBox h3,
+#whatsNewBox h3{
+    margin-top:0;
+}
+
+/* fixed height so the footer does not jump between slides of different length */
+#introSlides{
+    min-height:210px;
+}
+
+.introSlide{
+    display:none;
+}
+
+.introSlide.active{
+    display:block;
+}
+
+.introSlide p{
+    line-height:1.5;
+}
+
+/* secondary detail: present, but not competing with the point of the slide */
+.introQuiet{
+    font-size:13px;
+    opacity:.6;
+    text-shadow:none;
+}
+
+.introSlide label{
+    display:block;
+    margin-top:14px;
+    font-size:13px;
+    opacity:.7;
+}
+
+#introName{
+    width:100%;
+    margin-top:4px;
+}
+
+#introFooter{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:20px;
+    gap:12px;
+}
+
+#introDots{
+    display:flex;
+    gap:6px;
+}
+
+.introDot{
+    width:7px;
+    height:7px;
+    border:1px solid var(--text-color);
+    border-radius:50%;
+    opacity:.35;
+}
+
+.introDot.on{
+    opacity:1;
+    background:var(--text-color);
+}
+
+#introButtons{
+    display:flex;
+    gap:8px;
+}
+
+#introButtons button,
+#whatsNewButtons button{
+    width:auto;
+    padding:5px 14px;
+}
+
+/* Back is a way out of a mistake, not something to reach for */
+#introBack{
+    opacity:.6;
+}
+
+#introBack:hover{
+    opacity:1;
+}
+
+#whatsNewBody{
+    max-height:340px;
+    overflow-y:auto;
+    margin-top:4px;
+}
+
+.whatsNewVersion{
+    font-weight:700;
+    margin-top:14px;
+}
+
+.whatsNewVersion:first-child{
+    margin-top:0;
+}
+
+.whatsNewGroup{
+    font-size:13px;
+    opacity:.7;
+    margin-top:8px;
+    text-shadow:none;
+}
+
+.whatsNewItem{
+    font-size:13px;
+    line-height:1.5;
+    margin-top:4px;
+    padding-left:14px;
+    text-indent:-14px;
+    text-shadow:none;
+}
+
+#whatsNewButtons{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:20px;
 }
 
 #setupModal.open{
@@ -1503,6 +1646,53 @@ pre{
         <div id="consentButtons">
             <button id="consentDeny">Not Now</button>
             <button id="consentAllow">Allow</button>
+        </div>
+    </div>
+</div>
+
+<!-- Shown once on a fresh install, before the model picker, so the two read as
+     one flow rather than two screens that happen to follow each other. -->
+<div id="introModal">
+    <div id="introBox">
+        <div id="introSlides">
+            <section class="introSlide active" data-slide="0">
+                <h3>This is emb3r</h3>
+                <p>A language model that runs on this computer. Not on a server, not on someone else's hardware — here, on the machine in front of you.</p>
+                <p class="introQuiet">That means no account, no API key, and no bill. It also means the model has to be downloaded once before it can answer anything.</p>
+            </section>
+
+            <section class="introSlide" data-slide="1">
+                <h3>Nothing leaves this machine</h3>
+                <p>Once a model is downloaded, emb3r can answer with the network off entirely. Your conversations and any file you attach are read here and stay here.</p>
+                <p class="introQuiet">There is an indicator in the top left that lights up only while something is genuinely being sent, and it names what is sending it. Settings&nbsp;→&nbsp;Privacy keeps a log of every connection, and an offline lock that refuses them all.</p>
+            </section>
+
+            <section class="introSlide" data-slide="2">
+                <h3>What should Ember call you?</h3>
+                <p>Ember is told your name so it can address you properly. It is stored on this machine with everything else.</p>
+                <label for="introName">Your name</label>
+                <input type="text" id="introName" placeholder="e.g. Ziyan" maxlength="60" autocomplete="off">
+                <p class="introQuiet">Optional — leave it blank and Ember simply will not use a name. You can change it later in Settings&nbsp;→&nbsp;Account.</p>
+            </section>
+        </div>
+
+        <div id="introFooter">
+            <div id="introDots" aria-hidden="true"></div>
+            <div id="introButtons">
+                <button id="introBack">Back</button>
+                <button id="introNext">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Shown after an update, never on a fresh install - see emb3r:intro-state. -->
+<div id="whatsNewModal">
+    <div id="whatsNewBox">
+        <h3 id="whatsNewTitle">What's new</h3>
+        <div id="whatsNewBody"></div>
+        <div id="whatsNewButtons">
+            <button id="whatsNewClose">Continue</button>
         </div>
     </div>
 </div>
