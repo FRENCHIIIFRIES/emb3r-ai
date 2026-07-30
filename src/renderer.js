@@ -1340,6 +1340,11 @@ function showSettingsTab(tab) {
   document.querySelectorAll(".settingsSection").forEach((s) => s.classList.remove("active"));
   tab.classList.add("active");
   document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`).classList.add("active");
+  // leaving a tucked tab puts it away again, rather than leaving it parked in
+  // the sidebar for the rest of the session. Explicitly without navigating: the
+  // unique-match jump belongs to typing only, and running it here would bounce
+  // you straight back to the tab you just clicked away from.
+  applySettingsFilter({ navigate: false });
 }
 
 settingsTabs.forEach((tab) => {
@@ -1352,6 +1357,8 @@ settingsTabs.forEach((tab) => {
 const SETTINGS_KEYWORDS = {
   account:     "profile profiles name user rename switch identity who",
   privacy:     "offline lock network connections log outbound internet security airplane",
+  student:     "safe mode school child kid age restriction pin lock filter parent teacher " +
+               "classroom appropriate block swearing profanity supervision",
   personality: "prompt system character instructions behaviour behavior tone persona",
   spotify:     "music now playing track integration",
   web:         "gemini internet search online api key current information lookup",
@@ -1365,7 +1372,16 @@ const SETTINGS_KEYWORDS = {
 const settingsSearch = document.getElementById("settingsSearch");
 const settingsNoMatch = document.getElementById("settingsNoMatch");
 
-settingsSearch.addEventListener("input", () => {
+// Mirrors config.safeMode. Read by the tab filter below, which is why it lives
+// up here rather than beside the rest of the student-mode code.
+let safeModeOn = false;
+
+// A tucked tab (data-tucked="1") stays out of the sidebar until someone looks
+// for it. Student mode is tucked because most people installing emb3r are not a
+// school, and an entry about children in everyone's settings is answering a
+// question nobody asked. It surfaces on a search for "student", "school",
+// "safe", "pin", "age" and so on, and stays put while the mode is actually on.
+function applySettingsFilter({ navigate = false } = {}) {
   const q = settingsSearch.value.trim().toLowerCase();
   let shown = 0;
   let firstMatch = null;
@@ -1373,9 +1389,17 @@ settingsSearch.addEventListener("input", () => {
   settingsTabs.forEach((tab) => {
     const key = tab.dataset.tab;
     const haystack = `${tab.textContent} ${SETTINGS_KEYWORDS[key] || ""}`.toLowerCase();
-    const hit = !q || haystack.includes(q);
-    tab.hidden = !hit;
-    if (hit) {
+    const matched = !q || haystack.includes(q);
+    const tucked = tab.dataset.tucked === "1";
+    // offered = would be put in front of you. A tucked tab is only offered when
+    // deliberately searched for, or when its mode is on and it has earned a
+    // permanent place.
+    const offered = matched && (!tucked || safeModeOn || Boolean(q));
+    // ...but the tab whose section is currently open is never hidden, or the
+    // sidebar would show nothing selected while its content sat there. Kept out
+    // of the count below so it cannot spoil the unique-match jump.
+    tab.hidden = !(offered || tab.classList.contains("active"));
+    if (offered) {
       shown++;
       if (!firstMatch) firstMatch = tab;
     }
@@ -1387,17 +1411,19 @@ settingsSearch.addEventListener("input", () => {
   // "glow" and still having to click Display would be the search not finishing
   // its job. Only on a unique match, so it never yanks the page around while
   // the query is still ambiguous.
-  if (q && shown === 1 && firstMatch && !firstMatch.classList.contains("active")) {
+  if (navigate && q && shown === 1 && firstMatch && !firstMatch.classList.contains("active")) {
     showSettingsTab(firstMatch);
   }
-});
+}
+
+settingsSearch.addEventListener("input", () => applySettingsFilter({ navigate: true }));
 
 // Escape clears rather than closing settings, which is the smaller undo
 settingsSearch.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && settingsSearch.value) {
     e.stopPropagation();
     settingsSearch.value = "";
-    settingsSearch.dispatchEvent(new Event("input"));
+    applySettingsFilter({ navigate: false });
   }
 });
 
@@ -1639,6 +1665,9 @@ async function loadConfigIntoUI() {
   spotifyClientIdInput.value = currentConfig.spotifyClientId || "";
   await refreshSpotifyStatus();
   await refreshPersonality();
+  // after refreshPersonality, because student mode makes that box read-only
+  // and refreshPersonality repopulates it
+  refreshSafeMode(currentConfig);
   await initUpdateUI();
   await refreshGeminiKeyStatus();
   // unlike the key, the model name isn't secret, so it's shown directly
@@ -1685,6 +1714,124 @@ personalityReset.addEventListener("click", async () => {
   personalityInput.value = "";
   personalityStatus.textContent = "reset to default";
   setTimeout(() => { personalityStatus.textContent = ""; }, 1500);
+});
+
+// =============================
+// Student (safe) mode
+// =============================
+
+const safeModeToggle     = document.getElementById("safeModeToggle");
+const safeModeStatus     = document.getElementById("safeModeStatus");
+const safeModePinCurrent = document.getElementById("safeModePinCurrent");
+const safeModePinNew     = document.getElementById("safeModePinNew");
+const safeModePinSave    = document.getElementById("safeModePinSave");
+const safeModePinClear   = document.getElementById("safeModePinClear");
+const safeModePinStatus  = document.getElementById("safeModePinStatus");
+const personalityLockNote = document.getElementById("personalityLockNote");
+const safeModeUnlockRow  = document.getElementById("safeModeUnlockRow");
+const safeModeUnlockPin  = document.getElementById("safeModeUnlockPin");
+const safeModeUnlock     = document.getElementById("safeModeUnlock");
+
+let safeModePinSet = false;
+
+// The personality is the thing student mode overrides, so leaving it editable
+// would make the mode meaningless - the box is the obvious place to undo it.
+// This is cosmetic enforcement only; the real enforcement is that main.js
+// prepends SAFE_MODE_PROMPT regardless of what the personality says.
+function applySafeModeLock(on) {
+  personalityInput.readOnly = on;
+  personalitySave.disabled = on;
+  personalityReset.disabled = on;
+  personalityLockNote.hidden = !on;
+}
+
+function renderSafeModeStatus(on) {
+  safeModeOn = on;
+  safeModeToggle.checked = on;
+  safeModeStatus.textContent = on
+    ? (safeModePinSet ? "on — the PIN is needed to turn it off" : "on — no PIN set, so it can be switched off here")
+    : "off";
+  applySafeModeLock(on);
+
+  // When a PIN guards it, the checkbox stops being the control that turns it
+  // off - the unlock row below is. Disabling the box rather than letting it
+  // flip and then snap back avoids showing a state that was never applied.
+  const locked = on && safeModePinSet;
+  safeModeToggle.disabled = locked;
+  safeModeUnlockRow.hidden = !locked;
+  if (!locked) safeModeUnlockPin.value = "";
+
+  // only meaningful once a PIN exists; asking for a "current PIN" that was
+  // never set would just be a box that can never be filled in correctly
+  safeModePinCurrent.hidden = !safeModePinSet;
+  safeModePinClear.disabled = !safeModePinSet;
+  safeModePinSave.textContent = safeModePinSet ? "Change PIN" : "Set PIN";
+
+  // while the mode is on the tab stops being tucked away, so whoever turned it
+  // on can find their way back to it without remembering what to search for
+  applySettingsFilter();
+}
+
+// takes the config loadConfigIntoUI already fetched, rather than asking again
+function refreshSafeMode(cfg) {
+  safeModePinSet = Boolean(cfg.safeModePinSet);
+  renderSafeModeStatus(Boolean(cfg.safeMode));
+}
+
+safeModeToggle.addEventListener("change", async () => {
+  const wanted = safeModeToggle.checked;
+  const result = await window.emb3r.setSafeMode(wanted);
+  if (!result.success) {
+    // put the box back where it was rather than leaving it showing a state
+    // that main.js refused to apply
+    safeModeToggle.checked = !wanted;
+    safeModeStatus.textContent = result.error;
+    return;
+  }
+  renderSafeModeStatus(result.safeMode);
+});
+
+safeModeUnlock.addEventListener("click", async () => {
+  const result = await window.emb3r.setSafeMode(false, safeModeUnlockPin.value.trim());
+  if (!result.success) {
+    safeModeStatus.textContent = result.error;
+    safeModeUnlockPin.value = "";
+    return;
+  }
+  renderSafeModeStatus(result.safeMode);
+});
+
+safeModePinSave.addEventListener("click", async () => {
+  const next = safeModePinNew.value.trim();
+  if (!next) {
+    safeModePinStatus.textContent = "Enter a new PIN of 4 to 8 digits.";
+    return;
+  }
+  const result = await window.emb3r.setSafeModePin(next, safeModePinCurrent.value.trim());
+  if (!result.success) {
+    safeModePinStatus.textContent = result.error;
+    return;
+  }
+  safeModePinSet = result.pinSet;
+  safeModePinNew.value = "";
+  safeModePinCurrent.value = "";
+  safeModePinStatus.textContent = "PIN saved";
+  renderSafeModeStatus(safeModeToggle.checked);
+  setTimeout(() => { safeModePinStatus.textContent = ""; }, 2000);
+});
+
+safeModePinClear.addEventListener("click", async () => {
+  const result = await window.emb3r.setSafeModePin(null, safeModePinCurrent.value.trim());
+  if (!result.success) {
+    safeModePinStatus.textContent = result.error;
+    return;
+  }
+  safeModePinSet = false;
+  safeModePinNew.value = "";
+  safeModePinCurrent.value = "";
+  safeModePinStatus.textContent = "PIN removed";
+  renderSafeModeStatus(safeModeToggle.checked);
+  setTimeout(() => { safeModePinStatus.textContent = ""; }, 2000);
 });
 
 // =============================
