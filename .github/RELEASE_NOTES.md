@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.22.0 — a student mode, for the people who asked for one
+
+emb3r can now be handed to a school student without much worry about what comes back. Turn on student mode and Ember is told, before every reply, that it is talking to a student: nothing sexual, nothing graphic, no profanity, and nothing about weapons, drugs or self-harm. If a student brings up hurting themselves, Ember says plainly to talk to a teacher or another trusted adult rather than trying to counsel them itself.
+
+A short list of blunt, explicitly harmful questions never reaches the model at all — they get a fixed, safe reply instead, and if web access is on, they don't leave the machine either. That list is deliberately narrow. A filter that blocks "how did people die in the Blitz" is worse than no filter, so the patterns cover only the cases where a wrong answer could actually hurt someone, and the rest is left to the prompt.
+
+Being straight about what this is: it steers a language model, it does not police one. A determined student can still phrase their way around it, and it is no substitute for supervision or for a school's own network filtering. It reduces accidental exposure. That is the claim, and the settings page says so in those words rather than implying a guarantee.
+
+Because most people installing emb3r are not a school, the whole thing stays out of the way: there is no "Student mode" entry in the sidebar until you search settings for it — try "student", "school" or "safe" — and it reappears permanently once the mode is on, so whoever turned it on can find their way back. An optional PIN stops it being switched off again, and while it is on, the Personality page is read-only, since that box is otherwise the obvious way to undo the whole thing.
+
+Also fixed: searching settings and then clicking a different section no longer snaps you back to the search result.
+
 ## v1.21.1 — the Settings button loses its marker
 
 Small follow-up to v1.21.0. Settings kept an asterisk where its gear icon used to be, while History had been left as plain text — so the two buttons sitting next to each other didn't match. Both are plain now.

@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld("emb3r", {
   getPersonality: () => ipcRenderer.invoke("emb3r:get-personality"),
   setPersonality: (text) => ipcRenderer.invoke("emb3r:set-personality", text),
   resetPersonality: () => ipcRenderer.invoke("emb3r:reset-personality"),
+  setSafeMode: (on, pin) => ipcRenderer.invoke("emb3r:set-safe-mode", on, pin),
+  setSafeModePin: (pin, currentPin) => ipcRenderer.invoke("emb3r:set-safe-mode-pin", pin, currentPin),
 
   listProfiles: () => ipcRenderer.invoke("emb3r:list-profiles"),
   createProfile: (name) => ipcRenderer.invoke("emb3r:create-profile", name),

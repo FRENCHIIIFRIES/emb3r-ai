@@ -528,6 +528,54 @@ pre{
     opacity:0.75;
 }
 
+#safeModeRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+#safeModeStatus,
+#safeModePinStatus{
+    font-size:13px;
+    min-height:1.2em;
+    margin-top:4px;
+    opacity:0.75;
+}
+
+#safeModePinRow,
+#safeModeUnlockRow{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    margin-top:6px;
+}
+
+/* hidden takes a display rule to win against the flex above */
+#safeModeUnlockRow[hidden]{
+    display:none;
+}
+
+#safeModeUnlockRow input{
+    width:auto;
+    flex:0 1 130px;
+}
+
+/* the PIN fields sit on one line with their two buttons, so they cannot take
+   the full-width default the rest of the settings inputs use */
+#safeModePinRow input{
+    width:auto;
+    flex:1 1 130px;
+    min-width:110px;
+}
+
+/* read-only rather than disabled: disabled text loses contrast badly on the
+   light theme, and the personality is still worth being able to read */
+#personalityInput[readonly]{
+    opacity:0.6;
+    cursor:not-allowed;
+}
+
 .settingsNote{
     font-size:13px;
     opacity:0.7;
@@ -1012,6 +1060,7 @@ pre{
 
 #soundToggleRow input,
 #offlineLockRow input,
+#safeModeRow input,
 #animToggleRow input{
     padding:0;
     width:auto;
@@ -1805,6 +1854,10 @@ pre{
         <div id="settingsTabs">
             <button class="settingsTab active" data-tab="account">Account</button>
             <button class="settingsTab" data-tab="privacy">Privacy</button>
+            <!-- data-tucked: kept out of the sidebar until searched for, so the
+                 default install has no settings entry about children in it.
+                 See applySettingsFilter() in renderer.js. -->
+            <button class="settingsTab" data-tab="student" data-tucked="1" hidden>Student mode</button>
             <button class="settingsTab" data-tab="personality">Personality</button>
             <button class="settingsTab" data-tab="spotify">Spotify</button>
             <button class="settingsTab" data-tab="web">Web access</button>
@@ -1842,6 +1895,37 @@ pre{
         <div id="netLog"></div>
     </div>
 
+    <div class="settingsSection" data-tab="student">
+        <h3>Student mode</h3>
+
+        <div id="safeModeRow">
+            <input type="checkbox" id="safeModeToggle">
+            <label for="safeModeToggle">Student mode — keep replies suitable for school</label>
+        </div>
+        <div id="safeModeStatus"></div>
+
+        <div id="safeModeUnlockRow" hidden>
+            <input type="password" id="safeModeUnlockPin" inputmode="numeric" autocomplete="off" placeholder="PIN">
+            <button id="safeModeUnlock">Turn off student mode</button>
+        </div>
+
+        <p class="settingsNote">Ember is told, before every reply, that it is talking to a school student: no sexual content, no graphic violence, no profanity, and nothing about weapons, drugs or self-harm. If a student brings up hurting themselves, Ember says plainly to talk to a teacher or another trusted adult instead of trying to counsel them.</p>
+        <p class="settingsNote">A small number of blunt, explicitly harmful questions are answered with a fixed safe reply and never reach the model at all — or the web, if web access is on.</p>
+        <p class="settingsNote"><strong>Be clear about what this is.</strong> It steers a language model; it does not police it. A determined student can still phrase something to get around it, and it is not a substitute for supervision or for your school's network filtering. It reduces accidental exposure — treat it as that, not as a guarantee.</p>
+        <p class="settingsNote">While it is on, the Personality page is read-only, because Ember's instructions are the thing student mode changes.</p>
+
+        <label>PIN (optional)</label>
+        <p class="settingsNote">Without a PIN, student mode is a setting anyone can switch off. Set one and turning it off asks for it first. Turning it <em>on</em> never needs a PIN.</p>
+        <div id="safeModePinRow">
+            <input type="password" id="safeModePinCurrent" inputmode="numeric" autocomplete="off" placeholder="Current PIN">
+            <input type="password" id="safeModePinNew" inputmode="numeric" autocomplete="off" placeholder="New PIN (4–8 digits)">
+            <button id="safeModePinSave">Set PIN</button>
+            <button id="safeModePinClear">Remove PIN</button>
+        </div>
+        <div id="safeModePinStatus"></div>
+        <p class="settingsNote">Keep the PIN somewhere you can find it. There is no recovery — if it is lost, the only way back is to delete emb3r's config file.</p>
+    </div>
+
     <div class="settingsSection" data-tab="personality">
         <h3>Personality</h3>
         <label>What Ember is told to be, before every reply</label>
@@ -1851,6 +1935,7 @@ pre{
             <button id="personalityReset">Reset to default</button>
         </div>
         <div id="personalityStatus"></div>
+        <p class="settingsNote" id="personalityLockNote" hidden>Student mode is on, so this is read-only. Turn it off under Student mode to edit Ember's personality.</p>
     </div>
 
     <div class="settingsSection" data-tab="spotify">
