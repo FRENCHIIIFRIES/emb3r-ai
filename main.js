@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -82,6 +82,9 @@ function defaultConfig() {
     // scrypt hash of the PIN that guards turning safe mode back off, or null
     // for "no PIN set". Never sent to the renderer - see emb3r:get-config.
     safeModePin: null,
+    // models added by the user, either downloaded from a pasted link or
+    // pointed at where they already sit on disk. See the custom models section.
+    customModels: [],
   };
 }
 
@@ -89,6 +92,12 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.23.0",
+    added: [
+      "Your own models. Paste a Hugging Face or GitHub link under Settings > Models, see every GGUF version in that repository with its size, and pick the one that suits your machine.",
+      "A model you already have on disk can be used where it sits, without being downloaded again or copied.",
+    ],
+    fixed: [] },
   { version: "1.22.0",
     added: [
       "Student mode: Ember is told to keep every reply suitable for school, and a short list of clearly harmful questions is answered safely without reaching the model. It is tucked away by default — search settings for \"student\" to find it. An optional PIN stops it being switched back off.",
@@ -707,10 +716,12 @@ function sendLoadProgress(phase, phaseProgress, status) {
 
 async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
-  const modelPath = path.join(MODELS_DIR, target);
+  // not a plain join any more: a model the user pointed at lives outside
+  // MODELS_DIR, and resolveModelPath is what maps either kind of key to a path
+  const modelPath = resolveModelPath(target);
 
-  if (!fs.existsSync(modelPath)) {
-    modelLoadError = `Model file not found: ${target}. Download it from Settings first.`;
+  if (!modelPath || !fs.existsSync(modelPath)) {
+    modelLoadError = `Model file not found: ${modelDisplayName(target)}. Download it from Settings first.`;
     chatSession = null;
     notifyModelReady();
     return;
@@ -1103,7 +1114,8 @@ ipcMain.handle("emb3r:set-offline-lock", (_e, on) => {
   // locking with nothing on disk would strand the app: no model to answer
   // with, and the lock itself blocking the download that would fix it
   if (wanted) {
-    const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)));
+    const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)))
+      || customModels().some((m) => fs.existsSync(m.external ? m.externalPath : path.join(MODELS_DIR, m.file)));
     if (!anyDownloaded) {
       return {
         success: false,
@@ -1246,8 +1258,30 @@ ipcMain.handle("emb3r:list-models", async () => {
     fitsRam: m.minRamGB <= ram,
     speedNote: modelSpeedNote(m, ram, gpu),
   }));
+  // custom entries carry no tier or curated notes, so they are returned
+  // separately rather than being padded out to look like catalogue models
+  const custom = customModels().map((m) => {
+    const target = m.external ? m.externalPath : path.join(MODELS_DIR, m.file);
+    const estRam = estimatedRamGB(m.sizeBytes);
+    return {
+      key: m.key,
+      name: m.name,
+      file: m.file,
+      external: Boolean(m.external),
+      externalPath: m.external ? m.externalPath : null,
+      source: m.source,
+      sizeGB: m.sizeBytes ? Number((m.sizeBytes / 1024 ** 3).toFixed(1)) : null,
+      estRamGB: estRam,
+      fitsRam: estRam <= ram,
+      // an external file can be moved or deleted behind the app's back, so
+      // whether it is still there is checked every time rather than remembered
+      present: fs.existsSync(target),
+    };
+  });
+
   return {
     models,
+    customModels: custom,
     activeModel: config.activeModel,
     recommendedTier: recommendTier(ram, gpu),
     recommendedId: best ? best.id : null,
@@ -1262,7 +1296,8 @@ ipcMain.handle("emb3r:setup-state", async () => {
   const ram = totalRamGB();
   const gpu = await gpuForRecommendation();
   const best = recommendModel(ram, gpu);
-  const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)));
+  const anyDownloaded = MODEL_CATALOG.some((m) => fs.existsSync(path.join(MODELS_DIR, m.file)))
+    || customModels().some((m) => fs.existsSync(m.external ? m.externalPath : path.join(MODELS_DIR, m.file)));
   const cpus = os.cpus();
 
   return {
@@ -1528,6 +1563,424 @@ ipcMain.handle("emb3r:download-model", async (_e, modelId) => {
   }
 });
 
+// ============================================================
+// Custom models - added by link, or pointed at on disk
+// ============================================================
+
+// Where a model may be fetched from. This is not a formality: "paste a link"
+// is otherwise an instruction to download a multi-gigabyte file from anywhere
+// on the internet and hand it to a native loader. Hugging Face and GitHub
+// releases are where GGUF models actually live.
+//
+// Only the URL the user supplies is checked against this. Redirects are not,
+// deliberately - both hosts redirect to CDN names that change (cdn-lfs-us-1,
+// per-region CloudFront, and so on), and an allowlist that guessed at them
+// would break real downloads while adding little. downloadFile() already
+// refuses any redirect that leaves https, so the origin the user vouched for
+// is the one choosing where its own bytes come from.
+const MODEL_HOST_ALLOWLIST = [
+  /^huggingface\.co$/i,
+  /^hf\.co$/i,
+  /^github\.com$/i,
+];
+
+function hostAllowedForModels(hostname) {
+  return MODEL_HOST_ALLOWLIST.some((re) => re.test(String(hostname || "")));
+}
+
+// A name that arrives from a URL or a repo listing must never be able to steer
+// where the file lands. basename() strips any directory part, and the pattern
+// then refuses anything left that is not an ordinary filename - which also
+// rules out ".." ever reaching path.join().
+function safeModelFilename(name) {
+  const raw = String(name || "").split("?")[0].split("#")[0];
+  const base = path.basename(raw);
+  if (!base || base === "." || base === "..") return null;
+  if (!/^[A-Za-z0-9._\- ()]+$/.test(base)) return null;
+  if (!/\.gguf$/i.test(base)) return null;
+  if (base.length > 120) return null;
+  return base;
+}
+
+// Every GGUF file begins with the four bytes "GGUF". Checking it turns "the
+// server sent us something" into "the server sent us a model" - without this a
+// 404 page or an HTML error saved to disk would only be discovered later, as a
+// crash inside the native loader.
+const GGUF_MAGIC = Buffer.from("GGUF", "ascii");
+
+async function looksLikeGGUF(filePath) {
+  let fd;
+  try {
+    fd = await fs.promises.open(filePath, "r");
+    const buf = Buffer.alloc(4);
+    const { bytesRead } = await fd.read(buf, 0, 4, 0);
+    return bytesRead === 4 && buf.equals(GGUF_MAGIC);
+  } catch {
+    return false;
+  } finally {
+    if (fd) await fd.close().catch(() => {});
+  }
+}
+
+// Custom models carry no minRamGB, so it is estimated from the file size using
+// the same headroom factor the catalogue recommendations use. Shown as an
+// estimate in the interface, because that is what it is.
+function estimatedRamGB(sizeBytes) {
+  const gb = (sizeBytes || 0) / 1024 ** 3;
+  return Math.max(1, Math.ceil(gb * MEMORY_HEADROOM));
+}
+
+function customModels() {
+  return Array.isArray(config.customModels) ? config.customModels : [];
+}
+
+// The key used for config.activeModel. Catalogue and downloaded models are a
+// bare filename inside MODELS_DIR; a model the user pointed at on disk is its
+// absolute path, which is what stops two files both called "model.gguf" in
+// different folders from being treated as the same entry.
+function resolveModelPath(target) {
+  if (!target) return null;
+  if (path.isAbsolute(target)) {
+    // only paths actually in the registry resolve, so this cannot be used to
+    // reach an arbitrary file by passing one in
+    const known = customModels().find((m) => m.key === target);
+    return known ? target : null;
+  }
+  return path.join(MODELS_DIR, target);
+}
+
+function modelDisplayName(key) {
+  const custom = customModels().find((m) => m.key === key);
+  if (custom) return custom.name;
+  const entry = MODEL_CATALOG.find((m) => m.file === key);
+  return entry ? entry.name : key;
+}
+
+// Accepts what people actually paste: a repo page, a file page, a direct
+// download link, or the bare "owner/repo" shown on the model card.
+function parseModelSource(input) {
+  const text = String(input || "").trim();
+  if (!text) return { error: "Paste a link first." };
+
+  if (/^[\w.\-]+\/[\w.\-]+$/.test(text)) {
+    return { kind: "hf-repo", repo: text };
+  }
+
+  let u;
+  try {
+    u = new URL(text);
+  } catch {
+    return { error: "That does not look like a link. Paste a Hugging Face or GitHub URL, or an owner/repo name." };
+  }
+  if (u.protocol !== "https:") {
+    return { error: "Only https links are accepted." };
+  }
+  if (!hostAllowedForModels(u.hostname)) {
+    return { error: `Models can only be fetched from Hugging Face or GitHub. That link points at ${u.hostname}.` };
+  }
+
+  const parts = u.pathname.split("/").filter(Boolean);
+
+  if (/^(huggingface\.co|hf\.co)$/i.test(u.hostname)) {
+    if (parts.length < 2) return { error: "That Hugging Face link has no model in it." };
+    const repo = `${parts[0]}/${parts[1]}`;
+    // .../resolve/main/file.gguf and .../blob/main/file.gguf both name one file
+    const marker = parts.findIndex((x) => x === "resolve" || x === "blob");
+    if (marker !== -1 && parts.length > marker + 2) {
+      const file = safeModelFilename(parts[parts.length - 1]);
+      if (!file) return { error: "That link does not end in a .gguf file." };
+      const rev = parts[marker + 1];
+      const rest = parts.slice(marker + 2).map(encodeURIComponent).join("/");
+      return { kind: "direct", file, repo, url: `https://huggingface.co/${repo}/resolve/${rev}/${rest}?download=true` };
+    }
+    return { kind: "hf-repo", repo };
+  }
+
+  // github.com/<owner>/<repo>/releases/download/<tag>/<asset>
+  if (parts.includes("releases") && parts.includes("download")) {
+    const file = safeModelFilename(parts[parts.length - 1]);
+    if (!file) return { error: "That GitHub link does not end in a .gguf file." };
+    return { kind: "direct", file, repo: `${parts[0]}/${parts[1]}`, url: u.toString() };
+  }
+  return { error: "For GitHub, use the direct link to a .gguf release asset - right-click the asset and copy the link address." };
+}
+
+// Small JSON GET over the same https module the network guard wraps, so these
+// requests are logged and refused by the offline lock like everything else.
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { "User-Agent": "emb3r-app", Accept: "application/json" } }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        return fetchJson(new URL(res.headers.location, url).toString()).then(resolve, reject);
+      }
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        res.resume();
+        return reject(new Error("That repository is private or gated, so its file list cannot be read."));
+      }
+      if (res.statusCode === 404) {
+        res.resume();
+        return reject(new Error("No such repository on Hugging Face."));
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`Hugging Face returned ${res.statusCode}.`));
+      }
+      let body = "";
+      let bytes = 0;
+      res.setEncoding("utf8");
+      res.on("data", (c) => {
+        bytes += c.length;
+        // a listing is a few KB; anything enormous is not a listing
+        if (bytes > 4 * 1024 * 1024) {
+          req.destroy();
+          return reject(new Error("That file list is unreasonably large."));
+        }
+        body += c;
+      });
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch {
+          reject(new Error("Hugging Face sent something that was not a file list."));
+        }
+      });
+    });
+    req.on("error", (e) => reject(new Error(e.message || String(e))));
+    req.setTimeout(20000, () => {
+      req.destroy();
+      reject(new Error("Timed out reading the file list."));
+    });
+  });
+}
+
+function netPrecheck() {
+  if (config.offlineLock) {
+    return "The offline lock is on, so emb3r is refusing every outbound connection. Turn it off under Privacy first.";
+  }
+  if (!config.internetConsent) return "Internet access hasn't been granted yet.";
+  return null;
+}
+
+// Reads what .gguf files a repo actually holds, so the choice of quantisation
+// is made from real sizes rather than by guessing at a filename.
+ipcMain.handle("emb3r:inspect-model-source", async (_e, input) => {
+  const blocked = netPrecheck();
+  if (blocked) return { success: false, error: blocked };
+
+  const parsed = parseModelSource(input);
+  if (parsed.error) return { success: false, error: parsed.error };
+
+  const ram = totalRamGB();
+  const free = await freeDiskGB(MODELS_DIR);
+
+  if (parsed.kind === "direct") {
+    return {
+      success: true, kind: "direct", repo: parsed.repo,
+      files: [{ file: parsed.file, url: parsed.url, sizeBytes: null, estRamGB: null, fits: true, split: false }],
+      totalRamGB: ram, freeDiskGB: free,
+    };
+  }
+
+  let tree;
+  try {
+    tree = await fetchJson(`https://huggingface.co/api/models/${parsed.repo}/tree/main?recursive=true`);
+  } catch (err) {
+    return { success: false, error: err.message || String(err) };
+  }
+
+  const files = (Array.isArray(tree) ? tree : [])
+    .filter((n) => n && n.type === "file" && /\.gguf$/i.test(n.path || ""))
+    .map((n) => {
+      const size = (n.lfs && n.lfs.size) || n.size || 0;
+      const file = safeModelFilename(n.path);
+      if (!file) return null;
+      const estRam = estimatedRamGB(size);
+      return {
+        file, sizeBytes: size, estRamGB: estRam, fits: estRam <= ram,
+        // a multi-part GGUF needs every shard, which emb3r does not assemble
+        split: /-\d{5}-of-\d{5}\.gguf$/i.test(file),
+        url: `https://huggingface.co/${parsed.repo}/resolve/main/${n.path.split("/").map(encodeURIComponent).join("/")}?download=true`,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.sizeBytes - b.sizeBytes);
+
+  if (!files.length) {
+    return { success: false, error: "That repository has no .gguf files, and emb3r can only run GGUF models." };
+  }
+  return { success: true, kind: "hf-repo", repo: parsed.repo, files, totalRamGB: ram, freeDiskGB: free };
+});
+
+// Downloads one chosen file. The id is the filename so an in-flight custom
+// download cancels through the same emb3r:cancel-download path as a catalogue
+// one, rather than needing a parallel mechanism.
+ipcMain.handle("emb3r:download-custom-model", async (_e, req = {}) => {
+  const blocked = netPrecheck();
+  if (blocked) return { success: false, error: blocked };
+
+  const file = safeModelFilename(req.file);
+  if (!file) return { success: false, error: "That file name is not a usable .gguf name." };
+
+  // The URL is re-derived from the source rather than trusted as passed: the
+  // renderer got it from inspect-model-source, but re-parsing here means the
+  // host allowlist is enforced by the process that does the downloading.
+  let url;
+  const parsed = parseModelSource(req.source);
+  if (parsed.error) return { success: false, error: parsed.error };
+  if (parsed.kind === "direct") {
+    url = parsed.url;
+  } else {
+    url = `https://huggingface.co/${parsed.repo}/resolve/main/${encodeURIComponent(file)}?download=true`;
+  }
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" || !hostAllowedForModels(u.hostname)) {
+      return { success: false, error: "That download link is not on Hugging Face or GitHub." };
+    }
+  } catch {
+    return { success: false, error: "Malformed download URL." };
+  }
+
+  if (/-\d{5}-of-\d{5}\.gguf$/i.test(file)) {
+    return { success: false, error: "That is one shard of a split model. emb3r cannot join shards - pick a single-file version." };
+  }
+
+  const clash = MODEL_CATALOG.find((m) => m.file === file);
+  if (clash) return { success: false, error: `${clash.name} is already in the built-in list.` };
+  if (customModels().some((m) => m.key === file)) {
+    return { success: false, error: "A model with that filename has already been added." };
+  }
+
+  const destPath = path.join(MODELS_DIR, file);
+  if (fs.existsSync(destPath)) return { success: false, error: "A file with that name is already in the models folder." };
+  if (activeDownloads.has(file)) return { success: false, error: "That model is already downloading." };
+
+  const sizeGB = Number(req.sizeBytes) > 0 ? Number(req.sizeBytes) / 1024 ** 3 : null;
+  if (sizeGB) {
+    const free = await freeDiskGB(MODELS_DIR);
+    if (free !== null && free < sizeGB * 1.1) {
+      return {
+        success: false,
+        error: `Need about ${Math.ceil(sizeGB * 1.1)}GB free and only ${free.toFixed(1)}GB is available.`,
+      };
+    }
+  }
+
+  const controller = new AbortController();
+  activeDownloads.set(file, controller);
+  try {
+    await downloadFile(
+      url,
+      destPath,
+      ({ percent, downloaded, total }) => {
+        if (mainWindow) {
+          mainWindow.webContents.send("emb3r:download-progress", { id: file, percent, downloaded, total });
+        }
+      },
+      controller.signal,
+    );
+
+    // an arbitrary URL can return anything at all, so what landed is checked
+    // before it is offered as a model rather than after it crashes the loader
+    if (!(await looksLikeGGUF(destPath))) {
+      await fs.promises.unlink(destPath).catch(() => {});
+      return { success: false, error: "That download is not a GGUF model file, so it was deleted." };
+    }
+
+    let bytes = 0;
+    try { bytes = (await fs.promises.stat(destPath)).size; } catch {}
+
+    config.customModels = [...customModels(), {
+      key: file,
+      file,
+      name: req.name || file.replace(/\.gguf$/i, ""),
+      sizeBytes: bytes,
+      source: parsed.kind === "direct" ? parsed.repo : parsed.repo,
+      sourceUrl: url,
+      external: false,
+      addedAt: Date.now(),
+    }];
+    saveConfig(config);
+    return { success: true, key: file };
+  } catch (err) {
+    if (controller.signal.aborted) return { success: false, cancelled: true };
+    return { success: false, error: err.message || String(err) };
+  } finally {
+    activeDownloads.delete(file);
+  }
+});
+
+// Registers a .gguf the user already has. The file is referenced where it sits
+// rather than copied: these are multi-gigabyte files, and duplicating one to
+// make the app's bookkeeping tidier would be the wrong trade.
+ipcMain.handle("emb3r:add-local-model", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Choose a GGUF model file",
+    properties: ["openFile"],
+    filters: [{ name: "GGUF model", extensions: ["gguf"] }],
+  });
+  if (result.canceled || !result.filePaths.length) return { success: false, cancelled: true };
+
+  const chosen = path.resolve(result.filePaths[0]);
+  if (!/\.gguf$/i.test(chosen)) return { success: false, error: "That is not a .gguf file." };
+  if (customModels().some((m) => m.key === chosen)) {
+    return { success: false, error: "That file has already been added." };
+  }
+  if (!(await looksLikeGGUF(chosen))) {
+    return { success: false, error: "That file does not start with the GGUF header, so it is not a model emb3r can load." };
+  }
+  if (/-\d{5}-of-\d{5}\.gguf$/i.test(path.basename(chosen))) {
+    return { success: false, error: "That is one shard of a split model. emb3r cannot join shards." };
+  }
+
+  let bytes = 0;
+  try { bytes = (await fs.promises.stat(chosen)).size; } catch {}
+
+  config.customModels = [...customModels(), {
+    key: chosen,
+    file: path.basename(chosen),
+    name: path.basename(chosen).replace(/\.gguf$/i, ""),
+    sizeBytes: bytes,
+    source: "on this computer",
+    sourceUrl: null,
+    external: true,
+    externalPath: chosen,
+    addedAt: Date.now(),
+  }];
+  saveConfig(config);
+  return { success: true, key: chosen, name: path.basename(chosen), sizeBytes: bytes };
+});
+
+// Removing a custom model deletes the file only when emb3r downloaded it. A
+// file the user pointed at is theirs and merely stops being listed - deleting
+// something we never created, from a folder we were only shown, is not ours to
+// do.
+ipcMain.handle("emb3r:remove-custom-model", async (_e, key) => {
+  const entry = customModels().find((m) => m.key === key);
+  if (!entry) return { success: false, error: "That model is not in the list." };
+  if (config.activeModel === key) {
+    return { success: false, error: "That model is in use. Switch to another one first." };
+  }
+  if (activeDownloads.has(key)) return { success: false, error: "That model is still downloading." };
+
+  let freedGB = 0;
+  if (!entry.external) {
+    const target = path.join(MODELS_DIR, entry.file);
+    try {
+      const st = await fs.promises.stat(target);
+      freedGB = st.size / 1024 ** 3;
+      await fs.promises.unlink(target);
+    } catch {
+      // already gone: still worth removing the now-dangling registry entry
+    }
+    await fs.promises.unlink(target + ".part").catch(() => {});
+  }
+  config.customModels = customModels().filter((m) => m.key !== key);
+  saveConfig(config);
+  return { success: true, freedGB: Number(freedGB.toFixed(2)), fileDeleted: !entry.external };
+});
+
 ipcMain.handle("emb3r:cancel-download", (_e, modelId) => {
   const controller = activeDownloads.get(modelId);
   if (!controller) return { success: false, error: "No download in progress for that model." };
@@ -1583,6 +2036,25 @@ ipcMain.handle("emb3r:select-model", async (_e, filename) => {
       success: false,
       error: `${entry.name} needs ${entry.minRamGB}GB of RAM and this machine has ${ram}GB.`,
     };
+  }
+
+  const custom = customModels().find((m) => m.key === filename);
+  if (custom) {
+    const target = custom.external ? custom.externalPath : path.join(MODELS_DIR, custom.file);
+    if (!fs.existsSync(target)) {
+      return {
+        success: false,
+        error: custom.external
+          ? `${custom.name} is no longer at ${custom.externalPath}. It may have been moved or deleted.`
+          : `${custom.name} is missing from the models folder.`,
+      };
+    }
+    // only a warning's worth of certainty - the size estimate is a heuristic,
+    // so it is not allowed to refuse a load the way the catalogue figures do
+    const estRam = estimatedRamGB(custom.sizeBytes);
+    if (estRam > ram) {
+      console.warn(`Loading ${custom.name}: estimated ${estRam}GB needed, machine has ${ram}GB.`);
+    }
   }
 
   const previous = config.activeModel;

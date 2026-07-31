@@ -534,6 +534,95 @@ pre{
     gap:8px;
 }
 
+.modelAddHeading{
+    margin-top:22px;
+    padding-top:14px;
+    border-top:1px solid var(--hover-color);
+}
+
+#modelAddRow{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    margin-top:6px;
+}
+
+/* the link box takes the room, the two buttons keep their natural width */
+#modelAddRow input{
+    flex:1 1 280px;
+    min-width:200px;
+    width:auto;
+}
+
+#modelSourceStatus{
+    font-size:13px;
+    min-height:1.2em;
+    margin-top:6px;
+    opacity:0.8;
+}
+
+#modelSourceStatus.isError{
+    color:#ff7c7c;
+    opacity:1;
+}
+
+#modelSourceResults:not(:empty){
+    margin-top:10px;
+    border:1px solid var(--hover-color);
+    padding:8px;
+}
+
+.sourceRepo{
+    font-size:13px;
+    opacity:0.75;
+    margin-bottom:6px;
+}
+
+.sourceFile{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    padding:5px 0;
+    border-top:1px solid var(--hover-color);
+}
+
+.sourceFile:first-of-type{
+    border-top:none;
+}
+
+.sourceFileName{
+    flex:1 1 240px;
+    min-width:0;
+    overflow-wrap:anywhere;
+}
+
+.sourceFileMeta{
+    font-size:13px;
+    opacity:0.75;
+    white-space:nowrap;
+}
+
+/* a quantisation the machine probably cannot hold is still offered - the size
+   estimate is a heuristic, so it warns rather than refusing the way the
+   catalogue's measured minRamGB does */
+.sourceFile.tooBig .sourceFileMeta{
+    color:#ffb347;
+    opacity:1;
+}
+
+.customTag{
+    font-size:13px;
+    opacity:0.7;
+}
+
+.modelRow.isMissing{
+    opacity:0.65;
+}
+
+
+
 #safeModeStatus,
 #safeModePinStatus{
     font-size:13px;
@@ -1968,6 +2057,20 @@ pre{
     <div class="settingsSection" data-tab="models">
         <h3>Models</h3>
         <div id="modelList"></div>
+
+        <h3 class="modelAddHeading">Add your own</h3>
+        <p class="settingsNote">Paste a Hugging Face or GitHub link and pick which version to download, or point emb3r at a <code>.gguf</code> file you already have. Only GGUF models work here — that is the format the local engine reads.</p>
+
+        <div id="modelAddRow">
+            <input type="text" id="modelSourceInput" spellcheck="false" autocomplete="off"
+                   placeholder="huggingface.co/owner/repo  ·  or  owner/repo">
+            <button id="modelSourceLookup">Look up</button>
+            <button id="modelLocalAdd">Use a file I already have</button>
+        </div>
+        <div id="modelSourceStatus"></div>
+        <div id="modelSourceResults"></div>
+
+        <p class="settingsNote">Downloads are only accepted from huggingface.co and github.com, and what arrives is checked for the GGUF header before it is added. A model you point at on disk is used where it sits — emb3r does not copy it, and removing it from this list never deletes your file.</p>
     </div>
 
     <div class="settingsSection" data-tab="hardware">

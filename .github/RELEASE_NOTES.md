@@ -1,5 +1,19 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.23.0 — bring your own model
+
+Until now emb3r ran one of six models it shipped knowing about. It will now run whatever GGUF you point it at.
+
+Paste a Hugging Face link under Settings > Models — the repository page, a file link, or just `owner/repo` — and emb3r reads what is actually in that repository and lists every GGUF version it holds, each with its real size and a rough note on the memory it wants. A repository like `bartowski/Llama-3.2-3B-Instruct-GGUF` carries eighteen of them, from a 1.5GB IQ3_M to a 6.5GB Q8_0, and which one is right depends entirely on the machine. That was the whole reason for listing them rather than guessing: picking the quantisation is the choice, so the choice is shown.
+
+Direct links to a `.gguf` release asset on GitHub work too.
+
+If you already have a model on disk — downloaded before, copied from another machine, sitting on an external drive — "Use a file I already have" points emb3r at it where it is. It is not copied and it is not moved. Removing it from the list only forgets it; your file is never deleted. Only models emb3r downloaded itself get deleted when you remove them, and the button says which will happen before you press it.
+
+Some care went into the parts that could hurt. Downloads are only accepted from huggingface.co and github.com — a link to anywhere else is refused before a single request is made. Any filename arriving from a URL or a repository listing is reduced to a bare name, so nothing can steer where the file lands. And what arrives is checked for the GGUF header before it is added to your list, which means a 404 page or a truncated file is deleted and reported rather than discovered later as a crash inside the engine.
+
+Split models — the ones published as `-00001-of-00003` shards — are listed but not offered, because emb3r loads a single file and cannot join them. Saying so in the list seemed better than letting someone download a third of a model and find out afterwards.
+
 ## v1.22.0 — a student mode, for the people who asked for one
 
 emb3r can now be handed to a school student without much worry about what comes back. Turn on student mode and Ember is told, before every reply, that it is talking to a student: nothing sexual, nothing graphic, no profanity, and nothing about weapons, drugs or self-harm. If a student brings up hurting themselves, Ember says plainly to talk to a teacher or another trusted adult rather than trying to counsel them itself.
