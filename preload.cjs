@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld("emb3r", {
   getPersonality: () => ipcRenderer.invoke("emb3r:get-personality"),
   setPersonality: (text) => ipcRenderer.invoke("emb3r:set-personality", text),
   resetPersonality: () => ipcRenderer.invoke("emb3r:reset-personality"),
+  inspectModelSource: (input) => ipcRenderer.invoke("emb3r:inspect-model-source", input),
+  downloadCustomModel: (req) => ipcRenderer.invoke("emb3r:download-custom-model", req),
+  addLocalModel: () => ipcRenderer.invoke("emb3r:add-local-model"),
+  removeCustomModel: (key) => ipcRenderer.invoke("emb3r:remove-custom-model", key),
   setSafeMode: (on, pin) => ipcRenderer.invoke("emb3r:set-safe-mode", on, pin),
   setSafeModePin: (pin, currentPin) => ipcRenderer.invoke("emb3r:set-safe-mode-pin", pin, currentPin),
 

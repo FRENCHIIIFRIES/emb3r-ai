@@ -2491,7 +2491,265 @@ function renderModelList() {
     row.append(head, metaEl, tradeoffEl, rowProgressEl);
     modelListEl.appendChild(row);
   });
+
+  renderCustomModelRows();
 }
+
+// Models the user added. Kept in their own pass rather than folded into the
+// loop above, because they have no tier, no curated strength/limit and no
+// measured minRamGB - padding them out to look like catalogue entries would be
+// inventing information the app does not have.
+function renderCustomModelRows() {
+  const custom = modelsCache.custom || [];
+  if (!custom.length) return;
+
+  const heading = document.createElement("div");
+  heading.className = "modelSummary";
+  heading.textContent = `${custom.length} model${custom.length > 1 ? "s" : ""} you added`;
+  modelListEl.appendChild(heading);
+
+  custom.forEach((m) => {
+    const row = document.createElement("div");
+    row.className = "modelRow";
+    const isActive = m.key === modelsCache.activeModel;
+    const downloading = downloadingIds.has(m.key);
+    if (isActive) row.classList.add("isActive");
+    if (!m.present) row.classList.add("isMissing");
+
+    const head = document.createElement("div");
+    head.className = "modelHead";
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "modelName";
+    // textContent, never innerHTML: this name comes from a filename on a
+    // remote server or from the user's own disk
+    nameEl.append(m.name);
+    if (isActive) {
+      const tag = document.createElement("span");
+      tag.className = "activeTag";
+      tag.textContent = "● active";
+      nameEl.append(" ", tag);
+    }
+    const kind = document.createElement("span");
+    kind.className = "customTag";
+    kind.textContent = m.external ? "· on your disk" : "· added by link";
+    nameEl.append(" ", kind);
+
+    const actions = document.createElement("div");
+    actions.className = "modelActions";
+
+    const btn = document.createElement("button");
+    if (downloading) {
+      btn.textContent = "Cancel";
+      btn.addEventListener("click", () => cancelDownload(m.key));
+    } else if (!m.present) {
+      btn.textContent = "File missing";
+      btn.disabled = true;
+      btn.title = m.externalPath || m.file;
+    } else if (isActive) {
+      btn.textContent = "In use";
+      btn.disabled = true;
+    } else {
+      btn.textContent = "Use this model";
+      btn.addEventListener("click", () => selectModel(m.key));
+    }
+    actions.appendChild(btn);
+
+    if (!isActive && !downloading) {
+      actions.appendChild(makeRemoveCustomButton(m));
+    }
+    head.append(nameEl, actions);
+
+    const metaEl = document.createElement("div");
+    metaEl.className = "modelMeta";
+    const bits = [];
+    if (m.sizeGB) bits.push(`${m.sizeGB}GB`);
+    // "about", because unlike the catalogue this is derived from file size
+    // rather than measured
+    if (m.estRamGB) bits.push(`about ${m.estRamGB}GB RAM`);
+    if (m.source) bits.push(m.source);
+    if (!m.present) bits.push(m.external ? "no longer at that path" : "missing from the models folder");
+    metaEl.textContent = bits.join("  ·  ");
+
+    const rowProgressEl = document.createElement("div");
+    rowProgressEl.className = "modelProgress";
+    rowProgressEl.id = `progress-${m.key}`;
+
+    row.append(head, metaEl, rowProgressEl);
+    modelListEl.appendChild(row);
+  });
+}
+
+// Same two-step arm/confirm as deleting a catalogue model, but the wording
+// changes with what actually happens: a downloaded file is deleted, a file the
+// user pointed at is only forgotten.
+function makeRemoveCustomButton(m) {
+  const del = document.createElement("button");
+  del.className = "modelDelete";
+  const label = m.external ? "Remove" : "Delete";
+  del.textContent = label;
+  let armed = false;
+  let timer = null;
+
+  const disarm = () => {
+    armed = false;
+    del.textContent = label;
+    del.classList.remove("armed");
+    if (timer) { clearTimeout(timer); timer = null; }
+  };
+
+  del.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      del.textContent = m.external ? "Remove from list?" : "Delete file?";
+      del.classList.add("armed");
+      timer = setTimeout(disarm, 4000);
+      return;
+    }
+    disarm();
+    const result = await window.emb3r.removeCustomModel(m.key);
+    if (!result.success) {
+      setSourceStatus(result.error, true);
+      return;
+    }
+    await refreshModelList();
+    setSourceStatus(
+      result.fileDeleted
+        ? `Deleted ${m.name}, freeing ${result.freedGB}GB.`
+        : `Removed ${m.name} from the list. Your file was not touched.`,
+    );
+  });
+  return del;
+}
+
+// =============================
+// Adding your own model
+// =============================
+
+const modelSourceInput   = document.getElementById("modelSourceInput");
+const modelSourceLookup  = document.getElementById("modelSourceLookup");
+const modelLocalAdd      = document.getElementById("modelLocalAdd");
+const modelSourceStatus  = document.getElementById("modelSourceStatus");
+const modelSourceResults = document.getElementById("modelSourceResults");
+
+function setSourceStatus(text, isError = false) {
+  modelSourceStatus.textContent = text || "";
+  modelSourceStatus.classList.toggle("isError", Boolean(isError));
+}
+
+function humanBytes(n) {
+  if (!n) return "";
+  const gb = n / 1024 ** 3;
+  return gb >= 1 ? `${gb.toFixed(1)}GB` : `${Math.round(n / 1024 ** 2)}MB`;
+}
+
+async function lookUpModelSource() {
+  const raw = modelSourceInput.value.trim();
+  if (!raw) { setSourceStatus("Paste a link first.", true); return; }
+
+  modelSourceResults.replaceChildren();
+  setSourceStatus("Reading the file list...");
+  modelSourceLookup.disabled = true;
+  try {
+    const res = await window.emb3r.inspectModelSource(raw);
+    if (!res.success) { setSourceStatus(res.error, true); return; }
+    renderSourceResults(res, raw);
+    setSourceStatus(
+      res.kind === "direct"
+        ? "One file. Its size is unknown until the download starts."
+        : `${res.files.length} GGUF file${res.files.length > 1 ? "s" : ""} · this machine has ${res.totalRamGB}GB RAM`,
+    );
+  } catch (err) {
+    setSourceStatus(err.message || String(err), true);
+  } finally {
+    modelSourceLookup.disabled = false;
+  }
+}
+
+// Built as DOM nodes with textContent throughout. Every string here - filenames
+// and repo names - comes from a remote server, which is exactly the shape of
+// the profile-name bug that made innerHTML unusable in this renderer.
+function renderSourceResults(res, sourceText) {
+  modelSourceResults.replaceChildren();
+
+  const repo = document.createElement("div");
+  repo.className = "sourceRepo";
+  repo.textContent = res.repo || sourceText;
+  modelSourceResults.appendChild(repo);
+
+  res.files.forEach((f) => {
+    const row = document.createElement("div");
+    row.className = "sourceFile";
+    if (f.fits === false) row.classList.add("tooBig");
+
+    const name = document.createElement("div");
+    name.className = "sourceFileName";
+    name.textContent = f.file;
+
+    const meta = document.createElement("div");
+    meta.className = "sourceFileMeta";
+    const bits = [];
+    if (f.sizeBytes) bits.push(humanBytes(f.sizeBytes));
+    if (f.estRamGB) bits.push(`~${f.estRamGB}GB RAM`);
+    if (f.fits === false) bits.push("may not fit");
+    if (f.split) bits.push("part of a split model");
+    meta.textContent = bits.join(" · ");
+
+    const btn = document.createElement("button");
+    if (f.split) {
+      // emb3r loads one file; joining shards is not something it does
+      btn.textContent = "Split model";
+      btn.disabled = true;
+      btn.title = "emb3r cannot join the shards of a split model.";
+    } else {
+      btn.textContent = "Download";
+      btn.addEventListener("click", () => downloadCustom(f, sourceText, btn));
+    }
+
+    row.append(name, meta, btn);
+    modelSourceResults.appendChild(row);
+  });
+}
+
+async function downloadCustom(f, sourceText, btn) {
+  btn.disabled = true;
+  btn.textContent = "Starting...";
+  setSourceStatus(`Downloading ${f.file}...`);
+  // reuse the catalogue's progress plumbing: main sends progress under the
+  // filename as the id, and the row is keyed the same way
+  downloadingIds.add(f.file);
+  try {
+    const res = await window.emb3r.downloadCustomModel({
+      source: sourceText, file: f.file, sizeBytes: f.sizeBytes,
+    });
+    if (res.cancelled) { setSourceStatus("Download cancelled."); return; }
+    if (!res.success) { setSourceStatus(res.error, true); return; }
+    setSourceStatus(`Added ${f.file}. It is in the list above, ready to use.`);
+    modelSourceResults.replaceChildren();
+    modelSourceInput.value = "";
+    await refreshModelList();
+  } catch (err) {
+    setSourceStatus(err.message || String(err), true);
+  } finally {
+    downloadingIds.delete(f.file);
+    btn.disabled = false;
+    btn.textContent = "Download";
+  }
+}
+
+modelSourceLookup.addEventListener("click", lookUpModelSource);
+modelSourceInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); lookUpModelSource(); }
+});
+
+modelLocalAdd.addEventListener("click", async () => {
+  setSourceStatus("");
+  const res = await window.emb3r.addLocalModel();
+  if (res.cancelled) return;
+  if (!res.success) { setSourceStatus(res.error, true); return; }
+  await refreshModelList();
+  setSourceStatus(`Added ${res.name} (${humanBytes(res.sizeBytes)}). It stays where it is on your disk.`);
+});
 
 // Two-step rather than a modal: the first click arms, the second deletes, and
 // it disarms itself after a few seconds. Deleting several gigabytes is worth a
@@ -2537,6 +2795,7 @@ async function refreshModelList() {
   const result = await window.emb3r.listModels();
   modelsCache = result.models;
   modelsCache.activeModel = result.activeModel;
+  modelsCache.custom = result.customModels || [];
   renderModelList();
 }
 
@@ -2615,12 +2874,18 @@ window.emb3r.onDownloadProgress(({ id, percent, downloaded, total }) => {
 
 async function selectModel(filename) {
   const row = modelsCache.find((m) => m.file === filename);
-  const progressEl = row ? document.getElementById(`progress-${row.id}`) : null;
+  // a custom model is keyed by filename or, when it lives outside the models
+  // folder, by absolute path - so the progress element and the name shown in
+  // chat both have to be looked up in either list
+  const customRow = (modelsCache.custom || []).find((m) => m.key === filename);
+  const progressKey = row ? row.id : (customRow ? customRow.key : null);
+  const progressEl = progressKey ? document.getElementById(`progress-${progressKey}`) : null;
+  const label = row ? row.name : (customRow ? customRow.name : filename);
   if (progressEl) progressEl.textContent = "switching model...";
   const result = await window.emb3r.selectModel(filename);
   if (result.success) {
     if (progressEl) progressEl.textContent = "";
-    append("sys", "sys", `switched to ${filename}`);
+    append("sys", "sys", `switched to ${label}`);
   } else {
     if (progressEl) progressEl.textContent = `failed: ${result.error}`;
   }
