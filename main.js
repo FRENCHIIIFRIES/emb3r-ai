@@ -93,6 +93,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.25.0",
+    added: [
+      "A Test key button under Web access. It makes one real request and tells you exactly what Google said, instead of leaving a bad key to be discovered as a reply that quietly came from the local model.",
+    ],
+    fixed: [
+      "A rejected API key returns a 400, which was the one case the failure notice did not cover — it said \"Gemini couldn't answer\" without mentioning the key.",
+      "Google now issues API keys starting \"AQ.\" rather than \"AIza\". Both are accepted.",
+    ] },
   { version: "1.24.0",
     added: [
       "Ember can read PDFs, Word documents, Excel spreadsheets, PowerPoint decks, RTF and EPUB, as well as the OpenDocument equivalents. Attach one the same way as a text file.",
@@ -2383,10 +2391,54 @@ function describeGeminiError(err) {
   if (code === 401 || code === 403 || status === "PERMISSION_DENIED" || status === "UNAUTHENTICATED") {
     return "Gemini rejected the API key (invalid or revoked). Answering with the local model instead - check the key in Settings.";
   }
+  // The commonest failure of all, and the one that used to fall through to the
+  // generic message: a key that is the wrong kind of credential comes back 400
+  // INVALID_ARGUMENT rather than 401, so it read as "Gemini couldn't answer"
+  // and gave no hint that the key was the problem.
+  if (code === 400 || status === "INVALID_ARGUMENT") {
+    const detail = String(inner?.message || "");
+    if (/api[_ ]?key|API_KEY_INVALID|ACCESS_TOKEN_TYPE_UNSUPPORTED|not valid/i.test(detail)) {
+      return "Gemini rejected that API key. Answering with the local model instead - check it in Settings, and if you copied it by hand, copy it again with the button in AI Studio rather than selecting the text.";
+    }
+    return `Gemini refused the request (${detail || "400"}). Answering with the local model instead.`;
+  }
   return `Gemini couldn't answer (${inner?.message || err.message || String(err)}). Answering with the local model instead.`;
 }
 
 ipcMain.handle("emb3r:gemini-key-status", () => ({ configured: Boolean(config.geminiApiKey) }));
+
+// What is wrong with a key, judged on its shape alone. Returns null when there
+// is nothing to say.
+//
+// Both current formats are accepted in silence. Google is part-way through a
+// migration: "AIza" standard keys are the old ones and the API stops accepting
+// them in September 2026, while "AQ." authorization keys are what AI Studio
+// now issues by default. Both work against the endpoint emb3r calls.
+//
+// This never blocks saving, and it deliberately does not try to be clever
+// about lengths or character sets. An earlier version of this function treated
+// "AQ." as an ephemeral Live API token and told people to go and get an "AIza"
+// key instead - advice that was wrong, and impossible to follow, because AI
+// Studio no longer issues them. Warning about a key that works is worse than
+// staying quiet, so only unmistakably-wrong credentials are flagged.
+function describeKeyShape(key) {
+  if (/\s/.test(key)) {
+    return "That contains a space or line break, which no API key does - check for a copy-paste error.";
+  }
+  if (key.startsWith("http://") || key.startsWith("https://")) {
+    return "That is a URL, not a key.";
+  }
+  if (key.startsWith("sk-")) {
+    return "That looks like an OpenAI key. emb3r's web access uses Google's Gemini - create a key at aistudio.google.com/apikey.";
+  }
+  if (key.startsWith("ya29.") || key.toLowerCase().startsWith("bearer ")) {
+    return "That looks like an OAuth access token rather than an API key. Create a key at aistudio.google.com/apikey.";
+  }
+  if (!key.startsWith("AIza") && !key.startsWith("AQ.")) {
+    return "Saved, but that does not look like a Gemini API key - they start with \"AQ.\" (or \"AIza\" for older ones). Use Test key to find out for certain.";
+  }
+  return null;
+}
 
 ipcMain.handle("emb3r:set-gemini-key", (_e, key) => {
   const trimmed = typeof key === "string" ? key.trim() : "";
@@ -2394,7 +2446,38 @@ ipcMain.handle("emb3r:set-gemini-key", (_e, key) => {
   config.geminiApiKey = trimmed;
   saveConfig(config);
   geminiClient = null; // rebuild with the new key next time it's used
-  return { success: true };
+  // saved either way - the warning is advice, not a rejection
+  return { success: true, warning: describeKeyShape(trimmed) };
+});
+
+// Answers "does this key work" now, instead of leaving it to be discovered as a
+// message that quietly fell back to the local model. Deliberately uses the same
+// client and model as a real reply, so a pass here means the real path works.
+ipcMain.handle("emb3r:test-gemini-key", async () => {
+  if (!config.geminiApiKey) return { success: false, error: "No key saved yet." };
+  if (config.offlineLock) {
+    return { success: false, error: "The offline lock is on, so emb3r is refusing every outbound connection. Turn it off under Privacy first." };
+  }
+  if (!config.internetConsent) return { success: false, error: "Internet access hasn't been granted yet." };
+
+  const shape = describeKeyShape(config.geminiApiKey);
+  const client = getGeminiClient();
+  if (!client) return { success: false, error: "No Gemini API key configured." };
+
+  const model = config.geminiModel || DEFAULT_GEMINI_MODEL;
+  try {
+    const res = await client.models.generateContent({
+      model,
+      contents: "Reply with the single word: ok",
+    });
+    const text = (res && typeof res.text === "string" ? res.text : "").trim();
+    return { success: true, model, reply: text.slice(0, 60), warning: shape };
+  } catch (err) {
+    // describeGeminiError is written for the fallback notice and ends with
+    // "Answering with the local model instead", which makes no sense here
+    const why = describeGeminiError(err).replace(/\s*Answering with the local model instead\.?\s*/i, " ").trim();
+    return { success: false, error: why, model, hint: shape };
+  }
 });
 
 ipcMain.handle("emb3r:clear-gemini-key", () => {

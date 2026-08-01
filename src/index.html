@@ -623,6 +623,16 @@ pre{
 
 
 
+/* a key that will not work is worth more than a neutral grey line */
+#geminiKeyStatus.isWarn{
+    color:#ffb347;
+    opacity:1;
+}
+
+#geminiKeyStatus{
+    overflow-wrap:anywhere;
+}
+
 #safeModeStatus,
 #safeModePinStatus{
     font-size:13px;
@@ -2041,9 +2051,11 @@ pre{
         <input type="password" id="geminiKeyInput" placeholder="paste your key" autocomplete="off">
         <div id="geminiButtons">
             <button id="geminiKeySave">Save</button>
+            <button id="geminiKeyTest">Test key</button>
             <button id="geminiKeyClear">Clear</button>
         </div>
         <div id="geminiKeyStatus"></div>
+        <p class="settingsNote">Get a key from <b>aistudio.google.com/apikey</b>. New keys start with <code>AQ.</code>; older ones start with <code>AIza</code> and Google stops accepting those in September 2026. Both work here. Use <b>Test key</b> after saving — it makes one real request and tells you exactly what Google said, rather than leaving you to find out when a reply quietly comes from the local model instead.</p>
 
         <label>Gemini model — defaults to "gemini-flash-latest". Override this if your account doesn't have access to that (e.g. it works with "gemini-2.5-flash" instead) or you just want a different one.</label>
         <input type="text" id="geminiModelInput" placeholder="gemini-flash-latest" autocomplete="off">
