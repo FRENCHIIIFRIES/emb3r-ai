@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.24.0 — it can read your documents now
+
+Attaching a PDF used to get you "isn't a text file". Ember reads them now, along with Word documents, Excel spreadsheets, PowerPoint decks, RTF, EPUB and the OpenDocument equivalents. Nothing changes about how you attach one — the paperclip is back where it was, and the file goes in the same way.
+
+Spreadsheets come through as rows with their columns kept in line, one block per sheet, with the sheet names intact. Slides arrive one block per slide. PDFs keep their page boundaries. That structure is there because it is what makes a document answerable: asking "what was the revenue for the North region" only works if the row survived the trip.
+
+A PDF that is nothing but a scan now says so. Previously the honest outcome and the useless one looked identical — an empty read is indistinguishable from a read that found nothing, and Ember would have answered from nothing at all rather than telling you it could not see the page. It needs character recognition, which emb3r does not have, and saying that plainly is better than a confident answer about a blank.
+
+All the parsing happens in the main process, not the window. A malformed document should fail somewhere it can be contained, and the zip-based formats — .docx, .xlsx, .pptx and the rest are all zip files underneath — are read with limits on how far they are allowed to expand, so a small hostile file cannot become a very large one in memory.
+
 ## v1.23.0 — bring your own model
 
 Until now emb3r ran one of six models it shipped knowing about. It will now run whatever GGUF you point it at.

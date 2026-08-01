@@ -19,6 +19,7 @@ import { getLlama, LlamaChatSession } from "node-llama-cpp";
 import electronUpdater from "electron-updater";
 const { autoUpdater } = electronUpdater;
 import { GoogleGenAI } from "@google/genai";
+import { extractDocumentText, isSupported as isSupportedDocument } from "./src/document-text.js";
 
 const RELEASES_URL = "https://github.com/FRENCHIIIFRIES/emb3r-ai/releases/latest";
 
@@ -92,6 +93,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.24.0",
+    added: [
+      "Ember can read PDFs, Word documents, Excel spreadsheets, PowerPoint decks, RTF and EPUB, as well as the OpenDocument equivalents. Attach one the same way as a text file.",
+      "A PDF that is only a scan is now said to be a scan, rather than appearing to have been read.",
+    ],
+    fixed: [
+      "The attach button is a paperclip again.",
+    ] },
   { version: "1.23.0",
     added: [
       "Your own models. Paste a Hugging Face or GitHub link under Settings > Models, see every GGUF version in that repository with its size, and pick the one that suits your machine.",
@@ -1764,6 +1773,41 @@ function netPrecheck() {
 
 // Reads what .gguf files a repo actually holds, so the choice of quantisation
 // is made from real sizes rather than by guessing at a filename.
+// Deliberately larger than the renderer's limit for plain text. A 5MB PDF is
+// an ordinary document, while 5MB of raw text is an unusual amount of prose -
+// and a document shrinks a great deal on the way to text, so the figure that
+// matters downstream is the extracted length, not the file size.
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+
+// PDFs, Word documents and spreadsheets are parsed here rather than in the
+// renderer: the parsers are Node modules, and a malformed document should fail
+// in a process that can contain it rather than inside the window. The renderer
+// hands over a path (via webUtils.getPathForFile) instead of 20MB of bytes.
+ipcMain.handle("emb3r:read-document", async (_e, filePath) => {
+  if (typeof filePath !== "string" || !filePath) {
+    return { success: false, error: "No file to read." };
+  }
+  if (!isSupportedDocument(filePath)) {
+    return { success: false, error: `emb3r cannot read ${path.extname(filePath) || "that kind of"} files yet.` };
+  }
+  let size = 0;
+  try {
+    size = (await fs.promises.stat(filePath)).size;
+  } catch (err) {
+    return { success: false, error: `Could not open that file: ${err.message}` };
+  }
+  if (size > MAX_DOCUMENT_BYTES) {
+    return {
+      success: false,
+      error: `That file is ${(size / 1024 ** 2).toFixed(1)}MB, over the ${(MAX_DOCUMENT_BYTES / 1024 ** 2).toFixed(0)}MB limit for one document.`,
+    };
+  }
+
+  const result = await extractDocumentText(filePath);
+  if (!result.ok) return { success: false, error: result.error };
+  return { success: true, text: result.text, note: result.note, kind: result.kind, sizeBytes: size };
+});
+
 ipcMain.handle("emb3r:inspect-model-source", async (_e, input) => {
   const blocked = netPrecheck();
   if (blocked) return { success: false, error: blocked };

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 contextBridge.exposeInMainWorld("emb3r", {
   getAppVersion: () => ipcRenderer.invoke("emb3r:get-app-version"),
   checkForUpdates: () => ipcRenderer.invoke("emb3r:check-for-updates"),
@@ -58,6 +58,13 @@ contextBridge.exposeInMainWorld("emb3r", {
   getPersonality: () => ipcRenderer.invoke("emb3r:get-personality"),
   setPersonality: (text) => ipcRenderer.invoke("emb3r:set-personality", text),
   resetPersonality: () => ipcRenderer.invoke("emb3r:reset-personality"),
+  // File objects no longer carry .path in Electron, and the renderer must not
+  // be handed a way to read arbitrary paths - webUtils resolves the path for a
+  // File the user actually chose, and nothing else.
+  pathForFile: (file) => {
+    try { return webUtils.getPathForFile(file); } catch { return ""; }
+  },
+  readDocument: (filePath) => ipcRenderer.invoke("emb3r:read-document", filePath),
   inspectModelSource: (input) => ipcRenderer.invoke("emb3r:inspect-model-source", input),
   downloadCustomModel: (req) => ipcRenderer.invoke("emb3r:download-custom-model", req),
   addLocalModel: () => ipcRenderer.invoke("emb3r:add-local-model"),
