@@ -1889,6 +1889,7 @@ safeModePinClear.addEventListener("click", async () => {
 const geminiKeyInput  = document.getElementById("geminiKeyInput");
 const geminiKeySave   = document.getElementById("geminiKeySave");
 const geminiKeyClear  = document.getElementById("geminiKeyClear");
+const geminiKeyTest   = document.getElementById("geminiKeyTest");
 const geminiKeyStatus = document.getElementById("geminiKeyStatus");
 
 // the key itself is never sent back from main - only whether one is set - so
@@ -1909,8 +1910,41 @@ geminiKeySave.addEventListener("click", async () => {
     return;
   }
   await refreshGeminiKeyStatus();
+  // main returns a warning when the key does not look like an API key at all.
+  // Saying so here is the whole point: the alternative is finding out later,
+  // as a message that quietly answered locally instead.
+  if (result.warning) {
+    geminiKeyStatus.textContent = result.warning;
+    geminiKeyStatus.classList.add("isWarn");
+    return;
+  }
+  geminiKeyStatus.classList.remove("isWarn");
   geminiKeyStatus.textContent = "saved";
   setTimeout(() => { geminiKeyStatus.textContent = "configured"; }, 1500);
+});
+
+geminiKeyTest.addEventListener("click", async () => {
+  geminiKeyStatus.classList.remove("isWarn");
+  geminiKeyStatus.textContent = "testing...";
+  geminiKeyTest.disabled = true;
+  try {
+    const r = await window.emb3r.testGeminiKey();
+    if (r.success) {
+      geminiKeyStatus.textContent = `works — ${r.model} replied ${JSON.stringify(r.reply || "")}`;
+      if (r.warning) {
+        geminiKeyStatus.textContent += ` (note: ${r.warning})`;
+        geminiKeyStatus.classList.add("isWarn");
+      }
+    } else {
+      geminiKeyStatus.classList.add("isWarn");
+      geminiKeyStatus.textContent = r.hint ? `${r.error} — ${r.hint}` : r.error;
+    }
+  } catch (err) {
+    geminiKeyStatus.classList.add("isWarn");
+    geminiKeyStatus.textContent = err.message || String(err);
+  } finally {
+    geminiKeyTest.disabled = false;
+  }
 });
 
 geminiKeyClear.addEventListener("click", async () => {

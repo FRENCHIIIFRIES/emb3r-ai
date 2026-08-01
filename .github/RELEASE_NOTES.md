@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.25.0 — telling you why the key was rejected
+
+If you pasted a Gemini API key that did not work, emb3r said nothing. The first sign was a reply that quietly came from the local model, and the notice attached to that only covered 401, 403 and 429 responses. A rejected key returns a 400, which fell through to a flat “Gemini couldn’t answer” that never mentioned the key at all.
+
+There is a **Test key** button now, next to Save. It makes one real request through the same client and model an actual reply would use, so if it passes, the real path works — and if it fails, it reports what Google said rather than a guess. The 400 case is handled properly too, and now names the key as the thing to look at.
+
+Saving a key that is plainly a different kind of credential — an OpenAI key, an OAuth token, a URL, anything with a space in it — now says so. It never refuses to save; it just tells you.
+
+One correction worth recording. That check was first written to reject keys beginning “AQ.”, on the assumption that Gemini keys start with “AIza”. That was wrong. Google is part-way through a migration: “AQ.” authorization keys are what AI Studio issues by default now, “AIza” standard keys stop being accepted in September 2026, and both work with the endpoint emb3r calls. The warning would have told people to go and get a key format that can no longer be created. Both are accepted in silence, and there is a test asserting it, because warning about a key that works is worse than not warning at all.
+
 ## v1.24.0 — it can read your documents now
 
 Attaching a PDF used to get you "isn't a text file". Ember reads them now, along with Word documents, Excel spreadsheets, PowerPoint decks, RTF, EPUB and the OpenDocument equivalents. Nothing changes about how you attach one — the paperclip is back where it was, and the file goes in the same way.
