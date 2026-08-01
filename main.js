@@ -93,6 +93,12 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.26.0",
+    added: [],
+    fixed: [
+      "Asking a second question about an attached file gave a generic greeting instead of an answer, sometimes with the word \"assistant\" in front of it. The extracts from the file were being kept in the conversation for the rest of the session, so the context window ran out mid-reply. They are now used for the question that needed them and then dropped.",
+      "The attachment size limit could ask for more text than the context window holds.",
+    ] },
   { version: "1.25.2",
     added: [],
     fixed: [
@@ -2584,6 +2590,26 @@ function generationStats(chunks, startedAt) {
   };
 }
 
+// Replaces the last user turn in the session's history with the question on its
+// own, dropping the file extracts that were prepended to it. Called after the
+// reply is generated, so the model saw them exactly when it needed to.
+function forgetAttachmentContext(userMessage) {
+  if (!chatSession) return;
+  try {
+    const history = chatSession.getChatHistory();
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i] && history[i].type === "user") {
+        history[i] = { ...history[i], text: userMessage };
+        chatSession.setChatHistory(history);
+        return;
+      }
+    }
+  } catch (err) {
+    // not fatal: the worst case is the old behaviour, a fuller context window
+    console.error("Could not trim file extracts from history:", err);
+  }
+}
+
 ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // Checked first, ahead of the model-ready check and ahead of the Gemini
   // decision below. Ahead of the model because these answers are worth giving
@@ -2628,6 +2654,13 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
   }
 
+  // Extracts from an attached file arrive beside the message, not inside it.
+  // The model is prompted with both; only the message is remembered.
+  const attachmentContext = typeof opts.attachmentContext === "string" && opts.attachmentContext
+    ? opts.attachmentContext
+    : null;
+  const promptText = attachmentContext ? `${attachmentContext}\n\n${userMessage}` : userMessage;
+
   const controller = new AbortController();
   activeGeneration = controller;
 
@@ -2661,7 +2694,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // subtle "(web)" label on the reply
       if (mainWindow) mainWindow.webContents.send("emb3r:web-search-start");
       try {
-        ({ text, sources } = await answerWithGemini(userMessage, onTextChunk, controller.signal));
+        ({ text, sources } = await answerWithGemini(promptText, onTextChunk, controller.signal));
       } catch (geminiErr) {
         // Gemini is a nice-to-have, never a hard dependency - a quota limit,
         // a bad key, or Google having a bad day shouldn't dead-end the
@@ -2673,20 +2706,28 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
         }
         source = "local";
         if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
-        text = await chatSession.prompt(userMessage, {
+        text = await chatSession.prompt(promptText, {
           signal: controller.signal,
           stopOnAbortSignal: true,
           onTextChunk,
         });
+        if (attachmentContext) forgetAttachmentContext(userMessage);
       }
     } else {
-      text = await chatSession.prompt(userMessage, {
+      text = await chatSession.prompt(promptText, {
         signal: controller.signal,
         // stop cleanly on abort instead of throwing, so pressing stop keeps
         // whatever Ember had already said
         stopOnAbortSignal: true,
         onTextChunk,
       });
+      // The extracts were needed to answer this question and are worthless
+      // afterwards - but chatSession keeps whatever it was prompted with, so
+      // leaving them there would spend the context window on them for the rest
+      // of the conversation. Rewriting the turn to hold only the question is
+      // what stops a second question about the same file overflowing the window
+      // and cutting the chat template mid-structure.
+      if (attachmentContext) forgetAttachmentContext(userMessage);
     }
 
     // an empty reply means generation was stopped before anything came out -

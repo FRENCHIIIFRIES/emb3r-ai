@@ -405,6 +405,14 @@ async function onSend() {
   playSendBeep();
 
   let messageToSend = text;
+  // The file extracts travel beside the message rather than inside it. They
+  // used to be glued onto the front of the user's text, which meant the whole
+  // block was stored in the conversation history - so a second question about
+  // the same file pushed the total past the context window, the oldest tokens
+  // were dropped mid-template, and the reply came back as a greeting with the
+  // word "assistant" leaking out of it. Sent this way they are visible to the
+  // model for exactly one turn and never accumulate.
+  let attachmentContext = null;
   // true when the reply will be built from an attached file, either read whole
   // or searched - both mean the answer is grounded in the document
   let usedRetrieval = false;
@@ -418,16 +426,15 @@ async function onSend() {
       // so the model can tell file from instruction - the original form opened
       // with a label and never closed it, leaving the question looking like
       // part of the document.
-      messageToSend =
+      attachmentContext =
         `The user attached a file named "${pendingUpload.name}". Its full contents are between the markers below.\n` +
         `--- BEGIN ${pendingUpload.name} ---\n` +
         `${pendingUpload.text}\n` +
-        `--- END ${pendingUpload.name} ---\n\n` +
-        `${question}`;
+        `--- END ${pendingUpload.name} ---`;
       append("sys", "sys", `reading ${pendingUpload.name} in full`);
     } else {
       const result = retrieveExcerpts(pendingUpload, question, budget);
-      messageToSend = buildRetrievalPrompt(pendingUpload, question, result);
+      attachmentContext = buildRetrievalPrompt(pendingUpload, result);
 
       // say what was actually searched and used, so an answer drawn from three
       // sections of a large document is never mistaken for one drawn from all
@@ -451,7 +458,7 @@ async function onSend() {
   mood = Math.min(5, mood + 1);
   renderStats();
 
-  await submitToModel(messageToSend, undefined, { fromDocument: usedRetrieval });
+  await submitToModel(messageToSend, attachmentContext ? { attachmentContext } : undefined, { fromDocument: usedRetrieval });
   // the attachment deliberately survives, so follow-ups can query it again.
   // Cleared with the ✕ on the attachment bar.
   input.focus();
@@ -691,15 +698,24 @@ const CHARS_PER_TOKEN = 4;
 // a hard floor regardless of context size - on the smallest context (the
 // 4096-token CPU fallback in main.js) the proportional budget alone still
 // rejects perfectly ordinary files well under this size
-const MIN_ATTACHMENT_CHARS = 20 * 1024;
+const MAX_ATTACHMENT_CHARS = 20 * 1024;
 
 // How much of the prompt the file's excerpts may occupy. This is the limit on
 // what reaches the *model*, and is unrelated to how large a file may be - see
 // MAX_ATTACHMENT_BYTES. Leaves room for the system prompt, the question and
 // Ember's reply.
+// How much of a file may go into one prompt. This used to floor the answer at
+// MIN_ATTACHMENT_CHARS, which is 20KB - about 5,120 tokens, more than the whole
+// 4,096-token context the smallest models get. The floor could therefore ask
+// for more than the window holds. It is a ceiling now, not a floor: the context
+// decides, and the constant only stops a very large context from pulling in
+// more of the file than is useful.
 function attachmentCharBudget() {
   const size = lastContext && lastContext.size ? lastContext.size : 4096;
-  return Math.max(Math.floor(size * 0.7) * CHARS_PER_TOKEN, MIN_ATTACHMENT_CHARS);
+  // 0.45 rather than 0.7: the rest of the window has to hold the system prompt,
+  // the conversation so far, and the reply itself
+  const fromContext = Math.floor(size * 0.45) * CHARS_PER_TOKEN;
+  return Math.min(Math.max(fromContext, 2000), MAX_ATTACHMENT_CHARS);
 }
 
 // ============================================================
@@ -791,12 +807,11 @@ function retrieveExcerpts(doc, question, budgetChars) {
 // Builds the prompt from retrieved sections rather than the whole file, and is
 // explicit with the model that it is seeing extracts - otherwise it answers as
 // though it had read everything and the gaps become invented.
-function buildRetrievalPrompt(doc, question, result) {
+function buildRetrievalPrompt(doc, result) {
   const label = `${doc.name}`;
   if (!result.excerpts.length) {
     return `The user attached a file named "${label}" and asked a question, but no section of it matched the question.\n` +
-      `Say plainly that you could not find anything relevant in the file, and do not guess at its contents.\n\n` +
-      `Question: ${question}`;
+      `Say plainly that you could not find anything relevant in the file, and do not guess at its contents.`;
   }
 
   const blocks = result.excerpts
@@ -807,8 +822,9 @@ function buildRetrievalPrompt(doc, question, result) {
     `${result.excerpts.length} section(s) most relevant to their question, out of ${result.sectionCount}. ` +
     `Other parts of the file are not shown.\n\n` +
     `${blocks}\n\n--- end of extracts ---\n\n` +
-    `Answer using only these extracts. If they do not contain the answer, say so rather than assuming ` +
-    `the rest of the file agrees with you.\n\nQuestion: ${question}`;
+    `Answer the user's question using only these extracts. If they do not contain the answer, say so ` +
+    `rather than assuming the rest of the file agrees with you. Answer the question that was asked - ` +
+    `do not describe the extracts or summarise what the file is about unless that is what was asked.`;
 }
 
 // readAsText happily decodes a PDF or a PNG into mojibake and hands it over as
