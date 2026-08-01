@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.26.0 — a second question about the same file
+
+Attaching a document and asking one question worked. Asking a second gave back a greeting — “Hi Ziyan, it looks like you're really interested in Frankenstein” — sometimes with the bare word “assistant” in front of it, and no answer to what was actually asked.
+
+The extracts pulled out of the file were being glued onto the front of the message, which meant they were stored in the conversation like any other thing you had typed. Measured with the model's own tokeniser, six extracts from a large PDF come to 1,907 tokens. The smallest models here have a 4,096-token window. After two questions the conversation held 3,909 of those 4,096, leaving 187 tokens for the reply — so the model began answering, ran out of room, and the window shifted underneath it, cutting the chat template in half. The stray “assistant” was that template showing through.
+
+The extracts now travel beside the message rather than inside it. The model sees them for the question that needed them, and they are dropped from the conversation as soon as the reply is finished. Two questions now leave 95 tokens in the conversation instead of 3,909.
+
+The size limit was wrong in the same direction: it could ask for 20KB of a file, about 5,120 tokens, which is more than the entire window it had to fit inside. It is derived from the context now, with the constant acting as a ceiling rather than a floor.
+
+The instruction to the model was also sharpened, because a small model handed a pile of extracts tends to describe them rather than answer. It is now told, explicitly, to answer the question that was asked and not to summarise what the file is about unless that is the question.
+
 ## v1.25.2 — the app's own advice had gone stale
 
 The Gemini model box carried a suggestion: if the default does not work for your account, try “gemini-2.5-flash”. Google has since stopped offering that model to new accounts, so anyone who took the suggestion got “this model is no longer available to new users” and a broken web search. The advice was sound when it was written and quietly stopped being sound, which is the failure mode of naming a specific version in help text at all.
