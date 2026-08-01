@@ -93,6 +93,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.25.2",
+    added: [],
+    fixed: [
+      "The Gemini model box suggested \"gemini-2.5-flash\" as an alternative. Google no longer offers that model to new accounts, so following the suggestion broke web access. It now explains that leaving the box empty tracks Google's current model automatically.",
+    ] },
   { version: "1.25.1",
     added: [],
     fixed: [
