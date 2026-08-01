@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.25.1 — a key in the wrong box
+
+The Test key button added in v1.25.0 did its job on its first outing, and what it found was not the key. Web access was failing with “unexpected model name format” because an API key had been pasted into the **Gemini model** box as well as the key box, so emb3r was dutifully asking Google for a model named after a credential.
+
+Two things were wrong, and only one of them was the typing.
+
+The model field took anything at all. It now refuses a value that starts like a credential, and refuses anything that is not shaped like a model name, saying which of the two it is. It also stops claiming to have saved a value it rejected — the interface reported success regardless of the answer, so a refused value looked accepted and the next reply failed for no visible reason.
+
+The more serious half: unlike the API key, the model name is not treated as a secret. It is shown in a plain text box and it is handed to the interface layer with the rest of the settings. A key sitting there was a secret in a place built for something public. Any config still holding one has it cleared on launch, with a line in the log saying so, which also un-breaks web access rather than leaving it failing until someone found the right box.
+
 ## v1.25.0 — telling you why the key was rejected
 
 If you pasted a Gemini API key that did not work, emb3r said nothing. The first sign was a reply that quietly came from the local model, and the notice attached to that only covered 401, 403 and 429 responses. A rejected key returns a 400, which fell through to a flat “Gemini couldn’t answer” that never mentioned the key at all.

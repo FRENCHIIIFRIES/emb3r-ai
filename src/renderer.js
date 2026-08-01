@@ -1959,7 +1959,16 @@ const geminiModelStatus = document.getElementById("geminiModelStatus");
 
 geminiModelSave.addEventListener("click", async () => {
   const model = geminiModelInput.value.trim();
-  await window.emb3r.setGeminiModel(model);
+  const result = await window.emb3r.setGeminiModel(model);
+  // main refuses a value that is not a model name - notably an API key pasted
+  // into the wrong box. This used to say "saved" regardless, so a rejected
+  // value looked accepted and the next reply failed for no visible reason.
+  if (!result.success) {
+    geminiModelStatus.textContent = result.error;
+    geminiModelStatus.classList.add("isWarn");
+    return;
+  }
+  geminiModelStatus.classList.remove("isWarn");
   currentConfig.geminiModel = model;
   geminiModelStatus.textContent = model ? "saved" : "reset to default";
   setTimeout(() => { geminiModelStatus.textContent = ""; }, 1500);
@@ -1967,6 +1976,7 @@ geminiModelSave.addEventListener("click", async () => {
 
 geminiModelReset.addEventListener("click", async () => {
   geminiModelInput.value = "";
+  geminiModelStatus.classList.remove("isWarn");
   await window.emb3r.setGeminiModel("");
   currentConfig.geminiModel = "";
   geminiModelStatus.textContent = "reset to default";

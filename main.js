@@ -93,6 +93,12 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.25.1",
+    added: [],
+    fixed: [
+      "An API key pasted into the Gemini model box is now refused, and one already stored there is cleared on launch. That field is shown in plain text and is not handled as a secret, so a key did not belong in it — and it also made every web request fail with \"unexpected model name format\".",
+      "Saving a model name reported success even when it had been rejected.",
+    ] },
   { version: "1.25.0",
     added: [
       "A Test key button under Web access. It makes one real request and tells you exactly what Google said, instead of leaving a bad key to be discovered as a reply that quietly came from the local model.",
@@ -179,6 +185,23 @@ function loadConfig() {
 function saveConfig(cfg) { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2)); }
 
 let config = loadConfig();
+
+// A key pasted into the model box is a secret sitting in a field that is not
+// handled as one: it is shown in plain text and sent to the renderer through
+// emb3r:get-config. Validation now refuses it, but a config written before that
+// existed still has it, so it is cleared on the way in rather than left to leak
+// on every launch. Falling back to the default model also un-breaks the app,
+// which would otherwise fail every web request with "unexpected model name
+// format" until someone found the right box.
+if (config.geminiModel && /^(AQ\.|AIza|ya29\.|sk-)/.test(config.geminiModel)) {
+  console.warn("Gemini model field held something shaped like an API key; clearing it.");
+  config.geminiModel = "";
+  try {
+    saveConfig(config);
+  } catch (err) {
+    console.error("Could not rewrite config after clearing the model field:", err);
+  }
+}
 let chatSession = null;
 let chatSequence = null;
 let modelLoadError = null;
@@ -2397,6 +2420,12 @@ function describeGeminiError(err) {
   // and gave no hint that the key was the problem.
   if (code === 400 || status === "INVALID_ARGUMENT") {
     const detail = String(inner?.message || "");
+    // names the field rather than leaving "unexpected model name format" to be
+    // interpreted - this exact error was reported once by someone who had
+    // pasted their API key into the model box
+    if (/model name format|GenerateContentRequest\.model|not found for API version/i.test(detail)) {
+      return `Gemini did not accept the model name "${config.geminiModel || DEFAULT_GEMINI_MODEL}". Answering with the local model instead - check the Gemini model box under Web access, or press Reset to default beside it.`;
+    }
     if (/api[_ ]?key|API_KEY_INVALID|ACCESS_TOKEN_TYPE_UNSUPPORTED|not valid/i.test(detail)) {
       return "Gemini rejected that API key. Answering with the local model instead - check it in Settings, and if you copied it by hand, copy it again with the button in AI Studio rather than selecting the text.";
     }
@@ -2489,8 +2518,41 @@ ipcMain.handle("emb3r:clear-gemini-key", () => {
 
 // an empty string is valid here (means "use the default") - unlike the key,
 // there's nothing to reject on empty input
+// Does this string look like a secret rather than a model name? The model
+// field is not treated as a secret anywhere - it is shown in a plain text box
+// and it flows through emb3r:get-config to the renderer - so a key pasted here
+// ends up somewhere a key must never be. Refusing it is the only safe answer;
+// a warning that still saved would leave the secret sitting in the wrong place.
+function looksLikeCredential(text) {
+  return /^(AQ\.|AIza|ya29\.|sk-)/.test(text) || /^bearer\s/i.test(text);
+}
+
+// Model names are lowercase, dotted and hyphenated, optionally under "models/".
+// Anything else is very unlikely to be one.
+const MODEL_NAME_RE = /^(models\/)?[a-z0-9][a-z0-9.\-]{2,63}$/;
+
 ipcMain.handle("emb3r:set-gemini-model", (_e, model) => {
-  config.geminiModel = typeof model === "string" ? model.trim() : "";
+  const trimmed = typeof model === "string" ? model.trim() : "";
+
+  // an empty string is the documented way to say "use the default"
+  if (!trimmed) {
+    config.geminiModel = "";
+    saveConfig(config);
+    return { success: true };
+  }
+  if (looksLikeCredential(trimmed)) {
+    return {
+      success: false,
+      error: "That is an API key, not a model name. Put it in the API key box above - this field is not treated as a secret, so a key here would be shown in plain text and handed to the interface layer.",
+    };
+  }
+  if (!MODEL_NAME_RE.test(trimmed)) {
+    return {
+      success: false,
+      error: `"${trimmed.slice(0, 40)}" does not look like a model name. They look like "gemini-flash-latest" or "gemini-2.5-flash".`,
+    };
+  }
+  config.geminiModel = trimmed;
   saveConfig(config);
   return { success: true };
 });
