@@ -842,7 +842,7 @@ function renderAttachBar() {
   const label = document.createElement("span");
   label.className = "attachLabel";
   label.textContent =
-    `[+] ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
+    `📎 ${pendingUpload.name} · ${humanSize(pendingUpload.sizeBytes)} · ${pendingUpload.sectionCount} sections searchable`;
   attachBar.appendChild(label);
 
   const clear = document.createElement("button");
@@ -858,10 +858,81 @@ function renderAttachBar() {
   attachBar.appendChild(clear);
 }
 
+// Formats that are not text and have to be parsed in the main process. Kept in
+// step with DOCUMENT_EXTENSIONS in src/document-text.js.
+const DOCUMENT_EXTS = new Set([
+  ".pdf", ".docx", ".xlsx", ".xlsm", ".pptx", ".odt", ".ods", ".odp", ".rtf", ".epub",
+]);
+
+function extensionOf(name) {
+  const i = String(name || "").lastIndexOf(".");
+  return i === -1 ? "" : name.slice(i).toLowerCase();
+}
+
+// Shared by both paths once the text exists, whether it came out of a PDF or
+// straight off a .txt file.
+function acceptAttachment(name, sizeBytes, content, note) {
+  if (!content.trim()) {
+    append("err", "err", `${name} looks empty — nothing to read.`);
+    return;
+  }
+  // one lowercased copy is the whole search index; see retrieveExcerpts
+  pendingUpload = {
+    name,
+    sizeBytes,
+    text: content,
+    lowerText: content.toLowerCase(),
+    sectionCount: Math.max(1, Math.ceil(content.length / SECTION_CHARS)),
+  };
+  renderAttachBar();
+
+  const whole = content.length <= attachmentCharBudget();
+  const what = note ? `${humanSize(sizeBytes)}, ${note}` : humanSize(sizeBytes);
+  append("sys", "sys",
+    whole
+      ? `attached ${name} (${what}) — small enough to read in full. Ask away.`
+      : `attached ${name} (${what}, ${pendingUpload.sectionCount} sections) — too big to read at ` +
+        `once, so each question will search it and use the most relevant parts. Ask away.`);
+  // only for a file big enough to need searching - reacting to every small
+  // paste would make the expression meaningless
+  if (!whole) flashFace("surprised", 1300);
+}
+
+async function attachDocument(file) {
+  // Electron stopped exposing File.path; webUtils resolves it in the preload
+  const filePath = window.emb3r.pathForFile(file);
+  if (!filePath) {
+    append("err", "err", `couldn't locate ${file.name} on disk.`);
+    return;
+  }
+  append("sys", "sys", `reading ${file.name}...`);
+  setFace("thinking");
+  try {
+    const res = await window.emb3r.readDocument(filePath);
+    if (!res.success) {
+      append("err", "err", res.error);
+      return;
+    }
+    acceptAttachment(file.name, res.sizeBytes || file.size, res.text, res.note);
+  } catch (err) {
+    append("err", "err", `couldn't read ${file.name}: ${err.message || err}`);
+  } finally {
+    setFace(restingFace());
+  }
+}
+
 fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
   fileInput.value = "";
   if (!file) return;
+
+  // PDFs, Word and spreadsheets are binary - they go to the main process to be
+  // parsed rather than being read as text here, which is what used to make them
+  // fail the binary check with an unhelpful "isn't a text file"
+  if (DOCUMENT_EXTS.has(extensionOf(file.name))) {
+    attachDocument(file);
+    return;
+  }
 
   // checked before reading: pulling a 500MB file into a string to discover it
   // is too large would hang the window first and report second
@@ -881,30 +952,7 @@ fileInput.addEventListener("change", () => {
         `${file.name} isn't a text file. Ember can only read text — try .txt, .md, code, .csv or .json.`);
       return;
     }
-    if (!content.trim()) {
-      append("err", "err", `${file.name} looks empty — nothing to read.`);
-      return;
-    }
-
-    // one lowercased copy is the whole search index; see retrieveExcerpts
-    pendingUpload = {
-      name: file.name,
-      sizeBytes: file.size,
-      text: content,
-      lowerText: content.toLowerCase(),
-      sectionCount: Math.max(1, Math.ceil(content.length / SECTION_CHARS)),
-    };
-    renderAttachBar();
-
-    const whole = content.length <= attachmentCharBudget();
-    append("sys", "sys",
-      whole
-        ? `attached ${file.name} (${humanSize(file.size)}) — small enough to read in full. Ask away.`
-        : `attached ${file.name} (${humanSize(file.size)}, ${pendingUpload.sectionCount} sections) — too big to read at ` +
-          `once, so each question will search it and use the most relevant parts. Ask away.`);
-    // only for a file big enough to need searching - reacting to every small
-    // paste would make the expression meaningless
-    if (!whole) flashFace("surprised", 1300);
+    acceptAttachment(file.name, file.size, content, null);
   };
   reader.onerror = () => {
     append("err", "err", `couldn't read file: ${file.name}`);

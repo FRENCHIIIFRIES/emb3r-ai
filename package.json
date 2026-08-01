@@ -1,6 +1,6 @@
 {
   "name": "emb3r",
-  "version": "1.23.0",
+  "version": "1.24.0",
   "description": "Local LLM desktop app powered by node-llama-cpp",
   "author": "Ziyan",
   "license": "MIT",
@@ -18,7 +18,10 @@
   "dependencies": {
     "@google/genai": "^2.12.0",
     "electron-updater": "^6.8.9",
-    "node-llama-cpp": "^3.19.0"
+    "fflate": "^0.8.3",
+    "mammoth": "^1.12.0",
+    "node-llama-cpp": "^3.19.0",
+    "pdfjs-dist": "^6.2.108"
   },
   "allowScripts": {
     "node-llama-cpp@3.19.0": true,
@@ -41,7 +44,8 @@
     "asar": true,
     "asarUnpack": [
       "**/node_modules/node-llama-cpp/**",
-      "**/node_modules/@node-llama-cpp/**"
+      "**/node_modules/@node-llama-cpp/**",
+      "**/node_modules/pdfjs-dist/standard_fonts/**"
     ],
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "files": [
@@ -52,7 +56,12 @@
       "!models/**",
       "!**/node_modules/@node-llama-cpp/win-arm64/**",
       "!**/node_modules/@node-llama-cpp/win-x64-cuda/**",
-      "!**/node_modules/@node-llama-cpp/win-x64-cuda-ext/**"
+      "!**/node_modules/@node-llama-cpp/win-x64-cuda-ext/**",
+      "!**/node_modules/pdfjs-dist/web/**",
+      "!**/node_modules/pdfjs-dist/image_decoders/**",
+      "!**/node_modules/pdfjs-dist/types/**",
+      "!**/node_modules/pdfjs-dist/build/**",
+      "!**/node_modules/pdfjs-dist/**/*.map"
     ],
     "win": {
       "target": [
