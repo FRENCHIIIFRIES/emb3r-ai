@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.25.2 — the app's own advice had gone stale
+
+The Gemini model box carried a suggestion: if the default does not work for your account, try “gemini-2.5-flash”. Google has since stopped offering that model to new accounts, so anyone who took the suggestion got “this model is no longer available to new users” and a broken web search. The advice was sound when it was written and quietly stopped being sound, which is the failure mode of naming a specific version in help text at all.
+
+The box now says what it should have said in the first place: leave it empty. Empty means “gemini-flash-latest”, an alias Google repoints at whatever its current Flash model is, so it keeps working as models come and go. Naming a specific version pins you to that one, and specific versions are exactly what gets withdrawn.
+
+Checked against a real key rather than the documentation, which still lists the retired model as available: the default works, “gemini-3.6-flash” works, “gemini-flash-lite-latest” works, and “gemini-2.5-flash” is refused for new accounts.
+
 ## v1.25.1 — a key in the wrong box
 
 The Test key button added in v1.25.0 did its job on its first outing, and what it found was not the key. Web access was failing with “unexpected model name format” because an API key had been pasted into the **Gemini model** box as well as the key box, so emb3r was dutifully asking Google for a model named after a credential.
