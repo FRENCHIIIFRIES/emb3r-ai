@@ -1,16 +1,14 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
-## v1.27.1 — an icon that survives the taskbar
+## v1.27.1 — a sharper icon
 
-The salamander is nearly two units wide for every one tall. Dropped into a square icon that leaves the height at half the canvas, and at 16 pixels — the size Windows uses in the taskbar — the animal was eight pixels tall. Pixel art asked to render below its own resolution turns to mush.
+The taskbar icon was mush. Not because of its size — because of how it got there. It was being produced by shrinking a 1024-pixel image with a smoothing filter, and a smoothing filter is the one thing pixel art cannot survive: every hard edge becomes a gradient, and at sixteen pixels there is nothing left but a smear.
 
-The icon file now holds two compositions. At 32 pixels and above it is the whole salamander, scaled to 96% of the width instead of 88%, so it is simply bigger. At 16 and 24 it is a square crop of the head and the first flames, which fills the canvas properly: the artwork went from 16x8 to 15x15 at taskbar size. Windows picks whichever fits the context, from the same file.
+It is now drawn from the artwork's own 35x18 grid at every size, with no smoothing, so the blocks stay square. It also fills the full width of the icon instead of 88% of it. The whole salamander is there at every size, head to tail, which is the point of having a salamander.
 
-Keeping the previous mark for the shortcut was considered and rejected on measurement. Its body was almost exactly the colour of a dark taskbar — 1.07:1 — so on the common Windows dark theme it disappeared and left flames hovering over nothing. Half an icon being invisible is worse than a squeezed one, and worse than either is the new crop, which is neither.
+A version that cropped to the head and flames at the smallest sizes was built and thrown away. It was more legible in the narrow sense and wrong in every other: at the size most people see the app, it showed fire and a fragment of body, and you could not tell what animal it was.
 
-Nothing changed inside the app: the mark in the header is the same drawing, and still follows the accent colour.
-
-## v1.27.0 — a redrawn salamander that takes your colour
+## ## v1.27.0 — a redrawn salamander that takes your colour
 
 The mark was a 15x12 pixel sketch. It is a 35x18 drawing now: the same creature, with a shaded body, three flames rising off its spine and embers running down the tail. The application icon is the same artwork.
 

@@ -96,7 +96,7 @@ const CHANGELOG = [
   { version: "1.27.1",
     added: [],
     fixed: [
-      "The taskbar and shortcut icon is larger, and at the smallest sizes it now shows the salamander's head and flames rather than the whole animal shrunk to eight pixels tall.",
+      "The taskbar and shortcut icon was blurry. It was being shrunk from a large image with a smoothing filter, which turns pixel art to mush; it is now drawn from the artwork's own grid at every size, so the blocks stay sharp. It also fills the full width of the icon rather than 88% of it.",
     ] },
   { version: "1.27.0",
     added: [
