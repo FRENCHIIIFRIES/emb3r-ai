@@ -96,7 +96,7 @@ const CHANGELOG = [
   { version: "1.27.1",
     added: [],
     fixed: [
-      "The taskbar and shortcut icon was blurry. It was being shrunk from a large image with a smoothing filter, which turns pixel art to mush; it is now drawn from the artwork's own grid at every size, so the blocks stay sharp. It also fills the full width of the icon rather than 88% of it.",
+      "The taskbar and shortcut icon is much bigger. A salamander drawn side-on is twice as wide as it is tall, so in a square icon it could only ever fill half the height; the icon now uses a coiled version of the same creature, which fills the square. The mark inside the app is unchanged.",
     ] },
   { version: "1.27.0",
     added: [
