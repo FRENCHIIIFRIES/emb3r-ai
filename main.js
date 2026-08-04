@@ -93,6 +93,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.27.1",
+    added: [],
+    fixed: [
+      "The taskbar and shortcut icon is larger, and at the smallest sizes it now shows the salamander's head and flames rather than the whole animal shrunk to eight pixels tall.",
+    ] },
   { version: "1.27.0",
     added: [
       "The salamander now takes the accent colour you pick. Its flames follow it in three shades while the body stays neutral, so it stays readable at any hue.",
