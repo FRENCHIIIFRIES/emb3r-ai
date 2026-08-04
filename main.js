@@ -93,6 +93,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.27.1",
+    added: [],
+    fixed: [
+      "The taskbar and shortcut icon is much bigger. A salamander drawn side-on is twice as wide as it is tall, so in a square icon it could only ever fill half the height; the icon now uses a coiled version of the same creature, which fills the square. The mark inside the app is unchanged.",
+    ] },
   { version: "1.27.0",
     added: [
       "The salamander now takes the accent colour you pick. Its flames follow it in three shades while the body stays neutral, so it stays readable at any hue.",

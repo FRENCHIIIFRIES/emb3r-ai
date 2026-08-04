@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.27.1 — an icon that fills its square
+
+The salamander is drawn side-on, which makes it nearly twice as wide as it is tall. Dropped into a square icon that is a hard ceiling: at full width it still only reaches half the height, so next to something like Chrome's circle it looks half the size. Rotating it diagonally buys 5% and ruins the pixel grid. Cropping to the head makes it legible and unidentifiable. There is no arrangement of a 2:1 drawing that fills a square.
+
+So the icon uses a different drawing: the same salamander coiled round on itself, flames along its back, which is square by construction. It spans 85% by 90% of the canvas instead of 100% by 51%, and at sixteen pixels the ink covers 14x14 rather than 16x7.
+
+The mark inside the app and on the site is unchanged. A wide drawing is right beside a wordmark and wrong in a launcher; a round one is the reverse. They are the same creature either way.
+
+Both are drawn from their own pixel grids with no smoothing, which also fixes the blurring that made the old icon mush at small sizes.
+
 ## v1.27.0 — a redrawn salamander that takes your colour
 
 The mark was a 15x12 pixel sketch. It is a 35x18 drawing now: the same creature, with a shaded body, three flames rising off its spine and embers running down the tail. The application icon is the same artwork.
