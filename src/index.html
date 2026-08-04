@@ -194,11 +194,26 @@ pre{
 }
 
 #logoMark{
-    width:92px;
+    width:132px;
     height:auto;
     flex-shrink:0;
-    color:var(--text-color);
 }
+
+/* The salamander's flames take whatever accent the user picked, in three tones
+   derived from it, while the body stays neutral so the creature is still
+   readable at any hue. color-mix does the shading in CSS, so changing the
+   accent needs no JavaScript and no second copy of the artwork. */
+#logoMark .f1{ fill:color-mix(in srgb, var(--text-color) 74%, #000 26%); }
+#logoMark .f2{ fill:var(--text-color); }
+#logoMark .f3{ fill:color-mix(in srgb, var(--text-color) 52%, #fff 48%); }
+#logoMark .o { fill:#0a0a0c; }
+#logoMark .d { fill:#262a30; }
+#logoMark .b { fill:#3a3e46; }
+
+/* On the light theme the near-black outline still reads, but the mid greys
+   need to darken or the body dissolves into the page. */
+[data-theme="light"] #logoMark .d{ fill:#20242a; }
+[data-theme="light"] #logoMark .b{ fill:#2e333b; }
 
 #logo{
     font-size:17px;
@@ -2142,33 +2157,11 @@ pre{
 <div id="pet">
 
 <div id="logoWrap">
-<svg id="logoMark" viewBox="0 0 15 12" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true">
-<rect x="4" y="7" width="2" height="1" fill="#dc4622"/>
-<rect x="5" y="5" width="1" height="2" fill="#ff6b1a"/>
-<rect x="4" y="4" width="1" height="1" fill="#ffb347"/>
-<rect x="8" y="6" width="2" height="2" fill="#dc4622"/>
-<rect x="8" y="5" width="1" height="1" fill="#ff6b1a"/>
-<rect x="9" y="4" width="1" height="1" fill="#ff6b1a"/>
-<rect x="8" y="3" width="1" height="1" fill="#ffb347"/>
-<rect x="9" y="2" width="1" height="1" fill="#ffb347"/>
-<rect x="11" y="7" width="2" height="1" fill="#dc4622"/>
-<rect x="12" y="6" width="1" height="1" fill="#ff6b1a"/>
-<rect x="11" y="5" width="1" height="1" fill="#ff6b1a"/>
-<rect x="12" y="4" width="1" height="1" fill="#ffb347"/>
-<rect x="3" y="8" width="11" height="1" fill="currentColor"/>
-<rect x="2" y="9" width="13" height="1" fill="currentColor"/>
-<rect x="1" y="10" width="1" height="1" fill="currentColor"/>
-<rect x="0" y="11" width="1" height="1" fill="currentColor"/>
-<rect x="3" y="10" width="2" height="1" fill="currentColor"/>
-<rect x="7" y="10" width="2" height="1" fill="currentColor"/>
-<rect x="11" y="10" width="2" height="1" fill="currentColor"/>
-<rect x="3" y="11" width="2" height="1" fill="currentColor"/>
-<rect x="11" y="11" width="2" height="1" fill="currentColor"/>
-<rect x="13" y="9" width="1" height="1" fill="#ffb347"/>
-<rect x="5" y="8" width="1" height="1" fill="#ff6b1a"/>
-<rect x="9" y="8" width="1" height="1" fill="#ff6b1a"/>
-<rect x="12" y="8" width="1" height="1" fill="#ff6b1a"/>
-</svg>
+<!-- Inline rather than an <img> so the flames can follow the accent colour.
+     Each rect carries a class and the stylesheet decides what it looks like;
+     a bitmap could not do that. Generated from the artwork by sampling its
+     35x18 pixel grid - see the logo notes in the project record. -->
+<svg id="logoMark" viewBox="0 0 35 18" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true"><rect x="16" y="0" width="1" height="1" class="f1"/><rect x="10" y="2" width="1" height="1" class="f1"/><rect x="16" y="2" width="1" height="1" class="f1"/><rect x="22" y="2" width="1" height="1" class="f1"/><rect x="16" y="3" width="2" height="1" class="f2"/><rect x="10" y="4" width="1" height="1" class="f1"/><rect x="11" y="4" width="1" height="1" class="f2"/><rect x="15" y="4" width="2" height="1" class="f2"/><rect x="17" y="4" width="2" height="1" class="f1"/><rect x="22" y="4" width="2" height="1" class="f1"/><rect x="9" y="5" width="2" height="1" class="f2"/><rect x="11" y="5" width="1" height="1" class="f1"/><rect x="12" y="5" width="1" height="1" class="f2"/><rect x="14" y="5" width="1" height="1" class="f1"/><rect x="15" y="5" width="4" height="1" class="f2"/><rect x="22" y="5" width="2" height="1" class="f2"/><rect x="8" y="6" width="5" height="1" class="f2"/><rect x="14" y="6" width="5" height="1" class="f2"/><rect x="20" y="6" width="4" height="1" class="f2"/><rect x="8" y="7" width="2" height="1" class="f2"/><rect x="10" y="7" width="1" height="1" class="f3"/><rect x="11" y="7" width="2" height="1" class="f2"/><rect x="14" y="7" width="4" height="1" class="f2"/><rect x="18" y="7" width="1" height="1" class="f1"/><rect x="20" y="7" width="3" height="1" class="f2"/><rect x="23" y="7" width="2" height="1" class="f1"/><rect x="8" y="8" width="1" height="1" class="f2"/><rect x="9" y="8" width="2" height="1" class="f3"/><rect x="11" y="8" width="4" height="1" class="f2"/><rect x="15" y="8" width="2" height="1" class="f3"/><rect x="17" y="8" width="2" height="1" class="f2"/><rect x="19" y="8" width="1" height="1" class="f1"/><rect x="20" y="8" width="1" height="1" class="f2"/><rect x="21" y="8" width="2" height="1" class="f3"/><rect x="23" y="8" width="2" height="1" class="f2"/><rect x="2" y="9" width="6" height="1" class="o"/><rect x="8" y="9" width="1" height="1" class="f2"/><rect x="9" y="9" width="2" height="1" class="f3"/><rect x="11" y="9" width="1" height="1" class="f2"/><rect x="12" y="9" width="2" height="1" class="d"/><rect x="14" y="9" width="1" height="1" class="f2"/><rect x="15" y="9" width="3" height="1" class="f3"/><rect x="18" y="9" width="2" height="1" class="d"/><rect x="20" y="9" width="1" height="1" class="f2"/><rect x="21" y="9" width="2" height="1" class="f3"/><rect x="23" y="9" width="1" height="1" class="f2"/><rect x="24" y="9" width="1" height="1" class="f1"/><rect x="1" y="10" width="1" height="1" class="o"/><rect x="2" y="10" width="1" height="1" class="b"/><rect x="3" y="10" width="19" height="1" class="d"/><rect x="22" y="10" width="1" height="1" class="f3"/><rect x="23" y="10" width="1" height="1" class="d"/><rect x="24" y="10" width="1" height="1" class="b"/><rect x="25" y="10" width="1" height="1" class="o"/><rect x="0" y="11" width="1" height="1" class="o"/><rect x="1" y="11" width="3" height="1" class="d"/><rect x="4" y="11" width="1" height="1" class="o"/><rect x="5" y="11" width="20" height="1" class="d"/><rect x="25" y="11" width="1" height="1" class="f2"/><rect x="26" y="11" width="2" height="1" class="o"/><rect x="0" y="12" width="3" height="1" class="d"/><rect x="3" y="12" width="2" height="1" class="o"/><rect x="5" y="12" width="1" height="1" class="b"/><rect x="6" y="12" width="21" height="1" class="d"/><rect x="27" y="12" width="1" height="1" class="f2"/><rect x="28" y="12" width="2" height="1" class="o"/><rect x="0" y="13" width="11" height="1" class="d"/><rect x="11" y="13" width="1" height="1" class="o"/><rect x="12" y="13" width="17" height="1" class="d"/><rect x="29" y="13" width="1" height="1" class="f2"/><rect x="30" y="13" width="2" height="1" class="o"/><rect x="0" y="14" width="10" height="1" class="o"/><rect x="10" y="14" width="1" height="1" class="d"/><rect x="11" y="14" width="9" height="1" class="o"/><rect x="20" y="14" width="3" height="1" class="d"/><rect x="23" y="14" width="3" height="1" class="o"/><rect x="26" y="14" width="6" height="1" class="d"/><rect x="32" y="14" width="3" height="1" class="o"/><rect x="5" y="15" width="3" height="1" class="o"/><rect x="9" y="15" width="1" height="1" class="o"/><rect x="10" y="15" width="1" height="1" class="d"/><rect x="11" y="15" width="1" height="1" class="o"/><rect x="16" y="15" width="3" height="1" class="o"/><rect x="20" y="15" width="1" height="1" class="o"/><rect x="21" y="15" width="2" height="1" class="d"/><rect x="23" y="15" width="1" height="1" class="o"/><rect x="26" y="15" width="2" height="1" class="o"/><rect x="28" y="15" width="7" height="1" class="d"/><rect x="4" y="16" width="3" height="1" class="o"/><rect x="9" y="16" width="1" height="1" class="o"/><rect x="10" y="16" width="1" height="1" class="d"/><rect x="11" y="16" width="1" height="1" class="o"/><rect x="16" y="16" width="3" height="1" class="o"/><rect x="21" y="16" width="1" height="1" class="o"/><rect x="22" y="16" width="1" height="1" class="d"/><rect x="23" y="16" width="1" height="1" class="o"/><rect x="28" y="16" width="2" height="1" class="o"/><rect x="30" y="16" width="5" height="1" class="d"/><rect x="5" y="17" width="1" height="1" class="o"/><rect x="8" y="17" width="1" height="1" class="o"/><rect x="9" y="17" width="2" height="1" class="d"/><rect x="11" y="17" width="1" height="1" class="o"/><rect x="16" y="17" width="2" height="1" class="o"/><rect x="20" y="17" width="1" height="1" class="o"/><rect x="21" y="17" width="2" height="1" class="d"/><rect x="23" y="17" width="1" height="1" class="o"/><rect x="30" y="17" width="5" height="1" class="o"/></svg>
 <pre id="logo">
 ███████╗███╗   ███╗██████╗ ██████╗ ██████╗
 ██╔════╝████╗ ████║██╔══██╗╚════██╗██╔══██╗

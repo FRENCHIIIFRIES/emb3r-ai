@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.27.0 — a redrawn salamander that takes your colour
+
+The mark was a 15x12 pixel sketch. It is a 35x18 drawing now: the same creature, with a shaded body, three flames rising off its spine and embers running down the tail. The application icon is the same artwork.
+
+It also follows the accent colour. Pick a colour and the flames move with it, in three shades derived from the one you chose, while the body stays neutral so the salamander is still a salamander at any hue. That is done in the stylesheet rather than in code — the mark is inline vector with a class on each block, and the shading comes from color-mix, so there is no second copy of the artwork and nothing to keep in step.
+
+The artwork arrived as a picture, which cannot change colour. Recovering it as vector took two attempts: sampling the original file put the drop shadow and the image grain inside the blocks and produced a body full of holes. Sampling the cleaned-up sprite instead gave a clean 35x18 grid, which became 107 rectangles.
+
 ## v1.26.0 — a second question about the same file
 
 Attaching a document and asking one question worked. Asking a second gave back a greeting — “Hi Ziyan, it looks like you're really interested in Frankenstein” — sometimes with the bare word “assistant” in front of it, and no answer to what was actually asked.
