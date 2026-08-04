@@ -93,6 +93,13 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.27.0",
+    added: [
+      "The salamander now takes the accent colour you pick. Its flames follow it in three shades while the body stays neutral, so it stays readable at any hue.",
+    ],
+    fixed: [
+      "New artwork for the mark and the application icon — the same creature, redrawn with a shaded body, three flames and embers down the tail.",
+    ] },
   { version: "1.26.0",
     added: [],
     fixed: [
