@@ -93,6 +93,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.28.0",
+    added: [
+      "The salamander breathes. Each of the four flames on its back lifts from its own base on a slow cycle, with the hottest part of the fire flickering faster inside that - and it moves in pixel steps, because it is pixel art. If your system is set to reduce motion, it holds still.",
+    ],
+    fixed: [] },
   { version: "1.27.3",
     added: [
       "The coiled salamander is in the app now, not only on the taskbar — and the whole creature burns in your accent colour, body as well as flames.",

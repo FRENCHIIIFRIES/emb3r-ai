@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.28.0 — the salamander breathes
+
+The mark in the header stood still. It breathes now: each of the four flames on the creature's back lifts from its own base and settles, and the hottest part of the fire flickers on a faster clock inside that slower breath. The four run on lengths that do not divide into each other, so they drift apart instead of pulsing in unison. The body does not move — the coil is a ring, and a ring that breathes reads as a wobble.
+
+It moves in whole pixels rather than gliding. Smoothing the motion was tried and thrown away: it did glide, but it also made the creature look soft, and softness is the one thing a pixel-art animal cannot afford.
+
+Underneath, the drawing is no longer 418 separate squares. Each shade is now a single shape, which is what made animating it possible at all — squares laid edge to edge crack apart along their shared edges the moment they stop being snapped to whole pixels. 418 pieces became 17.
+
+If your system is set to reduce motion, none of this runs.
+
 ## v1.27.3 — the coil comes inside
 
 The coiled salamander was drawn for the taskbar and stayed there; the header kept the long side-on drawing. It is the mark in the application now too, square beside the six-line wordmark rather than running most of its width.
