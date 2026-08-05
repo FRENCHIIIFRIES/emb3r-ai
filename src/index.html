@@ -217,6 +217,60 @@ pre{
 #logoMark .f1{ fill:color-mix(in srgb, var(--text-color) 80%, #000 20%); }
 #logoMark .f2{ fill:var(--text-color); }
 #logoMark .f3{ fill:color-mix(in srgb, var(--text-color) 50%, #fff 50%); }
+/* The flames are grouped into the four clusters the artwork actually has, so
+   each one lifts from where it meets the body instead of every ember moving
+   as one block. transform-box:fill-box makes transform-origin resolve against
+   the group's own box rather than the 40x40 canvas.
+
+   The mark is drawn as one path per tier rather than as 418 separate cells.
+   That is what lets it be antialiased: two tiled rects sharing an edge each
+   cover about half of it, and half over half is a seam, not solid - which is
+   what cracked the creature the first time this was tried. Subpaths of a
+   single path fill as one region and the interior edges cancel. */
+#logoMark .fl{
+    transform-box:fill-box;
+    transform-origin:50% 100%;
+    will-change:transform, opacity;
+}
+
+/* Breathing is not symmetrical - the rise is quicker than the settle - and the
+   four flames run on durations that do not divide into each other, so they
+   drift apart instead of returning to lockstep on every cycle. */
+#logoMark .fl{ animation:coilLift 3.4s cubic-bezier(.37,0,.28,1) infinite; }
+#logoMark .k0{ animation-duration:3.4s; animation-delay:-.0s; }
+#logoMark .k1{ animation-duration:3.9s; animation-delay:-.9s; }
+#logoMark .k2{ animation-duration:4.3s; animation-delay:-1.7s; }
+#logoMark .k3{ animation-duration:3.7s; animation-delay:-2.5s; }
+
+/* the hot core on its own faster clock, so the tips flicker inside the breath */
+#logoMark .f3{ animation:coilShimmer 1.45s cubic-bezier(.45,.05,.55,.95) infinite; }
+#logoMark .k1 .f3{ animation-delay:-.35s; }
+#logoMark .k2 .f3{ animation-delay:-.7s; }
+#logoMark .k3 .f3{ animation-delay:-.5s; }
+
+/* where flame meets body, brightening with the breath */
+#logoMark .g{ animation:coilGlow 3.4s ease-in-out infinite; }
+
+@keyframes coilLift{
+    0%   { transform:scaleY(1)     translateY(0);      opacity:.90; }
+    38%  { transform:scaleY(1.105) translateY(-.22px); opacity:1; }
+    52%  { transform:scaleY(1.085) translateY(-.17px); opacity:.99; }
+    100% { transform:scaleY(1)     translateY(0);      opacity:.90; }
+}
+@keyframes coilShimmer{
+    0%, 100% { opacity:.74; }
+    50%      { opacity:1; }
+}
+@keyframes coilGlow{
+    0%, 100% { opacity:.78; }
+    50%      { opacity:1; }
+}
+
+/* Anyone who has asked their system for less movement gets none of it. */
+@media (prefers-reduced-motion: reduce){
+    #logoMark .fl, #logoMark .f3, #logoMark .g{ animation:none; }
+}
+
 
 #logo{
     font-size:17px;
@@ -2165,424 +2219,31 @@ pre{
      a bitmap could not do that. Generated from the artwork by sampling its
      35x18 pixel grid - see the logo notes in the project record. -->
 <svg id="logoMark" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true">
-<rect x="13" y="2" width="1" height="1" class="f1"/>
-<rect x="21" y="2" width="1" height="1" class="f1"/>
-<rect x="27" y="2" width="1" height="1" class="f1"/>
-<rect x="14" y="3" width="1" height="1" class="f1"/>
-<rect x="21" y="3" width="1" height="1" class="f2"/>
-<rect x="22" y="3" width="1" height="1" class="f1"/>
-<rect x="27" y="3" width="1" height="1" class="f2"/>
-<rect x="28" y="3" width="1" height="1" class="f1"/>
-<rect x="13" y="4" width="1" height="1" class="f1"/>
-<rect x="14" y="4" width="1" height="1" class="f2"/>
-<rect x="15" y="4" width="1" height="1" class="f1"/>
-<rect x="21" y="4" width="2" height="1" class="f2"/>
-<rect x="23" y="4" width="1" height="1" class="f1"/>
-<rect x="27" y="4" width="2" height="1" class="f2"/>
-<rect x="29" y="4" width="1" height="1" class="f1"/>
-<rect x="13" y="5" width="1" height="1" class="f1"/>
-<rect x="14" y="5" width="1" height="1" class="f2"/>
-<rect x="15" y="5" width="1" height="1" class="f1"/>
-<rect x="20" y="5" width="1" height="1" class="f1"/>
-<rect x="21" y="5" width="2" height="1" class="f2"/>
-<rect x="23" y="5" width="1" height="1" class="f1"/>
-<rect x="26" y="5" width="1" height="1" class="f1"/>
-<rect x="27" y="5" width="2" height="1" class="f2"/>
-<rect x="29" y="5" width="1" height="1" class="f1"/>
-<rect x="7" y="6" width="1" height="1" class="f1"/>
-<rect x="12" y="6" width="1" height="1" class="f1"/>
-<rect x="13" y="6" width="1" height="1" class="f2"/>
-<rect x="14" y="6" width="1" height="1" class="f3"/>
-<rect x="15" y="6" width="1" height="1" class="f2"/>
-<rect x="16" y="6" width="1" height="1" class="f1"/>
-<rect x="17" y="6" width="3" height="1" class="o"/>
-<rect x="20" y="6" width="1" height="1" class="f1"/>
-<rect x="21" y="6" width="1" height="1" class="f2"/>
-<rect x="22" y="6" width="1" height="1" class="f3"/>
-<rect x="23" y="6" width="1" height="1" class="f2"/>
-<rect x="24" y="6" width="1" height="1" class="f1"/>
-<rect x="26" y="6" width="1" height="1" class="f1"/>
-<rect x="27" y="6" width="1" height="1" class="f2"/>
-<rect x="28" y="6" width="1" height="1" class="f3"/>
-<rect x="29" y="6" width="1" height="1" class="f2"/>
-<rect x="30" y="6" width="1" height="1" class="f1"/>
-<rect x="6" y="7" width="1" height="1" class="f1"/>
-<rect x="12" y="7" width="1" height="1" class="f1"/>
-<rect x="13" y="7" width="2" height="1" class="f3"/>
-<rect x="15" y="7" width="1" height="1" class="f2"/>
-<rect x="16" y="7" width="1" height="1" class="f1"/>
-<rect x="17" y="7" width="1" height="1" class="g"/>
-<rect x="18" y="7" width="1" height="1" class="b"/>
-<rect x="19" y="7" width="1" height="1" class="g"/>
-<rect x="20" y="7" width="1" height="1" class="f1"/>
-<rect x="21" y="7" width="2" height="1" class="f3"/>
-<rect x="23" y="7" width="1" height="1" class="f2"/>
-<rect x="24" y="7" width="1" height="1" class="f1"/>
-<rect x="25" y="7" width="2" height="1" class="o"/>
-<rect x="27" y="7" width="2" height="1" class="f3"/>
-<rect x="29" y="7" width="1" height="1" class="f2"/>
-<rect x="30" y="7" width="1" height="1" class="f1"/>
-<rect x="5" y="8" width="1" height="1" class="f1"/>
-<rect x="6" y="8" width="1" height="1" class="f2"/>
-<rect x="7" y="8" width="1" height="1" class="f1"/>
-<rect x="11" y="8" width="2" height="1" class="o"/>
-<rect x="13" y="8" width="1" height="1" class="f1"/>
-<rect x="14" y="8" width="1" height="1" class="f3"/>
-<rect x="15" y="8" width="1" height="1" class="f1"/>
-<rect x="16" y="8" width="2" height="1" class="g"/>
-<rect x="18" y="8" width="1" height="1" class="b"/>
-<rect x="19" y="8" width="2" height="1" class="g"/>
-<rect x="21" y="8" width="1" height="1" class="f1"/>
-<rect x="22" y="8" width="1" height="1" class="f3"/>
-<rect x="23" y="8" width="1" height="1" class="f1"/>
-<rect x="24" y="8" width="3" height="1" class="g"/>
-<rect x="27" y="8" width="5" height="1" class="o"/>
-<rect x="5" y="9" width="1" height="1" class="f1"/>
-<rect x="6" y="9" width="2" height="1" class="f2"/>
-<rect x="10" y="9" width="1" height="1" class="o"/>
-<rect x="11" y="9" width="1" height="1" class="b"/>
-<rect x="12" y="9" width="5" height="1" class="g"/>
-<rect x="17" y="9" width="3" height="1" class="b"/>
-<rect x="20" y="9" width="5" height="1" class="g"/>
-<rect x="25" y="9" width="7" height="1" class="b"/>
-<rect x="32" y="9" width="1" height="1" class="o"/>
-<rect x="5" y="10" width="1" height="1" class="f1"/>
-<rect x="6" y="10" width="2" height="1" class="f2"/>
-<rect x="8" y="10" width="1" height="1" class="f1"/>
-<rect x="9" y="10" width="1" height="1" class="o"/>
-<rect x="10" y="10" width="7" height="1" class="b"/>
-<rect x="17" y="10" width="1" height="1" class="d"/>
-<rect x="18" y="10" width="8" height="1" class="b"/>
-<rect x="26" y="10" width="1" height="1" class="o"/>
-<rect x="27" y="10" width="1" height="1" class="b"/>
-<rect x="28" y="10" width="1" height="1" class="d"/>
-<rect x="29" y="10" width="4" height="1" class="b"/>
-<rect x="33" y="10" width="1" height="1" class="o"/>
-<rect x="4" y="11" width="1" height="1" class="f1"/>
-<rect x="5" y="11" width="1" height="1" class="f2"/>
-<rect x="6" y="11" width="1" height="1" class="f3"/>
-<rect x="7" y="11" width="1" height="1" class="f2"/>
-<rect x="8" y="11" width="1" height="1" class="f1"/>
-<rect x="9" y="11" width="1" height="1" class="g"/>
-<rect x="10" y="11" width="4" height="1" class="b"/>
-<rect x="14" y="11" width="1" height="1" class="d"/>
-<rect x="15" y="11" width="1" height="1" class="b"/>
-<rect x="16" y="11" width="1" height="1" class="d"/>
-<rect x="17" y="11" width="4" height="1" class="b"/>
-<rect x="21" y="11" width="2" height="1" class="d"/>
-<rect x="23" y="11" width="2" height="1" class="b"/>
-<rect x="25" y="11" width="1" height="1" class="o"/>
-<rect x="26" y="11" width="3" height="1" class="b"/>
-<rect x="29" y="11" width="1" height="1" class="d"/>
-<rect x="30" y="11" width="1" height="1" class="b"/>
-<rect x="31" y="11" width="1" height="1" class="o"/>
-<rect x="32" y="11" width="2" height="1" class="b"/>
-<rect x="34" y="11" width="1" height="1" class="o"/>
-<rect x="5" y="12" width="1" height="1" class="f1"/>
-<rect x="6" y="12" width="2" height="1" class="f3"/>
-<rect x="8" y="12" width="1" height="1" class="f2"/>
-<rect x="9" y="12" width="1" height="1" class="g"/>
-<rect x="10" y="12" width="3" height="1" class="b"/>
-<rect x="13" y="12" width="1" height="1" class="d"/>
-<rect x="14" y="12" width="1" height="1" class="b"/>
-<rect x="15" y="12" width="1" height="1" class="d"/>
-<rect x="16" y="12" width="3" height="1" class="b"/>
-<rect x="19" y="12" width="1" height="1" class="d"/>
-<rect x="20" y="12" width="1" height="1" class="o"/>
-<rect x="21" y="12" width="2" height="1" class="b"/>
-<rect x="23" y="12" width="1" height="1" class="d"/>
-<rect x="24" y="12" width="1" height="1" class="b"/>
-<rect x="25" y="12" width="1" height="1" class="o"/>
-<rect x="26" y="12" width="4" height="1" class="b"/>
-<rect x="30" y="12" width="2" height="1" class="o"/>
-<rect x="32" y="12" width="1" height="1" class="b"/>
-<rect x="33" y="12" width="1" height="1" class="o"/>
-<rect x="34" y="12" width="1" height="1" class="b"/>
-<rect x="35" y="12" width="1" height="1" class="o"/>
-<rect x="5" y="13" width="1" height="1" class="f1"/>
-<rect x="6" y="13" width="1" height="1" class="f2"/>
-<rect x="7" y="13" width="1" height="1" class="f3"/>
-<rect x="8" y="13" width="1" height="1" class="f1"/>
-<rect x="9" y="13" width="1" height="1" class="g"/>
-<rect x="10" y="13" width="2" height="1" class="b"/>
-<rect x="12" y="13" width="1" height="1" class="d"/>
-<rect x="13" y="13" width="1" height="1" class="b"/>
-<rect x="14" y="13" width="1" height="1" class="d"/>
-<rect x="15" y="13" width="1" height="1" class="b"/>
-<rect x="16" y="13" width="1" height="1" class="d"/>
-<rect x="17" y="13" width="1" height="1" class="b"/>
-<rect x="18" y="13" width="1" height="1" class="d"/>
-<rect x="19" y="13" width="1" height="1" class="o"/>
-<rect x="20" y="13" width="3" height="1" class="b"/>
-<rect x="23" y="13" width="1" height="1" class="o"/>
-<rect x="24" y="13" width="1" height="1" class="d"/>
-<rect x="25" y="13" width="1" height="1" class="o"/>
-<rect x="26" y="13" width="1" height="1" class="d"/>
-<rect x="27" y="13" width="1" height="1" class="b"/>
-<rect x="28" y="13" width="2" height="1" class="o"/>
-<rect x="30" y="13" width="5" height="1" class="b"/>
-<rect x="35" y="13" width="1" height="1" class="o"/>
-<rect x="5" y="14" width="1" height="1" class="o"/>
-<rect x="6" y="14" width="1" height="1" class="f1"/>
-<rect x="7" y="14" width="3" height="1" class="g"/>
-<rect x="10" y="14" width="1" height="1" class="b"/>
-<rect x="11" y="14" width="1" height="1" class="d"/>
-<rect x="12" y="14" width="3" height="1" class="b"/>
-<rect x="15" y="14" width="1" height="1" class="d"/>
-<rect x="16" y="14" width="1" height="1" class="b"/>
-<rect x="17" y="14" width="1" height="1" class="d"/>
-<rect x="18" y="14" width="1" height="1" class="o"/>
-<rect x="19" y="14" width="2" height="1" class="b"/>
-<rect x="21" y="14" width="1" height="1" class="d"/>
-<rect x="22" y="14" width="5" height="1" class="o"/>
-<rect x="27" y="14" width="1" height="1" class="d"/>
-<rect x="28" y="14" width="2" height="1" class="b"/>
-<rect x="30" y="14" width="5" height="1" class="o"/>
-<rect x="5" y="15" width="1" height="1" class="o"/>
-<rect x="6" y="15" width="2" height="1" class="g"/>
-<rect x="8" y="15" width="4" height="1" class="b"/>
-<rect x="12" y="15" width="1" height="1" class="d"/>
-<rect x="13" y="15" width="1" height="1" class="b"/>
-<rect x="14" y="15" width="1" height="1" class="d"/>
-<rect x="15" y="15" width="1" height="1" class="b"/>
-<rect x="16" y="15" width="1" height="1" class="d"/>
-<rect x="17" y="15" width="2" height="1" class="o"/>
-<rect x="19" y="15" width="2" height="1" class="b"/>
-<rect x="21" y="15" width="2" height="1" class="o"/>
-<rect x="27" y="15" width="2" height="1" class="o"/>
-<rect x="29" y="15" width="1" height="1" class="d"/>
-<rect x="30" y="15" width="1" height="1" class="b"/>
-<rect x="31" y="15" width="1" height="1" class="d"/>
-<rect x="32" y="15" width="1" height="1" class="o"/>
-<rect x="33" y="15" width="1" height="1" class="d"/>
-<rect x="34" y="15" width="1" height="1" class="o"/>
-<rect x="4" y="16" width="1" height="1" class="o"/>
-<rect x="5" y="16" width="1" height="1" class="d"/>
-<rect x="6" y="16" width="4" height="1" class="b"/>
-<rect x="10" y="16" width="1" height="1" class="d"/>
-<rect x="11" y="16" width="2" height="1" class="b"/>
-<rect x="13" y="16" width="2" height="1" class="d"/>
-<rect x="15" y="16" width="2" height="1" class="o"/>
-<rect x="18" y="16" width="2" height="1" class="o"/>
-<rect x="20" y="16" width="1" height="1" class="d"/>
-<rect x="21" y="16" width="2" height="1" class="b"/>
-<rect x="23" y="16" width="2" height="1" class="o"/>
-<rect x="29" y="16" width="4" height="1" class="o"/>
-<rect x="33" y="16" width="1" height="1" class="b"/>
-<rect x="34" y="16" width="1" height="1" class="o"/>
-<rect x="35" y="16" width="1" height="1" class="f1"/>
-<rect x="4" y="17" width="1" height="1" class="o"/>
-<rect x="5" y="17" width="4" height="1" class="b"/>
-<rect x="9" y="17" width="1" height="1" class="d"/>
-<rect x="10" y="17" width="1" height="1" class="b"/>
-<rect x="11" y="17" width="1" height="1" class="d"/>
-<rect x="12" y="17" width="1" height="1" class="b"/>
-<rect x="13" y="17" width="1" height="1" class="d"/>
-<rect x="14" y="17" width="1" height="1" class="o"/>
-<rect x="20" y="17" width="2" height="1" class="o"/>
-<rect x="22" y="17" width="2" height="1" class="b"/>
-<rect x="24" y="17" width="1" height="1" class="d"/>
-<rect x="25" y="17" width="1" height="1" class="o"/>
-<rect x="32" y="17" width="1" height="1" class="o"/>
-<rect x="33" y="17" width="1" height="1" class="g"/>
-<rect x="34" y="17" width="1" height="1" class="d"/>
-<rect x="35" y="17" width="1" height="1" class="o"/>
-<rect x="4" y="18" width="1" height="1" class="o"/>
-<rect x="5" y="18" width="1" height="1" class="d"/>
-<rect x="6" y="18" width="4" height="1" class="b"/>
-<rect x="10" y="18" width="1" height="1" class="d"/>
-<rect x="11" y="18" width="1" height="1" class="b"/>
-<rect x="12" y="18" width="1" height="1" class="d"/>
-<rect x="13" y="18" width="1" height="1" class="o"/>
-<rect x="22" y="18" width="3" height="1" class="o"/>
-<rect x="32" y="18" width="1" height="1" class="f1"/>
-<rect x="33" y="18" width="1" height="1" class="o"/>
-<rect x="34" y="18" width="1" height="1" class="b"/>
-<rect x="35" y="18" width="1" height="1" class="o"/>
-<rect x="36" y="18" width="1" height="1" class="f1"/>
-<rect x="3" y="19" width="1" height="1" class="o"/>
-<rect x="4" y="19" width="1" height="1" class="d"/>
-<rect x="5" y="19" width="6" height="1" class="b"/>
-<rect x="11" y="19" width="2" height="1" class="d"/>
-<rect x="13" y="19" width="1" height="1" class="o"/>
-<rect x="32" y="19" width="1" height="1" class="f1"/>
-<rect x="33" y="19" width="1" height="1" class="o"/>
-<rect x="34" y="19" width="1" height="1" class="b"/>
-<rect x="35" y="19" width="1" height="1" class="o"/>
-<rect x="36" y="19" width="1" height="1" class="f1"/>
-<rect x="3" y="20" width="1" height="1" class="o"/>
-<rect x="4" y="20" width="1" height="1" class="b"/>
-<rect x="5" y="20" width="1" height="1" class="d"/>
-<rect x="6" y="20" width="3" height="1" class="b"/>
-<rect x="9" y="20" width="1" height="1" class="d"/>
-<rect x="10" y="20" width="1" height="1" class="b"/>
-<rect x="11" y="20" width="1" height="1" class="d"/>
-<rect x="12" y="20" width="1" height="1" class="o"/>
-<rect x="33" y="20" width="1" height="1" class="o"/>
-<rect x="34" y="20" width="1" height="1" class="b"/>
-<rect x="35" y="20" width="1" height="1" class="d"/>
-<rect x="36" y="20" width="1" height="1" class="o"/>
-<rect x="3" y="21" width="1" height="1" class="o"/>
-<rect x="4" y="21" width="1" height="1" class="d"/>
-<rect x="5" y="21" width="2" height="1" class="b"/>
-<rect x="7" y="21" width="1" height="1" class="d"/>
-<rect x="8" y="21" width="3" height="1" class="b"/>
-<rect x="11" y="21" width="1" height="1" class="d"/>
-<rect x="12" y="21" width="1" height="1" class="o"/>
-<rect x="33" y="21" width="1" height="1" class="o"/>
-<rect x="34" y="21" width="1" height="1" class="b"/>
-<rect x="35" y="21" width="1" height="1" class="d"/>
-<rect x="36" y="21" width="1" height="1" class="o"/>
-<rect x="3" y="22" width="1" height="1" class="o"/>
-<rect x="4" y="22" width="1" height="1" class="b"/>
-<rect x="5" y="22" width="1" height="1" class="d"/>
-<rect x="6" y="22" width="4" height="1" class="b"/>
-<rect x="10" y="22" width="2" height="1" class="d"/>
-<rect x="12" y="22" width="1" height="1" class="o"/>
-<rect x="14" y="22" width="1" height="1" class="o"/>
-<rect x="32" y="22" width="1" height="1" class="o"/>
-<rect x="33" y="22" width="2" height="1" class="b"/>
-<rect x="35" y="22" width="1" height="1" class="d"/>
-<rect x="36" y="22" width="1" height="1" class="o"/>
-<rect x="3" y="23" width="1" height="1" class="o"/>
-<rect x="4" y="23" width="1" height="1" class="d"/>
-<rect x="5" y="23" width="6" height="1" class="b"/>
-<rect x="11" y="23" width="1" height="1" class="d"/>
-<rect x="12" y="23" width="2" height="1" class="o"/>
-<rect x="14" y="23" width="1" height="1" class="d"/>
-<rect x="15" y="23" width="1" height="1" class="o"/>
-<rect x="32" y="23" width="1" height="1" class="o"/>
-<rect x="33" y="23" width="2" height="1" class="b"/>
-<rect x="35" y="23" width="1" height="1" class="d"/>
-<rect x="36" y="23" width="1" height="1" class="o"/>
-<rect x="4" y="24" width="1" height="1" class="o"/>
-<rect x="5" y="24" width="1" height="1" class="b"/>
-<rect x="6" y="24" width="1" height="1" class="d"/>
-<rect x="7" y="24" width="1" height="1" class="b"/>
-<rect x="8" y="24" width="1" height="1" class="d"/>
-<rect x="9" y="24" width="2" height="1" class="b"/>
-<rect x="11" y="24" width="1" height="1" class="d"/>
-<rect x="12" y="24" width="1" height="1" class="o"/>
-<rect x="13" y="24" width="1" height="1" class="d"/>
-<rect x="14" y="24" width="2" height="1" class="b"/>
-<rect x="16" y="24" width="1" height="1" class="o"/>
-<rect x="31" y="24" width="1" height="1" class="o"/>
-<rect x="32" y="24" width="2" height="1" class="b"/>
-<rect x="34" y="24" width="1" height="1" class="d"/>
-<rect x="35" y="24" width="1" height="1" class="o"/>
-<rect x="4" y="25" width="1" height="1" class="o"/>
-<rect x="5" y="25" width="1" height="1" class="d"/>
-<rect x="6" y="25" width="1" height="1" class="b"/>
-<rect x="7" y="25" width="1" height="1" class="d"/>
-<rect x="8" y="25" width="4" height="1" class="b"/>
-<rect x="12" y="25" width="1" height="1" class="o"/>
-<rect x="13" y="25" width="3" height="1" class="b"/>
-<rect x="16" y="25" width="1" height="1" class="o"/>
-<rect x="31" y="25" width="1" height="1" class="o"/>
-<rect x="32" y="25" width="2" height="1" class="b"/>
-<rect x="34" y="25" width="1" height="1" class="d"/>
-<rect x="35" y="25" width="1" height="1" class="o"/>
-<rect x="4" y="26" width="1" height="1" class="o"/>
-<rect x="5" y="26" width="2" height="1" class="d"/>
-<rect x="7" y="26" width="1" height="1" class="b"/>
-<rect x="8" y="26" width="1" height="1" class="d"/>
-<rect x="9" y="26" width="6" height="1" class="b"/>
-<rect x="15" y="26" width="3" height="1" class="o"/>
-<rect x="30" y="26" width="1" height="1" class="o"/>
-<rect x="31" y="26" width="2" height="1" class="b"/>
-<rect x="33" y="26" width="2" height="1" class="d"/>
-<rect x="35" y="26" width="1" height="1" class="o"/>
-<rect x="5" y="27" width="1" height="1" class="o"/>
-<rect x="6" y="27" width="1" height="1" class="b"/>
-<rect x="7" y="27" width="1" height="1" class="d"/>
-<rect x="8" y="27" width="5" height="1" class="b"/>
-<rect x="13" y="27" width="3" height="1" class="o"/>
-<rect x="16" y="27" width="1" height="1" class="b"/>
-<rect x="17" y="27" width="1" height="1" class="o"/>
-<rect x="29" y="27" width="1" height="1" class="o"/>
-<rect x="30" y="27" width="3" height="1" class="b"/>
-<rect x="33" y="27" width="1" height="1" class="d"/>
-<rect x="34" y="27" width="1" height="1" class="o"/>
-<rect x="5" y="28" width="1" height="1" class="o"/>
-<rect x="6" y="28" width="2" height="1" class="d"/>
-<rect x="8" y="28" width="1" height="1" class="b"/>
-<rect x="9" y="28" width="1" height="1" class="d"/>
-<rect x="10" y="28" width="4" height="1" class="b"/>
-<rect x="14" y="28" width="1" height="1" class="o"/>
-<rect x="15" y="28" width="1" height="1" class="b"/>
-<rect x="16" y="28" width="1" height="1" class="o"/>
-<rect x="28" y="28" width="1" height="1" class="o"/>
-<rect x="29" y="28" width="3" height="1" class="b"/>
-<rect x="32" y="28" width="2" height="1" class="d"/>
-<rect x="34" y="28" width="1" height="1" class="o"/>
-<rect x="6" y="29" width="1" height="1" class="o"/>
-<rect x="7" y="29" width="1" height="1" class="b"/>
-<rect x="8" y="29" width="1" height="1" class="d"/>
-<rect x="9" y="29" width="6" height="1" class="b"/>
-<rect x="15" y="29" width="1" height="1" class="o"/>
-<rect x="26" y="29" width="2" height="1" class="o"/>
-<rect x="28" y="29" width="3" height="1" class="b"/>
-<rect x="31" y="29" width="2" height="1" class="d"/>
-<rect x="33" y="29" width="1" height="1" class="o"/>
-<rect x="6" y="30" width="1" height="1" class="o"/>
-<rect x="7" y="30" width="2" height="1" class="d"/>
-<rect x="9" y="30" width="1" height="1" class="b"/>
-<rect x="10" y="30" width="1" height="1" class="d"/>
-<rect x="11" y="30" width="5" height="1" class="b"/>
-<rect x="16" y="30" width="3" height="1" class="o"/>
-<rect x="24" y="30" width="2" height="1" class="o"/>
-<rect x="26" y="30" width="5" height="1" class="b"/>
-<rect x="31" y="30" width="2" height="1" class="d"/>
-<rect x="33" y="30" width="1" height="1" class="o"/>
-<rect x="7" y="31" width="1" height="1" class="o"/>
-<rect x="8" y="31" width="2" height="1" class="d"/>
-<rect x="10" y="31" width="1" height="1" class="b"/>
-<rect x="11" y="31" width="1" height="1" class="d"/>
-<rect x="12" y="31" width="7" height="1" class="b"/>
-<rect x="19" y="31" width="5" height="1" class="o"/>
-<rect x="24" y="31" width="5" height="1" class="b"/>
-<rect x="29" y="31" width="3" height="1" class="d"/>
-<rect x="32" y="31" width="1" height="1" class="o"/>
-<rect x="8" y="32" width="1" height="1" class="o"/>
-<rect x="9" y="32" width="2" height="1" class="d"/>
-<rect x="11" y="32" width="1" height="1" class="b"/>
-<rect x="12" y="32" width="1" height="1" class="d"/>
-<rect x="13" y="32" width="14" height="1" class="b"/>
-<rect x="27" y="32" width="1" height="1" class="d"/>
-<rect x="28" y="32" width="1" height="1" class="b"/>
-<rect x="29" y="32" width="2" height="1" class="d"/>
-<rect x="31" y="32" width="1" height="1" class="o"/>
-<rect x="9" y="33" width="1" height="1" class="o"/>
-<rect x="10" y="33" width="3" height="1" class="d"/>
-<rect x="13" y="33" width="1" height="1" class="b"/>
-<rect x="14" y="33" width="1" height="1" class="d"/>
-<rect x="15" y="33" width="12" height="1" class="b"/>
-<rect x="27" y="33" width="3" height="1" class="d"/>
-<rect x="30" y="33" width="1" height="1" class="o"/>
-<rect x="10" y="34" width="2" height="1" class="o"/>
-<rect x="12" y="34" width="3" height="1" class="d"/>
-<rect x="15" y="34" width="1" height="1" class="b"/>
-<rect x="16" y="34" width="1" height="1" class="d"/>
-<rect x="17" y="34" width="1" height="1" class="b"/>
-<rect x="18" y="34" width="1" height="1" class="d"/>
-<rect x="19" y="34" width="3" height="1" class="b"/>
-<rect x="22" y="34" width="1" height="1" class="d"/>
-<rect x="23" y="34" width="1" height="1" class="b"/>
-<rect x="24" y="34" width="4" height="1" class="d"/>
-<rect x="28" y="34" width="2" height="1" class="o"/>
-<rect x="12" y="35" width="2" height="1" class="o"/>
-<rect x="14" y="35" width="2" height="1" class="d"/>
-<rect x="16" y="35" width="1" height="1" class="b"/>
-<rect x="17" y="35" width="1" height="1" class="d"/>
-<rect x="18" y="35" width="1" height="1" class="b"/>
-<rect x="19" y="35" width="2" height="1" class="d"/>
-<rect x="21" y="35" width="1" height="1" class="b"/>
-<rect x="22" y="35" width="4" height="1" class="d"/>
-<rect x="26" y="35" width="2" height="1" class="o"/>
-<rect x="14" y="36" width="3" height="1" class="o"/>
-<rect x="17" y="36" width="6" height="1" class="d"/>
-<rect x="23" y="36" width="3" height="1" class="o"/>
-<rect x="17" y="37" width="6" height="1" class="o"/>
+<path class="o" d="M17 6h3v1h-3zM25 7h2v1h-2zM11 8h2v1h-2zM27 8h5v1h-5zM10 9h1v1h-1zM32 9h1v1h-1zM9 10h1v1h-1zM26 10h1v1h-1zM33 10h1v1h-1zM25 11h1v1h-1zM31 11h1v1h-1zM34 11h1v1h-1zM20 12h1v1h-1zM25 12h1v1h-1zM30 12h2v1h-2zM33 12h1v1h-1zM35 12h1v1h-1zM19 13h1v1h-1zM23 13h1v1h-1zM25 13h1v1h-1zM28 13h2v1h-2zM35 13h1v1h-1zM5 14h1v1h-1zM18 14h1v1h-1zM22 14h5v1h-5zM30 14h5v1h-5zM5 15h1v1h-1zM17 15h2v1h-2zM21 15h2v1h-2zM27 15h2v1h-2zM32 15h1v1h-1zM34 15h1v1h-1zM4 16h1v1h-1zM15 16h2v1h-2zM18 16h2v1h-2zM23 16h2v1h-2zM29 16h4v1h-4zM34 16h1v1h-1zM4 17h1v1h-1zM14 17h1v1h-1zM20 17h2v1h-2zM25 17h1v1h-1zM32 17h1v1h-1zM35 17h1v1h-1zM4 18h1v1h-1zM13 18h1v1h-1zM22 18h3v1h-3zM33 18h1v1h-1zM35 18h1v1h-1zM3 19h1v1h-1zM13 19h1v1h-1zM33 19h1v1h-1zM35 19h1v1h-1zM3 20h1v1h-1zM12 20h1v1h-1zM33 20h1v1h-1zM36 20h1v1h-1zM3 21h1v1h-1zM12 21h1v1h-1zM33 21h1v1h-1zM36 21h1v1h-1zM3 22h1v1h-1zM12 22h1v1h-1zM14 22h1v1h-1zM32 22h1v1h-1zM36 22h1v1h-1zM3 23h1v1h-1zM12 23h2v1h-2zM15 23h1v1h-1zM32 23h1v1h-1zM36 23h1v1h-1zM4 24h1v1h-1zM12 24h1v1h-1zM16 24h1v1h-1zM31 24h1v1h-1zM35 24h1v1h-1zM4 25h1v1h-1zM12 25h1v1h-1zM16 25h1v1h-1zM31 25h1v1h-1zM35 25h1v1h-1zM4 26h1v1h-1zM15 26h3v1h-3zM30 26h1v1h-1zM35 26h1v1h-1zM5 27h1v1h-1zM13 27h3v1h-3zM17 27h1v1h-1zM29 27h1v1h-1zM34 27h1v1h-1zM5 28h1v1h-1zM14 28h1v1h-1zM16 28h1v1h-1zM28 28h1v1h-1zM34 28h1v1h-1zM6 29h1v1h-1zM15 29h1v1h-1zM26 29h2v1h-2zM33 29h1v1h-1zM6 30h1v1h-1zM16 30h3v1h-3zM24 30h2v1h-2zM33 30h1v1h-1zM7 31h1v1h-1zM19 31h5v1h-5zM32 31h1v1h-1zM8 32h1v1h-1zM31 32h1v1h-1zM9 33h1v1h-1zM30 33h1v1h-1zM10 34h2v1h-2zM28 34h2v1h-2zM12 35h2v1h-2zM26 35h2v1h-2zM14 36h3v1h-3zM23 36h3v1h-3zM17 37h6v1h-6z"/>
+<path class="g" d="M17 7h1v1h-1zM19 7h1v1h-1zM16 8h2v1h-2zM19 8h2v1h-2zM24 8h3v1h-3zM12 9h5v1h-5zM20 9h5v1h-5zM9 11h1v1h-1zM9 12h1v1h-1zM9 13h1v1h-1zM7 14h3v1h-3zM6 15h2v1h-2zM33 17h1v1h-1z"/>
+<path class="b" d="M18 7h1v1h-1zM18 8h1v1h-1zM11 9h1v1h-1zM17 9h3v1h-3zM25 9h7v1h-7zM10 10h7v1h-7zM18 10h8v1h-8zM27 10h1v1h-1zM29 10h4v1h-4zM10 11h4v1h-4zM15 11h1v1h-1zM17 11h4v1h-4zM23 11h2v1h-2zM26 11h3v1h-3zM30 11h1v1h-1zM32 11h2v1h-2zM10 12h3v1h-3zM14 12h1v1h-1zM16 12h3v1h-3zM21 12h2v1h-2zM24 12h1v1h-1zM26 12h4v1h-4zM32 12h1v1h-1zM34 12h1v1h-1zM10 13h2v1h-2zM13 13h1v1h-1zM15 13h1v1h-1zM17 13h1v1h-1zM20 13h3v1h-3zM27 13h1v1h-1zM30 13h5v1h-5zM10 14h1v1h-1zM12 14h3v1h-3zM16 14h1v1h-1zM19 14h2v1h-2zM28 14h2v1h-2zM8 15h4v1h-4zM13 15h1v1h-1zM15 15h1v1h-1zM19 15h2v1h-2zM30 15h1v1h-1zM6 16h4v1h-4zM11 16h2v1h-2zM21 16h2v1h-2zM33 16h1v1h-1zM5 17h4v1h-4zM10 17h1v1h-1zM12 17h1v1h-1zM22 17h2v1h-2zM6 18h4v1h-4zM11 18h1v1h-1zM34 18h1v1h-1zM5 19h6v1h-6zM34 19h1v1h-1zM4 20h1v1h-1zM6 20h3v1h-3zM10 20h1v1h-1zM34 20h1v1h-1zM5 21h2v1h-2zM8 21h3v1h-3zM34 21h1v1h-1zM4 22h1v1h-1zM6 22h4v1h-4zM33 22h2v1h-2zM5 23h6v1h-6zM33 23h2v1h-2zM5 24h1v1h-1zM7 24h1v1h-1zM9 24h2v1h-2zM14 24h2v1h-2zM32 24h2v1h-2zM6 25h1v1h-1zM8 25h4v1h-4zM13 25h3v1h-3zM32 25h2v1h-2zM7 26h1v1h-1zM9 26h6v1h-6zM31 26h2v1h-2zM6 27h1v1h-1zM8 27h5v1h-5zM16 27h1v1h-1zM30 27h3v1h-3zM8 28h1v1h-1zM10 28h4v1h-4zM15 28h1v1h-1zM29 28h3v1h-3zM7 29h1v1h-1zM9 29h6v1h-6zM28 29h3v1h-3zM9 30h1v1h-1zM11 30h5v1h-5zM26 30h5v1h-5zM10 31h1v1h-1zM12 31h7v1h-7zM24 31h5v1h-5zM11 32h1v1h-1zM13 32h14v1h-14zM28 32h1v1h-1zM13 33h1v1h-1zM15 33h12v1h-12zM15 34h1v1h-1zM17 34h1v1h-1zM19 34h3v1h-3zM23 34h1v1h-1zM16 35h1v1h-1zM18 35h1v1h-1zM21 35h1v1h-1z"/>
+<path class="d" d="M17 10h1v1h-1zM28 10h1v1h-1zM14 11h1v1h-1zM16 11h1v1h-1zM21 11h2v1h-2zM29 11h1v1h-1zM13 12h1v1h-1zM15 12h1v1h-1zM19 12h1v1h-1zM23 12h1v1h-1zM12 13h1v1h-1zM14 13h1v1h-1zM16 13h1v1h-1zM18 13h1v1h-1zM24 13h1v1h-1zM26 13h1v1h-1zM11 14h1v1h-1zM15 14h1v1h-1zM17 14h1v1h-1zM21 14h1v1h-1zM27 14h1v1h-1zM12 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM29 15h1v1h-1zM31 15h1v1h-1zM33 15h1v1h-1zM5 16h1v1h-1zM10 16h1v1h-1zM13 16h2v1h-2zM20 16h1v1h-1zM9 17h1v1h-1zM11 17h1v1h-1zM13 17h1v1h-1zM24 17h1v1h-1zM34 17h1v1h-1zM5 18h1v1h-1zM10 18h1v1h-1zM12 18h1v1h-1zM4 19h1v1h-1zM11 19h2v1h-2zM5 20h1v1h-1zM9 20h1v1h-1zM11 20h1v1h-1zM35 20h1v1h-1zM4 21h1v1h-1zM7 21h1v1h-1zM11 21h1v1h-1zM35 21h1v1h-1zM5 22h1v1h-1zM10 22h2v1h-2zM35 22h1v1h-1zM4 23h1v1h-1zM11 23h1v1h-1zM14 23h1v1h-1zM35 23h1v1h-1zM6 24h1v1h-1zM8 24h1v1h-1zM11 24h1v1h-1zM13 24h1v1h-1zM34 24h1v1h-1zM5 25h1v1h-1zM7 25h1v1h-1zM34 25h1v1h-1zM5 26h2v1h-2zM8 26h1v1h-1zM33 26h2v1h-2zM7 27h1v1h-1zM33 27h1v1h-1zM6 28h2v1h-2zM9 28h1v1h-1zM32 28h2v1h-2zM8 29h1v1h-1zM31 29h2v1h-2zM7 30h2v1h-2zM10 30h1v1h-1zM31 30h2v1h-2zM8 31h2v1h-2zM11 31h1v1h-1zM29 31h3v1h-3zM9 32h2v1h-2zM12 32h1v1h-1zM27 32h1v1h-1zM29 32h2v1h-2zM10 33h3v1h-3zM14 33h1v1h-1zM27 33h3v1h-3zM12 34h3v1h-3zM16 34h1v1h-1zM18 34h1v1h-1zM22 34h1v1h-1zM24 34h4v1h-4zM14 35h2v1h-2zM17 35h1v1h-1zM19 35h2v1h-2zM22 35h4v1h-4zM17 36h6v1h-6z"/>
+<path class="f1" d="M35 16h1v1h-1zM32 18h1v1h-1zM36 18h1v1h-1zM32 19h1v1h-1zM36 19h1v1h-1z"/>
+<g class="fl k0">
+  <path class="f1" d="M7 6h1v1h-1zM6 7h1v1h-1zM5 8h1v1h-1zM7 8h1v1h-1zM5 9h1v1h-1zM5 10h1v1h-1zM8 10h1v1h-1zM4 11h1v1h-1zM8 11h1v1h-1zM5 12h1v1h-1zM5 13h1v1h-1zM8 13h1v1h-1zM6 14h1v1h-1z"/>
+  <path class="f2" d="M6 8h1v1h-1zM6 9h2v1h-2zM6 10h2v1h-2zM5 11h1v1h-1zM7 11h1v1h-1zM8 12h1v1h-1zM6 13h1v1h-1z"/>
+  <path class="f3" d="M6 11h1v1h-1zM6 12h2v1h-2zM7 13h1v1h-1z"/>
+</g>
+<g class="fl k1">
+  <path class="f1" d="M13 2h1v1h-1zM14 3h1v1h-1zM13 4h1v1h-1zM15 4h1v1h-1zM13 5h1v1h-1zM15 5h1v1h-1zM12 6h1v1h-1zM16 6h1v1h-1zM12 7h1v1h-1zM16 7h1v1h-1zM13 8h1v1h-1zM15 8h1v1h-1z"/>
+  <path class="f2" d="M14 4h1v1h-1zM14 5h1v1h-1zM13 6h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1z"/>
+  <path class="f3" d="M14 6h1v1h-1zM13 7h2v1h-2zM14 8h1v1h-1z"/>
+</g>
+<g class="fl k2">
+  <path class="f1" d="M21 2h1v1h-1zM22 3h1v1h-1zM23 4h1v1h-1zM20 5h1v1h-1zM23 5h1v1h-1zM20 6h1v1h-1zM24 6h1v1h-1zM20 7h1v1h-1zM24 7h1v1h-1zM21 8h1v1h-1zM23 8h1v1h-1z"/>
+  <path class="f2" d="M21 3h1v1h-1zM21 4h2v1h-2zM21 5h2v1h-2zM21 6h1v1h-1zM23 6h1v1h-1zM23 7h1v1h-1z"/>
+  <path class="f3" d="M22 6h1v1h-1zM21 7h2v1h-2zM22 8h1v1h-1z"/>
+</g>
+<g class="fl k3">
+  <path class="f1" d="M27 2h1v1h-1zM28 3h1v1h-1zM29 4h1v1h-1zM26 5h1v1h-1zM29 5h1v1h-1zM26 6h1v1h-1zM30 6h1v1h-1zM30 7h1v1h-1z"/>
+  <path class="f2" d="M27 3h1v1h-1zM27 4h2v1h-2zM27 5h2v1h-2zM27 6h1v1h-1zM29 6h1v1h-1zM29 7h1v1h-1z"/>
+  <path class="f3" d="M28 6h1v1h-1zM27 7h2v1h-2z"/>
+</g>
 </svg>
 <pre id="logo">
 ███████╗███╗   ███╗██████╗ ██████╗ ██████╗
