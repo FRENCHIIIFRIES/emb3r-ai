@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.27.3 — the coil comes inside
+
+The coiled salamander was drawn for the taskbar and stayed there; the header kept the long side-on drawing. It is the mark in the application now too, square beside the six-line wordmark rather than running most of its width.
+
+The colouring changed with it. The old header mark took the accent in its flames only and kept a neutral grey body, on the reasoning that a fully tinted creature stops reading as an animal at some hues. That is still true of a grey body with coloured fire — but a salamander that is *made* of fire has no such problem, so here the whole creature burns in whatever colour you picked: body in dark shades of it, flames bright, five steps from the one value.
+
+The outline is the exception and stays near-black at every hue. It is what holds the silhouette together, and an outline that shifts with the fill stops being an outline.
+
+The icon keeps its fixed ember. It sits on a desktop nobody controls, so it cannot borrow a colour that only exists inside the app.
+
 ## v1.27.2 — the salamander is alight
 
 The coiled icon had a neutral grey body, which meant the creature read as a dark ring with three flames balanced on top of it rather than as something burning. Its body is coal now — deep in the shadow, lit along the spine, brightest where the flames meet it — and the fire runs further round the coil.
