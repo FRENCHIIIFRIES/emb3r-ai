@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.27.2 — the salamander is alight
+
+The coiled icon had a neutral grey body, which meant the creature read as a dark ring with three flames balanced on top of it rather than as something burning. Its body is coal now — deep in the shadow, lit along the spine, brightest where the flames meet it — and the fire runs further round the coil.
+
+The new flames were not drawn by hand. A first attempt grew them outward from the ring a cell at a time and produced thin diagonal dashes: joined to the body, and nothing like fire. The flames already in the drawing are five cells wide and taper, so one of them is lifted out of the artwork and stamped where the fire was missing. The shape then matches because it is the same shape, not because it was judged to be close enough.
+
+Where it goes is measured too. The template needs seven rows above the ring, and only part of the upper arc has them; a flame with its tip sliced off by the edge of the icon reads as damage, so anywhere it would not fit whole is refused rather than trimmed.
+
+The outline stays near-black. Warming that as well would have cost the silhouette at sixteen pixels, which is the size this drawing exists for.
+
 ## v1.27.1 — an icon that fills its square
 
 The salamander is drawn side-on, which makes it nearly twice as wide as it is tall. Dropped into a square icon that is a hard ceiling: at full width it still only reaches half the height, so next to something like Chrome's circle it looks half the size. Rotating it diagonally buys 5% and ruins the pixel grid. Cropping to the head makes it legible and unidentifiable. There is no arrangement of a 2:1 drawing that fills a square.

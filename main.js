@@ -93,6 +93,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.27.2",
+    added: [],
+    fixed: [
+      "The icon salamander is alight. Its body was neutral grey, so the creature read as a dark ring with three flames balanced on it; the body is burning coal now, and the fire runs further round the coil.",
+    ] },
   { version: "1.27.1",
     added: [],
     fixed: [
