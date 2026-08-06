@@ -391,12 +391,82 @@ pre{
     transition: opacity .18s ease, transform .18s ease;
 }
 
+/* Who is speaking.
+
+   Measured before this: the two speakers' text sat at 1.14:1 against each
+   other - 17.4 and 15.3 against the background, so each was perfectly legible
+   and they were nearly identical to one another - and there was 0px between
+   message blocks. A transcript read as one wall, and the only reliable cue was
+   reading the word at the start of the line.
+
+   Bubbles are what every other chat app does and would be wrong here: this is
+   a terminal and the prompt is its vernacular. So the prompt stays and the
+   speaker changes. Ember is led by the creature, you are led by words. One is
+   an animal and one is text, which no longer depends on two similar greens. */
+#chat .you,
+#chat .bot{
+    display:flex;
+    gap:9px;
+    align-items:flex-start;
+    border-left:2px solid transparent;
+    padding-left:10px;
+}
+
+#chat .you + .you,
+#chat .you + .bot,
+#chat .bot + .you,
+#chat .bot + .bot{
+    margin-top:12px;
+}
+
+#chat .prompt{
+    flex:0 0 auto;
+    white-space:nowrap;
+    opacity:.72;
+}
+
+#chat .coilWrap{
+    display:inline-flex;
+    align-items:center;
+    /* matches the first text line, so the mark sits on it rather than above */
+    height:1.42em;
+    opacity:1;
+}
+
+#chat .coilGlyph{
+    width:17px;
+    height:17px;
+    display:block;
+}
+
+/* A reply that came from the web burns brighter, which is the same thing the
+   fire in the header means. One vocabulary, used twice. */
+#chat .coilWrap.web .coilGlyph{
+    filter:brightness(1.35) saturate(1.2);
+}
+
+/* The clone is a still picture. Twenty breathing coils down a transcript would
+   be a fidget; the header keeps the animation, where it reports something. */
+#chat .coilGlyph .fl,
+#chat .coilGlyph .f3,
+#chat .coilGlyph .g{
+    animation:none;
+}
+
 #chat .you{
     color:var(--user-text-color);
+    border-left-color:color-mix(in srgb, var(--user-text-color) 55%, transparent);
 }
 
 #chat .bot{
     color:var(--text-color);
+    border-left-color:color-mix(in srgb, var(--text-color) 55%, transparent);
+}
+
+/* long lines are harder to track back to the next line's start, and the window
+   only gets wider */
+#chat .msgText{
+    max-width:68ch;
 }
 
 #chat .err{
@@ -1383,6 +1453,41 @@ pre{
     color:#ff8c66;
 }
 
+/* There were no focus styles at all in this stylesheet, so a keyboard user had
+   no way to tell where they were. :focus-visible rather than :focus, so the
+   ring appears for the keyboard and not on every mouse click. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+canvas:focus-visible,
+[tabindex]:focus-visible,
+/* #input sets outline:none, and an id beats a bare element selector - so the
+   message box, the one control everybody uses, was the single field this rule
+   did not reach. Named explicitly rather than fought with !important. */
+#input:focus-visible{
+    outline:2px solid var(--text-color);
+    outline-offset:2px;
+    border-radius:2px;
+}
+
+/* the settings sidebar entries are the one place a 2px offset would collide
+   with the neighbouring row */
+.settingsTab:focus-visible{
+    outline-offset:-2px;
+}
+
+/* Visually hidden, still read aloud. The coil that leads Ember's replies says
+   nothing to a screen reader, so the word rides along beside it. */
+.srOnly{
+    position:absolute;
+    width:1px; height:1px;
+    margin:-1px; padding:0; border:0;
+    clip-path:inset(50%);
+    overflow:hidden;
+    white-space:nowrap;
+}
+
 /* and the label beside it must not take the rest of the row */
 #memoryRow label{
     width:auto;
@@ -2360,6 +2465,7 @@ pre{
             <input type="text" id="accentHex" placeholder="#7CFF9E" spellcheck="false"
                    autocomplete="off" maxlength="7">
             <button id="accentHexApply">Use this colour</button>
+            <button id="accentReset">Reset to default</button>
         </div>
         <div id="accentHexStatus"></div>
 

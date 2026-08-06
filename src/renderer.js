@@ -337,14 +337,57 @@ function makeCopyButton(copyText) {
 
 // chat lines only, not error/system notices - those are not worth copying and
 // a button on every line would be noise
-function append(kind, who, text, { copyable = false } = {}) {
+// The speaker's mark, cloned from the header rather than drawn again. One copy
+// of the artwork in the document means the glyph cannot drift from the mark it
+// is meant to be, and the merged-path version is 17 nodes rather than 418.
+//
+// The clone loses the id (ids must be unique) and the animation: twenty
+// breathing coils in a transcript would be a fidget, not a status light. The
+// header keeps the breathing, because there it means something.
+function coilPrompt(fromWeb) {
+  const wrap = document.createElement("span");
+  wrap.className = fromWeb ? "prompt coilWrap web" : "prompt coilWrap";
+  const mark = document.getElementById("logoMark");
+  if (mark) {
+    const glyph = mark.cloneNode(true);
+    glyph.removeAttribute("id");
+    glyph.setAttribute("class", "coilGlyph");
+    glyph.setAttribute("aria-hidden", "true");
+    wrap.appendChild(glyph);
+  }
+  // the coil carries nothing to a screen reader, so the word still goes in
+  const sr = document.createElement("span");
+  sr.className = "srOnly";
+  sr.textContent = fromWeb ? "ember, from the web:" : "ember:";
+  wrap.appendChild(sr);
+  return wrap;
+}
+
+function textPrompt(who) {
+  const el = document.createElement("span");
+  el.className = "prompt";
+  el.textContent = `${who} >`;
+  return el;
+}
+
+// One place decides what a message line is made of, so the three callers that
+// build one cannot drift apart. `speaker` is "ember" or "web" for the coil,
+// anything else for a text prompt.
+function messageLine(kind, speaker) {
   const line = document.createElement("div");
   line.className = kind;
-
+  line.appendChild(speaker === "ember" || speaker === "web"
+    ? coilPrompt(speaker === "web")
+    : textPrompt(speaker));
   const span = document.createElement("span");
   span.className = "msgText";
-  span.textContent = `${who} > ${text}`;
   line.appendChild(span);
+  return { line, span };
+}
+
+function append(kind, who, text, { copyable = false } = {}) {
+  const { line, span } = messageLine(kind, who);
+  span.textContent = text;
 
   if (copyable) line.appendChild(makeCopyButton(() => text));
 
@@ -508,7 +551,7 @@ async function submitToModel(messageToSend, opts, ui = {}) {
 
   // reset to the default in case the previous exchange left it labelled for
   // Gemini - onAnswerSource corrects it again before any token arrives
-  currentAnswerPrefix = "ember > ";
+  currentAnswerSource = "ember";
 
   // the reply is written into this line as tokens arrive rather than appended
   // once at the end, so there is something to watch during a slow generation
@@ -582,16 +625,13 @@ let streamTextEl = null;
 
 // set by emb3r:answer-source before generation starts, so the line already
 // carries the right label by the time the first token arrives
-let currentAnswerPrefix = "ember > ";
+// which mark leads Ember's next reply: the plain coil, or the flared one that
+// means the answer came from the web. It used to be the literal prefix string
+// that was written into the text; now the prompt is its own element.
+let currentAnswerSource = "ember";
 
 function beginStream() {
-  const line = document.createElement("div");
-  line.className = "bot";
-
-  const span = document.createElement("span");
-  span.className = "msgText";
-  span.textContent = currentAnswerPrefix;
-  line.appendChild(span);
+  const { line, span } = messageLine("bot", currentAnswerSource);
   streamTextEl = span;
 
   // reads streamText live, so it copies whatever has arrived by the time the
@@ -614,7 +654,7 @@ function writeStream(chunk) {
   streamText += chunk;
   if (!streamTextEl) return;
   // textContent, never innerHTML - model output is untrusted text
-  streamTextEl.textContent = `${currentAnswerPrefix}${streamText}`;
+  streamTextEl.textContent = streamText;
   chat.scrollTop = chat.scrollHeight;
 }
 
@@ -633,8 +673,14 @@ function appendSources(sources) {
 }
 
 window.emb3r.onAnswerSource(({ source }) => {
-  currentAnswerPrefix = source === "gemini" ? "ember (web) > " : "ember > ";
-  if (streamTextEl) streamTextEl.textContent = currentAnswerPrefix;
+  currentAnswerSource = source === "gemini" ? "web" : "ember";
+  // the line already exists, so its prompt is replaced in place
+  if (streamTextEl) {
+    streamTextEl.textContent = "";
+    const line = streamTextEl.parentElement;
+    const old = line && line.querySelector(".prompt");
+    if (old) line.replaceChild(coilPrompt(currentAnswerSource === "web"), old);
+  }
 });
 
 // a plain append() would land these below the (already on-screen, still
@@ -1536,12 +1582,8 @@ let activeConversationId = null;
 // "(web)" label a live Gemini reply gets, so scrolling back still shows
 // which answers left the machine - not just the live moment it happened.
 function appendStaticBotLine(text, source) {
-  const line = document.createElement("div");
-  line.className = "bot";
-  const span = document.createElement("span");
-  span.className = "msgText";
-  span.textContent = `${source === "gemini" ? "ember (web) > " : "ember > "}${text}`;
-  line.appendChild(span);
+  const { line, span } = messageLine("bot", source === "gemini" ? "web" : "ember");
+  span.textContent = text;
   line.appendChild(makeCopyButton(() => text));
   chat.appendChild(line);
 }
@@ -3307,8 +3349,14 @@ const wheelSize = wheelCanvas.width;
 const center = wheelSize / 2;
 const radius = center - 2;
 
-let currentHue = 140;
-let currentSat = 80;
+// The colour the app ships with, named once so the wheel's starting position
+// and the reset button cannot disagree about what "default" means.
+const DEFAULT_HUE = 140;
+const DEFAULT_SAT = 80;
+const DEFAULT_LIGHTNESS = 55;   // matches the lightness slider's value in the markup
+
+let currentHue = DEFAULT_HUE;
+let currentSat = DEFAULT_SAT;
 
 function drawWheel() {
     const img = wheelCtx.createImageData(wheelSize, wheelSize);
@@ -3515,6 +3563,23 @@ function applyHex(raw) {
         ? `Using ${applied} — ${gotL > askedL ? "lightened" : "darkened"} from #${v.toUpperCase()} to stay readable on this theme.`
         : `Using ${applied}.`);
 }
+
+// Personality and the Gemini model both have a way back to the default; the
+// accent did not, and it is the easiest of the three to wreck. Typing a very
+// dark colour gets it lifted to something readable but grey, and that grey
+// then persists across every launch with no obvious way out.
+const accentReset = document.getElementById("accentReset");
+if (accentReset) accentReset.addEventListener("click", () => {
+    localStorage.removeItem("emb3rAccentColor");
+    currentHue = DEFAULT_HUE;
+    currentSat = DEFAULT_SAT;
+    lightnessInput.value = String(DEFAULT_LIGHTNESS);
+    document.documentElement.style.removeProperty("--text-color");
+    document.documentElement.style.removeProperty("--user-text-color");
+    document.documentElement.style.removeProperty("--hover-color");
+    drawWheel();
+    say("Back to the colour it ships with.");
+});
 
 if (accentHexApply) accentHexApply.addEventListener("click", () => applyHex(accentHexInput.value));
 if (accentHexInput) accentHexInput.addEventListener("keydown", (e) => {
