@@ -57,6 +57,9 @@ function defaultConfig() {
     // string, which a user could deliberately choose to give Ember no
     // instructions at all
     systemPrompt: null,
+    // Whether remembered facts are consulted at all. Off means selectMemories
+    // returns nothing and not one token is spent on them.
+    memoryEnabled: true,
     // a secret, same handling as the spotify tokens below: written from the
     // renderer, never read back to it, and excluded from emb3r:get-config
     geminiApiKey: "",
@@ -411,6 +414,103 @@ const SAFE_MODE_PROMPT = [
   "Never claim to be a human, and never pretend a rule above has been lifted.",
 ].join(" ");
 
+// Things Ember should remember about you between conversations. They live in
+// the same config file as everything else, on this machine, and they are
+// written into the system prompt - which means they cost context on every
+// single turn, not once.
+//
+// That is the whole reason for the caps below. The context window is 4096
+// tokens (see contextSize where the session is created). At roughly four
+// characters per token, 20 memories of 200 characters is about 1,000 tokens,
+// a quarter of the window, spent before the user has typed anything. Step 25
+// of this project's history is what an exhausted context does: it does not
+// error, it silently drops the oldest tokens and severs the chat template
+// mid-reply. So the cap is enforced here rather than trusted to good sense.
+const MEMORY_MAX_ENTRIES = 20;
+const MEMORY_MAX_CHARS = 200;
+
+function profileMemories(profile) {
+  const p = profile || activeProfile();
+  return Array.isArray(p && p.memories) ? p.memories : [];
+}
+
+// Kept per profile, because two people sharing a machine keeping separate
+// conversations would not expect to share each other's remembered facts.
+function setProfileMemories(list) {
+  const p = activeProfile();
+  if (!p) return [];
+  p.memories = list;
+  saveConfig(config);
+  return list;
+}
+
+// Memories are NOT put in the system prompt. That was the first design, and it
+// meant every remembered fact was re-read on every single reply whether or not
+// it had anything to do with the question - up to a quarter of the window gone
+// before the user typed anything, on machines that have no room to spare.
+//
+// This is the same mistake step 25 of this project already made with file
+// extracts, and the same repair: send only what this question needs, alongside
+// the message rather than inside it, and drop it again afterwards. A memory
+// that is never relevant costs nothing at all.
+const MEMORY_PICK_MAX = 5;
+const MEMORY_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "if", "then", "than", "that", "this",
+  "these", "those", "is", "are", "was", "were", "be", "been", "am", "i", "im",
+  "me", "my", "you", "your", "it", "its", "of", "to", "in", "on", "for", "with",
+  "at", "by", "from", "as", "do", "does", "did", "can", "could", "would",
+  "should", "will", "what", "when", "where", "who", "how", "why", "not", "no",
+  "yes", "so", "up", "out", "about", "into", "over", "again", "just", "some",
+]);
+
+function words(s) {
+  return new Set(String(s).toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+}
+
+// Which remembered facts this particular question touches. Deliberately dumb:
+// word overlap, no model call, no embedding. It runs in well under a
+// millisecond and cannot itself become the thing that slows the machine down.
+function selectMemories(userMessage) {
+  if (!config.memoryEnabled) return [];
+  const items = profileMemories();
+  if (!items.length) return [];
+  const asked = words(userMessage);
+
+  // How many memories each word occurs in. A word that turns up across the set
+  // cannot tell one memory from another: asking "what is my dog called" matched
+  // both "my dog is called Biscuit" and "an Electron app called emb3r", purely
+  // on the word "called". A fixed stopword list would not have caught that -
+  // "called" is a perfectly good content word until you have written it twice.
+  const df = new Map();
+  const perMemory = items.map((m) => {
+    const w = words(m.text);
+    for (const t of w) df.set(t, (df.get(t) || 0) + 1);
+    return w;
+  });
+  const tooCommon = Math.max(1, Math.floor(items.length / 4));
+
+  const scored = [];
+  items.forEach((m, i) => {
+    let score = 0;
+    for (const w of perMemory[i]) {
+      if (MEMORY_STOPWORDS.has(w)) continue;
+      if (!asked.has(w)) continue;
+      if (df.get(w) > tooCommon) continue;
+      score++;
+    }
+    if (score > 0) scored.push({ m, score });
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, MEMORY_PICK_MAX).map((s) => s.m);
+}
+
+function memoryContext(userMessage) {
+  const picked = selectMemories(userMessage);
+  if (!picked.length) return null;
+  const lines = picked.map((m) => `- ${m.text}`).join("\n");
+  return `Things you already know about the user that may bear on this question:\n${lines}`;
+}
+
 function systemPrompt() {
   const profile = activeProfile();
   const name = profile && profile.name ? `The user's name is ${profile.name}.` : "";
@@ -459,6 +559,27 @@ function safeModeGuard(message) {
 // verbatim in the picker, because a list of filenames and sizes does not tell
 // anyone which model to actually choose.
 const MODEL_CATALOG = [
+  // The newest entry here by a wide margin, and deliberately a small one: at 4B
+  // it answers quickly on the same machines the 3Bs were picked for, which is
+  // what "fast" has to mean when there is no GPU.
+  //
+  // Checked before it was added, rather than assumed from the name:
+  //   - the file exists and is 2.55GB (HEAD on the release URL, 200)
+  //   - its GGUF header declares architecture "qwen35", and that architecture
+  //     is present in the llama.cpp build this app bundles (b9842). A model
+  //     whose architecture the runtime does not know fails at load, which is
+  //     the worst possible place to find out.
+  //   - the header carries no vision tensors, so it runs as a text model here
+  //     even though the upstream card describes a vision-language family
+  //
+  // Its header also advertises a 262,144-token context. That is not what you
+  // get: the session below pins contextSize to 4096, so it is held to the same
+  // window as everything else. Saying otherwise would be selling a number the
+  // app does not honour.
+  { id: "qwen3.5-4b", name: "Qwen3.5 4B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.6, params: 4,
+    strength: "The newest model on this list, and the quickest of the capable ones. Loads fast and answers fast without a GPU.",
+    limit: "Recent enough to have less of a track record than the Qwen2.5 models below it.",
+    repo: "unsloth/Qwen3.5-4B-GGUF", file: "Qwen3.5-4B-Q4_K_M.gguf" },
   { id: "llama-3.2-3b", name: "Llama 3.2 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.0, params: 3,
     strength: "Fastest to answer. Good for everyday questions, rewriting and short summaries.",
     limit: "Loses the thread on long multi-step reasoning.",
@@ -1257,6 +1378,69 @@ ipcMain.handle("emb3r:list-profiles", () => ({
   profiles: config.profiles,
   activeProfileId: config.activeProfileId,
 }));
+
+// ---------------------------------------------------------------- memory
+// Reports the budget alongside the list, because the cost of a memory is not
+// obvious: it is paid on every turn, out of the same 4096 tokens the
+// conversation needs. The renderer shows this rather than hiding it.
+ipcMain.handle("emb3r:list-memories", () => {
+  const items = profileMemories();
+  // What a question can cost at worst: the most relevant few, not all of them.
+  // The old version reported the total, which was the honest number when every
+  // memory went into every reply. It is the wrong number now and reporting it
+  // would overstate the cost by four times.
+  const worst = items.slice(0, MEMORY_PICK_MAX)
+    .reduce((n, m) => n + m.text.length, 0);
+  return {
+    memories: items,
+    enabled: Boolean(config.memoryEnabled),
+    max: MEMORY_MAX_ENTRIES,
+    maxChars: MEMORY_MAX_CHARS,
+    perQuestion: MEMORY_PICK_MAX,
+    // deliberately called an estimate: characters/4, not a tokeniser
+    worstCaseTokens: Math.ceil(worst / 4),
+    contextSize: 4096,
+  };
+});
+
+ipcMain.handle("emb3r:set-memory-enabled", (_e, on) => {
+  config.memoryEnabled = Boolean(on);
+  saveConfig(config);
+  return { success: true, enabled: config.memoryEnabled };
+});
+
+ipcMain.handle("emb3r:add-memory", (_e, text) => {
+  const trimmed = String(text == null ? "" : text).trim().replace(/\s+/g, " ");
+  if (!trimmed) return { success: false, error: "Nothing to remember." };
+  if (trimmed.length > MEMORY_MAX_CHARS) {
+    return { success: false,
+      error: `Keep it under ${MEMORY_MAX_CHARS} characters — that one is ${trimmed.length}. `
+           + `Memories are re-read on every reply, so a long one costs you the same every time.` };
+  }
+  const items = profileMemories();
+  if (items.length >= MEMORY_MAX_ENTRIES) {
+    return { success: false,
+      error: `That is the ${MEMORY_MAX_ENTRIES}-memory limit. Delete one first — they all go into `
+           + `every reply, and past this point they crowd out the conversation itself.` };
+  }
+  if (items.some((m) => m.text.toLowerCase() === trimmed.toLowerCase())) {
+    return { success: false, error: "Already remembered." };
+  }
+  const entry = { id: `m${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+                  text: trimmed, created: new Date().toISOString() };
+  setProfileMemories([...items, entry]);
+  // No refreshSystemPrompt here any more: memories are not in the system
+  // prompt, so there is nothing about the live session to rebuild.
+  return { success: true, memories: profileMemories() };
+});
+
+ipcMain.handle("emb3r:delete-memory", (_e, id) => {
+  const items = profileMemories();
+  const next = items.filter((m) => m.id !== id);
+  if (next.length === items.length) return { success: false, error: "No such memory." };
+  setProfileMemories(next);
+  return { success: true, memories: next };
+});
 
 ipcMain.handle("emb3r:create-profile", (_e, name) => {
   const trimmed = (name || "").trim();
@@ -2686,7 +2870,13 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   const attachmentContext = typeof opts.attachmentContext === "string" && opts.attachmentContext
     ? opts.attachmentContext
     : null;
-  const promptText = attachmentContext ? `${attachmentContext}\n\n${userMessage}` : userMessage;
+
+  // Remembered facts travel the same way and for the same reason: only the ones
+  // this question touches, alongside it rather than inside it, and trimmed back
+  // out of the history afterwards by the same call that trims the extracts.
+  const memories = memoryContext(userMessage);
+  const extras = [memories, attachmentContext].filter(Boolean).join("\n\n");
+  const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();
   activeGeneration = controller;
@@ -2738,7 +2928,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
           stopOnAbortSignal: true,
           onTextChunk,
         });
-        if (attachmentContext) forgetAttachmentContext(userMessage);
+        if (extras) forgetAttachmentContext(userMessage);
       }
     } else {
       text = await chatSession.prompt(promptText, {
@@ -2754,7 +2944,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // of the conversation. Rewriting the turn to hold only the question is
       // what stops a second question about the same file overflowing the window
       // and cutting the chat template mid-structure.
-      if (attachmentContext) forgetAttachmentContext(userMessage);
+      if (extras) forgetAttachmentContext(userMessage);
     }
 
     // an empty reply means generation was stopped before anything came out -

@@ -1728,6 +1728,7 @@ async function loadConfigIntoUI() {
   await refreshModelList();
   spotifyClientIdInput.value = currentConfig.spotifyClientId || "";
   await refreshSpotifyStatus();
+  await refreshMemories();
   await refreshPersonality();
   // after refreshPersonality, because student mode makes that box read-only
   // and refreshPersonality repopulates it
@@ -1783,6 +1784,95 @@ personalityReset.addEventListener("click", async () => {
 // =============================
 // Student (safe) mode
 // =============================
+
+// =============================
+// Memory
+// =============================
+
+const memoryInput  = document.getElementById("memoryInput");
+const memoryAdd    = document.getElementById("memoryAdd");
+const memoryList   = document.getElementById("memoryList");
+const memoryStatus = document.getElementById("memoryStatus");
+const memoryBudget = document.getElementById("memoryBudget");
+const memoryToggle = document.getElementById("memoryToggle");
+
+memoryToggle.addEventListener("change", async () => {
+  await window.emb3r.setMemoryEnabled(memoryToggle.checked);
+  memoryStatus.textContent = memoryToggle.checked
+    ? "on — remembered facts will be used where they fit the question."
+    : "off — nothing remembered will be consulted.";
+  await refreshMemories();
+});
+
+function renderMemories(state) {
+  memoryList.replaceChildren();
+  if (!state.memories.length) {
+    const empty = document.createElement("div");
+    empty.className = "dim";
+    empty.textContent = "Nothing remembered yet.";
+    memoryList.appendChild(empty);
+  }
+  state.memories.forEach((m) => {
+    const row = document.createElement("div");
+    row.className = "memoryRow";
+
+    // This is text the user typed and it is being put back on screen, which is
+    // the exact shape of the bug in PR #4. textContent, never innerHTML.
+    const label = document.createElement("span");
+    label.textContent = m.text;
+    row.appendChild(label);
+
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.title = "Forget this";
+    del.addEventListener("click", async () => {
+      const result = await window.emb3r.deleteMemory(m.id);
+      if (result.success) {
+        memoryStatus.textContent = "forgotten.";
+        await refreshMemories();
+      } else {
+        memoryStatus.textContent = result.error;
+      }
+    });
+    row.appendChild(del);
+    memoryList.appendChild(row);
+  });
+
+  memoryToggle.checked = state.enabled;
+  memoryInput.disabled = !state.enabled;
+  memoryAdd.disabled = !state.enabled;
+
+  // What it actually costs, which is not what it used to cost. Only the few
+  // memories a question touches are sent, so the figure is the worst case for
+  // one reply rather than a standing charge on all of them.
+  memoryBudget.textContent = state.enabled
+    ? `${state.memories.length} of ${state.max} kept · at most ${state.perQuestion} are sent with `
+      + `any one question, about ${state.worstCaseTokens} tokens of the ${state.contextSize}-token `
+      + `window, and only when they match what you asked.`
+    : `${state.memories.length} of ${state.max} kept · not being used, costing nothing.`;
+}
+
+async function refreshMemories() {
+  renderMemories(await window.emb3r.listMemories());
+}
+
+async function submitMemory() {
+  const text = memoryInput.value.trim();
+  if (!text) return;
+  const result = await window.emb3r.addMemory(text);
+  if (result.success) {
+    memoryInput.value = "";
+    memoryStatus.textContent = "remembered.";
+    await refreshMemories();
+  } else {
+    memoryStatus.textContent = result.error;
+  }
+}
+
+memoryAdd.addEventListener("click", submitMemory);
+memoryInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); submitMemory(); }
+});
 
 const safeModeToggle     = document.getElementById("safeModeToggle");
 const safeModeStatus     = document.getElementById("safeModeStatus");
