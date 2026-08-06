@@ -32,6 +32,11 @@
 
 <title>emb3r</title>
 
+<!-- Runs before the body is parsed, so the first frame is already the right
+     theme. Without it the boot screen paints dark and then the app turns
+     white, which is a flash on every launch for light-theme users. -->
+<script src="./theme-boot.js"></script>
+
 <style>
 :root {
     --bg-color: #0b0f0b;
@@ -40,6 +45,23 @@
     --hover-color: #162219;
     --glow-small: 2px;
     --glow-big: 6px;
+
+    /* the boot screen, which is lit by torchlight rather than by the accent */
+    --boot-bg: #000;
+    --boot-unlit: #3a3a3a;
+    --boot-flame: #ffb020;
+    --boot-flame-glow: rgba(255, 128, 0, .55);
+    --boot-spirit: #ffd964;
+    --boot-status: #ffb020;
+    --boot-detail: #6d5a48;
+    --boot-firstrun: #8a6a4a;
+    /* The wordmark before the fire reaches it. Bright on black, so on white it
+       has to go dark rather than pale - the letters are meant to read as cold
+       metal waiting to catch, not as something already faded out. */
+    --boot-letter: #e8e8e8;
+    --boot-letter-lit: #ffcf8a;
+    --boot-letter-glow-1: #ff8000;
+    --boot-letter-glow-2: #c43200;
 }
 
 [data-theme="light"] {
@@ -47,6 +69,25 @@
     --text-color: #1b7a3c;
     --user-text-color: #1a5c33;
     --hover-color: #dff2e4;
+
+    /* The boot screen was #000 whatever the theme was, so a light-theme user
+       got a full-screen black flash on every launch and then a white app.
+       These are not the dark values lightened: an unlit torch has to stay
+       *faint* against its own background, so what is preserved is how little
+       it stands out, not the grey itself. The lit flame and the spirit go the
+       other way - fire has to darken to stay visible on white. */
+    --boot-bg: #f4fbf6;
+    --boot-unlit: #c2cfc5;
+    --boot-flame: #c2410c;
+    --boot-flame-glow: rgba(194, 65, 12, .28);
+    --boot-spirit: #b45309;
+    --boot-status: #b45309;
+    --boot-detail: #7c6650;
+    --boot-firstrun: #8a6a4a;
+    --boot-letter: #4a5450;
+    --boot-letter-lit: #c2410c;
+    --boot-letter-glow-1: rgba(217, 119, 6, .45);
+    --boot-letter-glow-2: rgba(194, 65, 12, .35);
 }
 
 #colorWheel{
@@ -1697,7 +1738,7 @@ pre{
     left:0;
     width:100%;
     height:100%;
-    background:#000;
+    background:var(--boot-bg);
     display:flex;
     align-items:center;
     justify-content:center;
@@ -1717,7 +1758,7 @@ pre{
     font-family:"JetBrains Mono", monospace;
     font-size:15px;
     line-height:1.15;
-    color:#e8e8e8;
+    color:var(--boot-letter);
     opacity:0;
     transform:scale(0.2);
     animation: logoZoom 0.9s cubic-bezier(.2,1.4,.4,1) forwards;
@@ -1819,21 +1860,21 @@ pre{
 .torchFlame{
     font-size:13px;
     line-height:1;
-    color:#3a3a3a;
+    color:var(--boot-unlit);
     transition:color .3s ease, text-shadow .3s ease;
 }
 
 .torchPost{
     font-size:11px;
     line-height:1;
-    color:#3a3a3a;
+    color:var(--boot-unlit);
 }
 
 /* the moment a torch crosses its threshold, not a loop - real progress lighting
    one specific torch, so it only plays once per torch via animation-fill-mode */
 .torchFlame.lit{
-    color:#ffb020;
-    text-shadow:0 0 6px #ff8000, 0 0 14px #ff6a00;
+    color:var(--boot-flame);
+    text-shadow:0 0 6px var(--boot-flame-glow), 0 0 14px var(--boot-flame-glow);
     animation:torchCatch .5s ease-out;
 }
 
@@ -1852,8 +1893,8 @@ pre{
     top:-20px;
     left:0%;
     font-size:15px;
-    color:#ffd964;
-    text-shadow:0 0 6px #ffb020, 0 0 14px #ff8000;
+    color:var(--boot-spirit);
+    text-shadow:0 0 6px var(--boot-flame-glow), 0 0 14px var(--boot-flame-glow);
     transform:translateX(-50%);
     transition:left .5s cubic-bezier(.3,.6,.3,1);
     animation:spiritBob 1.6s ease-in-out infinite;
@@ -1909,15 +1950,15 @@ pre{
 }
 
 .bootLetter.caught{
-    color:#ffcf8a;
-    text-shadow:0 0 7px #ff8000, 0 0 18px #c43200;
+    color:var(--boot-letter-lit);
+    text-shadow:0 0 7px var(--boot-letter-glow-1), 0 0 18px var(--boot-letter-glow-2);
 }
 
 /* the themed line: what the fire is doing */
 #bootStatusLine{
     font-family:"JetBrains Mono", monospace;
     font-size:13px;
-    color:#ffb020;
+    color:var(--boot-status);
     letter-spacing:.04em;
     /* two lines' worth: the facts that rotate through here are much longer than
        the phrases, and without a reserved height the torch row below would jump
@@ -1934,7 +1975,7 @@ pre{
 #bootStatusDetail{
     font-family:"JetBrains Mono", monospace;
     font-size:11px;
-    color:#6d5a48;
+    color:var(--boot-detail);
     min-height:1.2em;
     margin-top:-4px;
 }
@@ -1945,7 +1986,7 @@ pre{
     margin-top:20px;
     font-family:"JetBrains Mono", monospace;
     font-size:12px;
-    color:#8a6a4a;
+    color:var(--boot-firstrun);
     text-align:center;
 }
 
