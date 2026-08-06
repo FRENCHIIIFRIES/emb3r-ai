@@ -1257,12 +1257,23 @@ pre{
     font-size:13px;
 }
 
+/* Inputs in Settings are full width by default, which is right for a text box
+   and wrong for a checkbox: it stretches the box and shoves its label to the
+   far side of the panel. Every toggle row has to be listed here, and forgetting
+   one is invisible in the markup - it only shows up in a screenshot. */
 #soundToggleRow input,
 #offlineLockRow input,
 #safeModeRow input,
+#memoryRow input,
 #animToggleRow input{
     padding:0;
     width:auto;
+}
+
+/* and the label beside it must not take the rest of the row */
+#memoryRow label{
+    width:auto;
+    margin:0;
 }
 
 #accountStatus,
