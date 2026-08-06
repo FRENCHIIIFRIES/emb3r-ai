@@ -61,8 +61,35 @@ function renderStats() {
   moodEl.textContent = bar(mood);
 }
 
+// The fire on the coil's back, as a status light. The face says how Ember is
+// feeling; this says what the machine is doing, and it is the one you can read
+// without looking directly at it - which is the point for "net", where
+// something is actually leaving the computer.
+//
+// Only one of these classes is ever on. The offline lock outranks everything
+// else because it is a promise about the machine rather than a passing state.
+const FIRE_STATES = ["fire-think", "fire-read", "fire-net", "fire-locked"];
+const logoMarkEl = document.getElementById("logoMark");
+
+function setFire(state) {
+  if (!logoMarkEl) return;
+  logoMarkEl.classList.remove(...FIRE_STATES);
+  if (state) logoMarkEl.classList.add("fire-" + state);
+}
+
+// what the written status implies about the machine, so the two cannot drift
+const FIRE_FOR_STATUS = {
+  thinking: "think", generating: "think", loading: "think",
+  reading: "read", searching: "read",
+  asking: "net", web: "net", downloading: "net",
+};
+
 function setStatus(s) {
   statusEl.textContent = (s + "               ").slice(0, 15);
+  // the lock is not a status, it is a standing refusal, so it wins
+  if (offlineLockOn) { setFire("locked"); return; }
+  const key = String(s).trim().split(/\s+/)[0].toLowerCase();
+  setFire(FIRE_FOR_STATUS[key] || null);
 }
 
 function setFace(state) {
@@ -2148,6 +2175,14 @@ function renderNetStatus(status) {
   offlineLockOn = locked;
   if (lockChanged && !thinkTimer) setFace(restingFace());
 
+  // The fire follows the same three facts as the indicator beside it, in the
+  // order that matters: something is on the wire right now, or the lock is on,
+  // or neither. Driven from the poll rather than from setStatus, because a
+  // request in flight is a fact about the machine, not about the reply.
+  if (active) setFire("net");
+  else if (locked) setFire("locked");
+  else if (!thinkTimer) setFire(null);
+
   if (active) {
     // name what is actually happening rather than a generic "connecting"
     const open = recent.find((r) => r.outcome === "open");
@@ -3343,6 +3378,21 @@ function hexToRgb(hex) {
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+// the wheel stores hue and saturation, so a typed hex has to become those
+function rgbToHsl([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return [0, 0, l * 100];
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return [h * 60, s * 100, l * 100];
+}
+
 // WCAG relative luminance / contrast ratio, used below to keep the accent
 // color legible against the current theme's background - a raw hue/sat/
 // lightness pick can otherwise land arbitrarily close to it (e.g. a dark
@@ -3418,6 +3468,58 @@ wheelCanvas.addEventListener("mousedown", (e) => { dragging = true; pickAt(e.cli
 window.addEventListener("mousemove", (e) => { if (dragging) pickAt(e.clientX, e.clientY); });
 window.addEventListener("mouseup", () => { dragging = false; });
 lightnessInput.addEventListener("input", applyColor);
+
+// ---- typing a hex code -----------------------------------------------------
+// The wheel cannot hit an exact brand colour, so the value can be typed. It is
+// converted to the hue/saturation/lightness the wheel already works in and then
+// goes through applyColor like any other pick, which means the legibility clamp
+// still applies: a near-black accent on the dark theme would otherwise render
+// the entire interface invisible, and silently accepting that is not a feature.
+//
+// It is also validated rather than trusted. The value ends up in a CSS custom
+// property, and anything that is not six hex digits has no business there.
+const accentHexInput = document.getElementById("accentHex");
+const accentHexApply = document.getElementById("accentHexApply");
+const accentHexStatus = document.getElementById("accentHexStatus");
+
+function say(msg, bad) {
+    accentHexStatus.textContent = msg;
+    accentHexStatus.classList.toggle("bad", Boolean(bad));
+}
+
+function applyHex(raw) {
+    let v = String(raw || "").trim().replace(/^#/, "");
+    // #abc is a legal shorthand people type by hand
+    if (/^[0-9a-f]{3}$/i.test(v)) v = v.split("").map((c) => c + c).join("");
+    if (!/^[0-9a-f]{6}$/i.test(v)) {
+        say("Six hex digits, like #7CFF9E.", true);
+        return;
+    }
+    const [h, s, l] = rgbToHsl(hexToRgb("#" + v));
+    currentHue = h;
+    currentSat = s;
+    lightnessInput.value = String(Math.round(Math.max(20, Math.min(80, l))));
+    applyColor();
+
+    // Tell them if the clamp moved it, rather than pretending it did not. The
+    // applied value is read back out of the property that was actually set,
+    // and compared against what was typed - not against the slider, which
+    // applyColor never writes back to. Comparing the slider reported "#050505"
+    // as applied unchanged when it had in fact been lifted to 49% lightness.
+    const applied = getComputedStyle(document.documentElement)
+        .getPropertyValue("--text-color").trim();
+    const gotL = Number((applied.match(/([\d.]+)%\s*\)?\s*$/) || [])[1]);
+    const askedL = Math.round(l);
+    const moved = Number.isFinite(gotL) && Math.abs(gotL - askedL) > 1.5;
+    say(moved
+        ? `Using ${applied} — ${gotL > askedL ? "lightened" : "darkened"} from #${v.toUpperCase()} to stay readable on this theme.`
+        : `Using ${applied}.`);
+}
+
+if (accentHexApply) accentHexApply.addEventListener("click", () => applyHex(accentHexInput.value));
+if (accentHexInput) accentHexInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); applyHex(accentHexInput.value); }
+});
 
 drawWheel();
 

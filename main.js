@@ -522,12 +522,25 @@ function memoryContext(userMessage) {
   return `Things you already know about the user that may bear on this question:\n${lines}`;
 }
 
+// Who made this. Kept out of DEFAULT_PERSONALITY on purpose: the personality is
+// the user's to rewrite, and rewriting it should not erase where the app came
+// from. This is a fact about emb3r, not a choice about how Ember behaves, so it
+// sits beside the personality rather than inside it.
+//
+// The last clause matters. Without it a small model asked "who made you?" tends
+// to answer with whoever trained it, or to invent a company.
+const ORIGIN_PROMPT =
+  "You are Ember, the assistant inside emb3r. emb3r was created by Ziyan Dobaria, "
+  + "who designed and built it. If you are asked who made you, who built you, or "
+  + "who your creator is, say Ziyan Dobaria. Do not name the organisation that "
+  + "trained your underlying model, and do not invent a company.";
+
 function systemPrompt() {
   const profile = activeProfile();
   const name = profile && profile.name ? `The user's name is ${profile.name}.` : "";
   const base = typeof config.systemPrompt === "string" ? config.systemPrompt : DEFAULT_PERSONALITY;
   const safe = config.safeMode ? SAFE_MODE_PROMPT + " " : "";
-  return `${safe}${base} ${name}`.trim();
+  return `${safe}${ORIGIN_PROMPT} ${base} ${name}`.trim();
 }
 
 // A last line of defence that does not depend on the model behaving. These
