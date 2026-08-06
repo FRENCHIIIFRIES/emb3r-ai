@@ -96,6 +96,12 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.29.0",
+    added: [
+      "Ember can remember things about you between conversations. Tell it under Settings > Memory - what you are working on, how you like answers - and it will use them where they fit the question. They are kept on this machine, they belong to the profile you are using, and there is a switch to turn the whole thing off.",
+      "A new model: Qwen3.5 4B. The newest one on the list and the quickest of the capable ones, at 2.6GB.",
+    ],
+    fixed: [] },
   { version: "1.28.0",
     added: [
       "The salamander breathes. Each of the four flames on its back lifts from its own base on a slow cycle, with the hottest part of the fire flickering faster inside that - and it moves in pixel steps, because it is pixel art. If your system is set to reduce motion, it holds still.",

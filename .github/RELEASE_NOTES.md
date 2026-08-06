@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.29.0 — it remembers, if you let it
+
+Ember can be told things worth keeping between conversations. What you are working on, how you like your answers, the name of your dog. Settings > Memory. They live on this machine in the same file as the rest of your settings, they belong to whichever profile you are using, and a switch turns the whole thing off without deleting any of them.
+
+The interesting part is what a memory is allowed to cost. The first version put every remembered fact into every single reply, which sounds harmless until you count it: twenty of them is about a quarter of everything the model can hold, spent before you have typed a word. On a laptop with no room to spare that is the difference between an answer and a truncated one.
+
+So they work the way attached files already do here. Only the ones your question actually touches get sent, and they are dropped again afterwards. Ask about your dog and it brings up the dog. Ask about anything else and the dog costs nothing. In practice that is around one percent of the window instead of a quarter.
+
+Getting the matching right needed one correction. Asking *what is my dog called* also pulled up "an Electron app called emb3r" — the two share the word "called". A list of words to ignore would never have caught that, because "called" is an ordinary word right up until you have written it twice. Ember now works out for itself which words are too common across your own memories to tell them apart.
+
+Also new: **Qwen3.5 4B**, the newest model on the list and the quickest of the capable ones, at 2.6GB. Checked before it was offered — that it exists, that it is the size claimed, and that the engine inside emb3r actually knows how to load it. A model that fails when you first ask it something is worse than one that was never listed.
+
 ## v1.28.0 — the salamander breathes
 
 The mark in the header stood still. It breathes now: each of the four flames on the creature's back lifts from its own base and settles, and the hottest part of the fire flickers on a faster clock inside that slower breath. The four run on lengths that do not divide into each other, so they drift apart instead of pulsing in unison. The body does not move — the coil is a ring, and a ring that breathes reads as a wobble.
