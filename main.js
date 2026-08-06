@@ -96,6 +96,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.29.1",
+    added: [],
+    fixed: [
+      "The switch under Settings > Memory sat at the opposite end of the panel from the words describing it. It is beside them now.",
+    ] },
   { version: "1.29.0",
     added: [
       "Ember can remember things about you between conversations. Tell it under Settings > Memory - what you are working on, how you like answers - and it will use them where they fit the question. They are kept on this machine, they belong to the profile you are using, and there is a switch to turn the whole thing off.",

@@ -1,5 +1,11 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.29.1 — the switch, beside its label
+
+The checkbox under Settings > Memory was at one end of the panel and the words explaining it were at the other, with a hand's width of nothing in between. Text boxes in Settings are meant to run the full width; a checkbox is not, and this one had been left out of the rule that says so.
+
+It was found by photographing the tab for the project's evidence document, not by reading the code. Nothing about the markup looks wrong, which is how it got through a review and a release.
+
 ## v1.29.0 — it remembers, if you let it
 
 Ember can be told things worth keeping between conversations. What you are working on, how you like your answers, the name of your dog. Settings > Memory. They live on this machine in the same file as the rest of your settings, they belong to whichever profile you are using, and a switch turns the whole thing off without deleting any of them.
