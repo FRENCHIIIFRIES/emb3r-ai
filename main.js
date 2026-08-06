@@ -96,6 +96,15 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.30.0",
+    added: [
+      "The fire on Ember's back now shows what the machine is doing. It breathes slowly when idle, quickens while thinking, and flares when something is actually going out to the web - so you can see a connection out of the corner of your eye instead of hunting for a label.",
+      "Accent colours can be typed in as a hex code under Display, next to the wheel. If the colour would be unreadable against your theme it is adjusted, and it tells you it did.",
+      "Ember knows it was made by Ziyan Dobaria, and will say so if you ask.",
+    ],
+    fixed: [
+      "The window gives far more room to the conversation. The header was taking well over half the screen and the chat about an eighth; the face and mood now share a single line and the chat has roughly three times the space.",
+    ] },
   { version: "1.29.1",
     added: [],
     fixed: [

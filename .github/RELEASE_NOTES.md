@@ -1,5 +1,19 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.30.0 — the fire tells you what it is doing
+
+The header had quietly become the main event. On a normal laptop window it took well over half the screen while the conversation got about an eighth of it. The face was large and on its own line, with mood and status stacked underneath.
+
+The face and the mood share one line now, and the status text is not drawn at all. The chat has roughly three times the room it had.
+
+The status did not disappear so much as change medium. The fire on the salamander's back has a pace for each thing the machine is doing: slow when idle, quicker while it is reading a file, quicker still while it is thinking, and a hard flare when something is genuinely going out to the web. The offline lock banks it down to embers.
+
+That last one is the reason for the whole change. A flare at the edge of your vision is a better way to know a connection opened than a small label you stopped reading weeks ago. Nothing new was drawn for it; each state only changes the tempo of the breathing that arrived in v1.28.0. The written status is still there for screen readers, because a burning coil says nothing to one.
+
+Accent colours can now be typed as a hex code, next to the wheel, since a wheel cannot land on an exact value. Anything that is not six hex digits is refused. Anything that would be unreadable against your theme is adjusted, and it says so rather than quietly handing you something else — a near-black accent on the dark theme is lifted until it can be read, and it tells you it lifted it.
+
+Ember also knows who made it. Ask who built it and it will say Ziyan Dobaria, rather than naming whoever trained the model underneath or inventing a company.
+
 ## v1.29.1 — the switch, beside its label
 
 The checkbox under Settings > Memory was at one end of the panel and the words explaining it were at the other, with a hand's width of nothing in between. Text boxes in Settings are meant to run the full width; a checkbox is not, and this one had been left out of the rule that says so.
