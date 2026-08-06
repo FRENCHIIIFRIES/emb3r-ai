@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.30.1 — a light loading screen for a light theme
+
+If you use light mode, every launch began with a full-screen black rectangle that turned white the moment the app finished loading. The loading screen had one background colour and it was black, and everything drawn on it — the wordmark, the torches, the little spirit that runs along them — was coloured for sitting on black.
+
+It follows the theme now. The colours are not simply the dark ones lightened: an unlit torch has to stay faint against whatever is behind it, so it stays faint, while the wordmark goes the other way and turns dark, because letters waiting to catch fire should look like cold metal rather than something already burnt out.
+
+The flash was a second problem hiding behind the first. The theme was being applied by the same file that draws the rest of the window, and that file runs last, so the loading screen had already appeared before anything knew which theme to use. It is now decided before the first frame is drawn.
+
 ## v1.30.0 — the fire tells you what it is doing
 
 The header had quietly become the main event. On a normal laptop window it took well over half the screen while the conversation got about an eighth of it. The face was large and on its own line, with mood and status stacked underneath.

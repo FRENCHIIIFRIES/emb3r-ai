@@ -96,6 +96,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.30.1",
+    added: [],
+    fixed: [
+      "The loading screen follows your theme. On light mode it used to be a full-screen black rectangle that turned white the moment the app appeared; it is light from the first frame now, with the wordmark and torches recoloured to suit it rather than left as pale shapes on white.",
+    ] },
   { version: "1.30.0",
     added: [
       "The fire on Ember's back now shows what the machine is doing. It breathes slowly when idle, quickens while thinking, and flares when something is actually going out to the web - so you can see a connection out of the corner of your eye instead of hunting for a label.",
