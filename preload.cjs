@@ -73,6 +73,11 @@ contextBridge.exposeInMainWorld("emb3r", {
   setSafeMode: (on, pin) => ipcRenderer.invoke("emb3r:set-safe-mode", on, pin),
   setSafeModePin: (pin, currentPin) => ipcRenderer.invoke("emb3r:set-safe-mode-pin", pin, currentPin),
 
+  listMemories: () => ipcRenderer.invoke("emb3r:list-memories"),
+  setMemoryEnabled: (on) => ipcRenderer.invoke("emb3r:set-memory-enabled", on),
+  addMemory: (text) => ipcRenderer.invoke("emb3r:add-memory", text),
+  deleteMemory: (id) => ipcRenderer.invoke("emb3r:delete-memory", id),
+
   listProfiles: () => ipcRenderer.invoke("emb3r:list-profiles"),
   createProfile: (name) => ipcRenderer.invoke("emb3r:create-profile", name),
   switchProfile: (id) => ipcRenderer.invoke("emb3r:switch-profile", id),

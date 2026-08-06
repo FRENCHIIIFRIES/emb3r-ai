@@ -600,7 +600,8 @@ pre{
     opacity:0.75;
 }
 
-#safeModeRow{
+#safeModeRow,
+#memoryRow{
     display:flex;
     align-items:center;
     gap:8px;
@@ -1125,6 +1126,31 @@ pre{
     padding:2px 8px;
     font-size:13px;
     margin-left:4px;
+}
+
+/* A remembered fact and the button that forgets it. The text can be long and
+   is user-written, so it wraps rather than being clipped - a memory you cannot
+   read in full is one you cannot decide whether to keep. */
+.memoryRow{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    padding:5px 0;
+    font-size:15px;
+    border-bottom:1px solid color-mix(in srgb, var(--text-color) 14%, transparent);
+}
+
+.memoryRow span{
+    flex:1;
+    word-break:break-word;
+}
+
+.memoryRow button{
+    width:auto;
+    padding:2px 8px;
+    font-size:13px;
+    flex-shrink:0;
 }
 
 /* how much disk the rows below are costing - leads the section, since it is
@@ -2032,6 +2058,7 @@ pre{
                  See applySettingsFilter() in renderer.js. -->
             <button class="settingsTab" data-tab="student" data-tucked="1" hidden>Student mode</button>
             <button class="settingsTab" data-tab="personality">Personality</button>
+            <button class="settingsTab" data-tab="memory">Memory</button>
             <button class="settingsTab" data-tab="spotify">Spotify</button>
             <button class="settingsTab" data-tab="web">Web access</button>
             <button class="settingsTab" data-tab="models">Models</button>
@@ -2109,6 +2136,26 @@ pre{
         </div>
         <div id="personalityStatus"></div>
         <p class="settingsNote" id="personalityLockNote" hidden>Student mode is on, so this is read-only. Turn it off under Student mode to edit Ember's personality.</p>
+    </div>
+
+    <div class="settingsSection" data-tab="memory">
+        <h3>Memory</h3>
+        <div id="memoryRow">
+            <input type="checkbox" id="memoryToggle">
+            <label for="memoryToggle">Let Ember use what it remembers</label>
+        </div>
+        <p class="settingsNote">Off means remembered facts are never consulted and cost nothing.
+        They are kept, not deleted.</p>
+        <label>Things Ember should remember about you between conversations</label>
+        <input type="text" id="memoryInput" maxlength="200" autocomplete="off"
+               placeholder="e.g. I'm learning Python, and I prefer short answers">
+        <div id="memoryButtons"><button id="memoryAdd">Remember this</button></div>
+        <div id="memoryStatus"></div>
+        <div id="memoryList"></div>
+        <p class="settingsNote" id="memoryBudget"></p>
+        <p class="settingsNote">These are stored on this machine, in the same file as the rest of
+        your settings, and belong to the profile you are using. They are never sent anywhere
+        unless you have web access switched on and ask a question that uses it.</p>
     </div>
 
     <div class="settingsSection" data-tab="spotify">
