@@ -174,13 +174,14 @@ pre{
 }
 
 #pet.compact #face{
-    font-size:22px;
-    margin-bottom:4px;
+    font-size:18px;
+    margin-bottom:0;
 }
 
 #pet.compact #stats{
-    font-size:13px;
+    font-size:12px;
     line-height:1.3;
+    gap:14px;
 }
 
 #logoWrap{
@@ -277,17 +278,66 @@ pre{
     line-height:1;
 }
 
+/* The face was 48px on its own line and the stats block was two more lines
+   under it. Together with the mark that was 277px of header on a 635px
+   viewport, leaving the chat 13% of the window. They share one line now, and
+   everything except the creature itself steps back a size. */
 #face{
-    display:block;
-    font-size:48px;
+    display:inline-block;
+    font-size:26px;
     font-weight:700;
-    margin-bottom:18px;
+    margin:0;
+    line-height:1;
 }
 
 #stats{
-    font-size:20px;
-    line-height:1.8;
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:18px;
+    font-size:13px;
+    line-height:1.4;
 }
+
+#moodWrap{
+    color:color-mix(in srgb, var(--text-color) 62%, transparent);
+    letter-spacing:.08em;
+}
+
+/* Kept for screen readers, not drawn: the fire says this now. Not display:none,
+   which would take it out of the accessibility tree along with the pixels. */
+#statusWrap{
+    position:absolute;
+    width:1px; height:1px;
+    margin:-1px; padding:0; border:0;
+    clip-path:inset(50%);
+    overflow:hidden;
+    white-space:nowrap;
+}
+
+/* ---- the fire as a status light -------------------------------------------
+   The coil already breathes. Giving that breath a rate per state turns it into
+   the thing the app is actually doing, in the only vocabulary this creature
+   has. It costs one class swap, no new artwork, and it is legible out of the
+   corner of your eye - which is the point for the network one.
+
+   Each rule only changes the tempo and depth of an animation that already
+   exists, so nothing here can desynchronise the four flame clusters. */
+#logoMark.fire-think .fl{ animation-duration:1.5s, 1.5s, 1.5s, 1.5s; }
+#logoMark.fire-think .f3{ animation-duration:.6s; }
+
+#logoMark.fire-read .fl{ animation-duration:2.1s; }
+#logoMark.fire-read .f3{ animation-duration:.85s; }
+
+/* the one that matters: something is leaving this machine */
+#logoMark.fire-net .fl{ animation-duration:.7s; }
+#logoMark.fire-net .f3{ animation-duration:.32s; }
+#logoMark.fire-net .g { animation-duration:.7s; }
+
+/* offline lock: banked down to embers, still alight but barely moving */
+#logoMark.fire-locked .fl{ animation-duration:9s; opacity:.55; }
+#logoMark.fire-locked .f3{ animation-duration:6s; }
+#logoMark.fire-locked .g { animation-duration:9s; }
 
 #chat{
     flex:1;
@@ -1270,6 +1320,28 @@ pre{
     width:auto;
 }
 
+#accentHexRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+#accentHexRow input{
+    width:9ch;
+    flex:0 0 auto;
+    text-transform:uppercase;
+}
+
+#accentHexStatus{
+    font-size:13px;
+    min-height:1.3em;
+    color:color-mix(in srgb, var(--text-color) 70%, transparent);
+}
+
+#accentHexStatus.bad{
+    color:#ff8c66;
+}
+
 /* and the label beside it must not take the rest of the row */
 #memoryRow label{
     width:auto;
@@ -2242,6 +2314,14 @@ pre{
         <canvas id="colorWheel" width="150" height="150"></canvas>
         <input type="range" id="lightness" min="20" max="80" value="55">
 
+        <label for="accentHex">Or type a hex code</label>
+        <div id="accentHexRow">
+            <input type="text" id="accentHex" placeholder="#7CFF9E" spellcheck="false"
+                   autocomplete="off" maxlength="7">
+            <button id="accentHexApply">Use this colour</button>
+        </div>
+        <div id="accentHexStatus"></div>
+
         <label>Theme</label>
         <select id="themeSelect">
             <option value="dark">Dark</option>
@@ -2313,16 +2393,17 @@ pre{
 </pre>
 </div>
 
-<div id="face">
-<span id="face-text">( ^_^ )</span>
-</div>
-
+<!-- The face and the mood now share one line instead of stacking into two
+     blocks. They say different things and both are worth keeping: the face is
+     how Ember is feeling, the fire on the salamander's back is what the
+     machine is doing. -->
 <div id="stats">
-mood: <span id="mood">#####</span>
-
-<br><br>
-
-status: <span id="status">idle</span>
+<div id="face"><span id="face-text">( ^_^ )</span></div>
+<span id="moodWrap">mood <span id="mood">#####</span></span>
+<!-- Not drawn any more - the fire carries the machine's state. It stays in the
+     document because a burning coil says nothing to a screen reader, and
+     because setStatus() writes here from a dozen places. -->
+<span id="statusWrap">status: <span id="status">idle</span></span>
 </div>
 
 </div>
