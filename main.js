@@ -96,6 +96,13 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.31.0",
+    added: [
+      "You can tell at a glance who said what. Ember's replies are led by the salamander instead of the word \"ember\", and a reply that came from the web burns brighter - the same thing the fire in the header means. Messages have room between them and a coloured edge for each speaker.",
+      "Keyboard focus is visible. Tab through the app and you can now see where you are; before, nothing on any screen showed it.",
+      "Reset to default beside the accent colour, for when a colour you typed turns out to be unreadable.",
+    ],
+    fixed: [] },
   { version: "1.30.1",
     added: [],
     fixed: [

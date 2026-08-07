@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.31.0 — who is speaking
+
+Both speakers in a conversation were the same colour to within a rounding error. Measured: your text and Ember's each stood out against the background at 17.4 and 15.3 to one, and against *each other* at 1.14 to one. There was also nothing between one message and the next, so a few exchanges ran together into a single block of text. The only thing telling you who was talking was the word at the start of the line, and you had to read it to find out.
+
+Bubbles would have been the obvious fix and the wrong one — this is a terminal, and the prompt is how a terminal has always said who is speaking. So the prompt stays and the speaker changes. Ember's lines are led by the salamander itself, yours are still words. One of you is an animal and one is text, which is not a distinction you have to squint at. A reply that came from the web burns brighter, which is the same thing the fire on the mark already means when a connection is open.
+
+The salamander in the transcript is the same drawing as the one in the header, not a copy, so the two can never drift apart. It holds still down there — twenty breathing creatures in a conversation would be a fidget rather than a signal.
+
+Messages now have space between them and a coloured edge in the speaker's colour, and long lines stop at a comfortable width instead of running the full width of a wide window.
+
+Two things that should have been there from the start. **Keyboard focus is now visible** — there was nothing anywhere in the app showing which control you were on, which made it very hard to use without a mouse. And the accent colour has a **Reset to default**, matching the two that already existed for the personality and the model name; typing a very dark colour left you with a grey app and no obvious way back.
+
 ## v1.30.1 — a light loading screen for a light theme
 
 If you use light mode, every launch began with a full-screen black rectangle that turned white the moment the app finished loading. The loading screen had one background colour and it was black, and everything drawn on it — the wordmark, the torches, the little spirit that runs along them — was coloured for sitting on black.
