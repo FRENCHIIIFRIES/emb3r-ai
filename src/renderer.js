@@ -1570,7 +1570,6 @@ settingsSearch.addEventListener("keydown", (e) => {
 
 const historyWrap   = document.getElementById("historyWrap");
 const historyButton = document.getElementById("historyButton");
-const historyPanel  = document.getElementById("historyPanel");
 const historyList   = document.getElementById("historyList");
 const newChatButton = document.getElementById("newChatButton");
 
@@ -3200,7 +3199,6 @@ const spotifyStatusText = document.getElementById("spotifyStatusText");
 
 let spotifyConnected = false;
 let spotifyPollTimer = null;
-let lastNonMusicFace = "idle";
 
 spotifyClientIdInput.addEventListener("change", async (e) => {
   await window.emb3r.setSpotifyClientId(e.target.value.trim());
