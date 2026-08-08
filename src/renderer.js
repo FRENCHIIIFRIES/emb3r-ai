@@ -672,16 +672,41 @@ function appendSources(sources) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-window.emb3r.onAnswerSource(({ source }) => {
+window.emb3r.onAnswerSource(({ source, model }) => {
   currentAnswerSource = source === "gemini" ? "web" : "ember";
+  currentAnswerModel = typeof model === "string" ? model : "";
   // the line already exists, so its prompt is replaced in place
   if (streamTextEl) {
     streamTextEl.textContent = "";
     const line = streamTextEl.parentElement;
     const old = line && line.querySelector(".prompt");
     if (old) line.replaceChild(coilPrompt(currentAnswerSource === "web"), old);
+    stampModel(line, currentAnswerModel);
   }
 });
+
+// Which model actually answered, on the reply itself.
+//
+// The coil says whether it came from this machine or the wire, which is the
+// thing that matters for privacy - but it cannot say *which* model, and once
+// the "ember (web) >" prefix was replaced by the mark there was nothing left
+// that could. Somebody running Groq had no way to tell what had answered them.
+let currentAnswerModel = "";
+
+function stampModel(line, model) {
+  if (!line) return;
+  const existing = line.querySelector(".msgModel");
+  if (!model) {
+    if (existing) existing.remove();
+    return;
+  }
+  const el = existing || document.createElement("span");
+  el.className = "msgModel";
+  // a model name is data from a config file and a remote host, so it goes in
+  // as text - the same rule every other untrusted string in here follows
+  el.textContent = model;
+  if (!existing) line.appendChild(el);
+}
 
 // a plain append() would land these below the (already on-screen, still
 // empty) reply line that beginStream() creates before sendMessage is even
