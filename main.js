@@ -3217,7 +3217,26 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // a Gemini key configured with no consent granted must never fire silently -
   // the renderer catches needsConsent, shows the same modal already used for
   // model downloads, and resends with forceLocal or after consent is granted
-  const wantsGemini = Boolean(config.geminiApiKey) && !opts.forceLocal && needsCurrentInfo(userMessage);
+  // Which service answers this message.
+  //
+  // This used to read `config.geminiApiKey && needsCurrentInfo(...)`, which
+  // meant a user who had configured Groq and no Gemini key never reached their
+  // provider at all: the flag was false for every message, so everything went
+  // to the local model and the provider they had just set up and tested
+  // appeared to do nothing.
+  //
+  // The two are gated differently on purpose. Gemini fires only on questions
+  // that look like they need current information, because it is the fallback
+  // for "the local model cannot know this". A provider the user picked by hand
+  // and typed a key for is a different intention: they chose who answers, so it
+  // answers - anything less makes the setting a lie. Consent still gates it,
+  // the offline lock still stops it, and every call still shows in the
+  // indicator.
+  const customReady = usingCustomApi()
+    && Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel);
+  const wantsGemini = !opts.forceLocal && (
+    customReady || (Boolean(config.geminiApiKey) && needsCurrentInfo(userMessage))
+  );
   if (wantsGemini && !config.internetConsent) {
     return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
   }
@@ -3256,9 +3275,20 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   try {
     let text, sources;
     let source = wantsGemini ? "gemini" : "local";
+    // Name the thing that is answering. Before this the reply carried no model
+    // at all once the coil replaced the "ember (web) >" prefix, so somebody
+    // using Groq had no way to tell which of the two was talking, or which
+    // model of theirs it had reached.
+    const answerModel = () => {
+      if (source === "local") return modelDisplayName(config.activeModel);
+      if (usingCustomApi()) return `${config.customApiModel} · ${customApiHost()}`;
+      return config.geminiModel || DEFAULT_GEMINI_MODEL;
+    };
     // sent explicitly either way, so the renderer never has to assume "no
     // event means local" - it always knows which one is about to answer
-    if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
+    if (mainWindow) {
+      mainWindow.webContents.send("emb3r:answer-source", { source, model: answerModel() });
+    }
 
     if (wantsGemini) {
       // the automatic keyword detection that got here is silent by design -
@@ -3278,10 +3308,19 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
         // answer-source so the renderer's label matches what's actually
         // about to happen.
         if (mainWindow) {
-          mainWindow.webContents.send("emb3r:gemini-fallback", { reason: describeGeminiError(geminiErr) });
+          // naming Google when it was the user's own provider that failed sends
+          // them to the wrong settings box entirely
+          const reason = usingCustomApi()
+            ? `${customApiHost() || "Your provider"} did not answer: `
+              + `${String(geminiErr.message || geminiErr).slice(0, 160)}. `
+              + `Answering with the local model instead - check the endpoint, key and model name under Web access.`
+            : describeGeminiError(geminiErr);
+          mainWindow.webContents.send("emb3r:gemini-fallback", { reason });
         }
         source = "local";
-        if (mainWindow) mainWindow.webContents.send("emb3r:answer-source", { source });
+        if (mainWindow) {
+          mainWindow.webContents.send("emb3r:answer-source", { source, model: answerModel() });
+        }
         text = await chatSession.prompt(promptText, {
           signal: controller.signal,
           stopOnAbortSignal: true,
