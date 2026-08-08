@@ -96,6 +96,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.32.0",
+    added: [],
+    fixed: [
+      "emb3r can hold much more of a conversation at once. It works out how much your machine can spare and gives the chat as much room as fits - on a typical laptop that is four times what it was. Long documents and long conversations should stop getting cut off mid-answer.",
+    ] },
   { version: "1.31.1",
     added: [],
     fixed: [

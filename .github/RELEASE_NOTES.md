@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.32.0 — as much conversation as your machine can hold
+
+emb3r could only hold about 4,096 tokens of conversation at a time — roughly three thousand words, counting everything: the instructions it runs on, anything you attached, and the reply it is in the middle of writing. Past that it starts dropping the oldest part, and if it cannot drop enough it stops and says so.
+
+That number was doing real damage. Six extracts from a PDF came to 1,907 tokens on their own, leaving 187 for the answer, and the answer was cut off mid-sentence. It is also what made Qwen3.5 unusable last week.
+
+There is no longer a fixed number. When a model loads, emb3r asks that model what a larger window would cost, compares it against what the machine has spare, and takes the largest one that fits. On this laptop that is four times what it was.
+
+Asking each model matters more than it sounds. A 16,384-token window costs 2,843MB with Llama 3.2 3B and 1,418MB with Qwen2.5 3B — the same setting, nearly twice the memory. One number for everything would have been too much for some machines and too cautious for the rest.
+
+It can only go up. The old size is the floor, so a machine that cannot afford more gets exactly what it had before, and one that can gets more without being asked.
+
 ## v1.31.1 — taking a model back off the shelf
 
 Qwen3.5 4B was added to the model list in v1.29.0 and is being removed. If you tried it, you will have seen every reply end in a message about failing to compress the chat history. That was not your machine.
