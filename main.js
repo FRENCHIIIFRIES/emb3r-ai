@@ -96,6 +96,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.31.1",
+    added: [],
+    fixed: [
+      "Qwen3.5 4B has been taken off the model list. It thinks to itself before answering, and that thinking filled the whole conversation window, so every reply ended in an error about compressing the chat history. If you had it selected, emb3r switches you to a model that works when it next starts. Your download is left alone — you can delete it under Settings > Models if you want the space back.",
+    ] },
   { version: "1.31.0",
     added: [
       "You can tell at a glance who said what. Ember's replies are led by the salamander instead of the word \"ember\", and a reply that came from the web burns brighter - the same thing the fire in the header means. Messages have room between them and a coloured edge for each speaker.",

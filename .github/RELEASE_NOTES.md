@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.31.1 — taking a model back off the shelf
+
+Qwen3.5 4B was added to the model list in v1.29.0 and is being removed. If you tried it, you will have seen every reply end in a message about failing to compress the chat history. That was not your machine.
+
+It is a reasoning model: it works through an answer to itself before writing one, and that working-out is hidden from you but still has to be held in memory. There is only room for about 4,096 tokens of conversation, and the thinking filled it before anything was said. Once full, emb3r tries to make room by dropping the oldest part of the conversation, and it cannot drop the instructions it needs to keep — so it gives up and says so. Asked to say "hi", the model produced forty tokens of private reasoning and not one visible character.
+
+It was not fast either, which is the other reason it was there. A single long reply did not finish in nine minutes on a laptop without a graphics card.
+
+The honest part is how it got on the list. Three things were checked before it shipped: that the file existed, that it was the size it claimed, and that emb3r's engine recognises the kind of model it is. All three were true. Not one of them involved asking it a question, and nobody did. Checking that a model loads is not checking that it answers, and everything on that list is supposed to work on the machine reading it.
+
+If you had it selected, emb3r moves you to a model that works the next time it starts, and says so. The 2.55GB you downloaded is left where it is — deleting somebody's file to tidy up our own mistake is not ours to do. Settings > Models will remove it if you want the space.
+
 ## v1.31.0 — who is speaking
 
 Both speakers in a conversation were the same colour to within a rounding error. Measured: your text and Ember's each stood out against the background at 17.4 and 15.3 to one, and against *each other* at 1.14 to one. There was also nothing between one message and the next, so a few exchanges ran together into a single block of text. The only thing telling you who was talking was the word at the start of the line, and you had to read it to find out.
