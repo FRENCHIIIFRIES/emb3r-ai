@@ -1498,7 +1498,9 @@ const SETTINGS_KEYWORDS = {
                "classroom appropriate block swearing profanity supervision",
   personality: "prompt system character instructions behaviour behavior tone persona",
   spotify:     "music now playing track integration",
-  web:         "gemini internet search online api key current information lookup",
+  web:         "gemini internet search online api key current information lookup "
+             + "provider endpoint openai compatible groq openrouter together deepseek "
+             + "mistral base url custom model anthropic claude gpt local server",
   models:      "model download delete disk space storage llama qwen mistral gguf size brain",
   hardware:    "ram cpu gpu vram memory cores detect scan specs",
   updates:     "update version upgrade release install newer",
@@ -2125,6 +2127,86 @@ geminiKeyClear.addEventListener("click", async () => {
   await window.emb3r.clearGeminiKey();
   await refreshGeminiKeyStatus();
 });
+
+// =============================
+// Any provider that speaks the OpenAI chat format
+// =============================
+
+const providerGemini   = document.getElementById("providerGemini");
+const providerCustom   = document.getElementById("providerCustom");
+const customApiFields  = document.getElementById("customApiFields");
+const customApiBase    = document.getElementById("customApiBase");
+const customApiKeyIn   = document.getElementById("customApiKeyInput");
+const customApiModel   = document.getElementById("customApiModel");
+const customApiSave    = document.getElementById("customApiSave");
+const customApiTest    = document.getElementById("customApiTest");
+const customApiClear   = document.getElementById("customApiClear");
+const customApiStatus  = document.getElementById("customApiStatus");
+
+function setCustomStatus(msg, bad) {
+  customApiStatus.textContent = msg;
+  customApiStatus.classList.toggle("bad", Boolean(bad));
+}
+
+// The key is never sent back from the main process, so the box stays empty even
+// when one is saved. Saying so is better than an empty field that reads as
+// "nothing configured" when something is.
+async function refreshProviderPanel() {
+  const s = await window.emb3r.apiProviderStatus();
+  providerGemini.checked = s.provider !== "custom";
+  providerCustom.checked = s.provider === "custom";
+  customApiFields.hidden = s.provider !== "custom";
+  customApiBase.value = s.baseUrl || "";
+  customApiModel.value = s.model || "";
+  if (s.customConfigured) {
+    setCustomStatus(`saved — ${s.model} at ${s.host}. The key is stored but never shown again.`);
+  } else if (s.provider === "custom") {
+    setCustomStatus("");
+  }
+}
+
+async function chooseProvider(provider) {
+  await window.emb3r.setApiProvider(provider);
+  await refreshProviderPanel();
+}
+
+providerGemini.addEventListener("change", () => { if (providerGemini.checked) chooseProvider("gemini"); });
+providerCustom.addEventListener("change", () => { if (providerCustom.checked) chooseProvider("custom"); });
+
+customApiSave.addEventListener("click", async () => {
+  setCustomStatus("saving...");
+  const result = await window.emb3r.setCustomApi({
+    baseUrl: customApiBase.value,
+    key: customApiKeyIn.value,
+    model: customApiModel.value,
+  });
+  if (!result.success) {
+    setCustomStatus(result.error, true);
+    return;
+  }
+  customApiKeyIn.value = "";
+  await refreshProviderPanel();
+  setCustomStatus(`saved — messages will go to ${result.host}. Press Test it to make sure.`);
+});
+
+customApiTest.addEventListener("click", async () => {
+  setCustomStatus("asking it something...");
+  const result = await window.emb3r.testCustomApi();
+  if (result.success) {
+    setCustomStatus(`works — ${result.host} answered as ${result.model}.`);
+  } else {
+    setCustomStatus(result.error, true);
+  }
+});
+
+customApiClear.addEventListener("click", async () => {
+  await window.emb3r.clearCustomApi();
+  customApiKeyIn.value = "";
+  await refreshProviderPanel();
+  setCustomStatus("cleared — back to Gemini.");
+});
+
+refreshProviderPanel();
 
 const geminiModelInput  = document.getElementById("geminiModelInput");
 const geminiModelSave   = document.getElementById("geminiModelSave");
