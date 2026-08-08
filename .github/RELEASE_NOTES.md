@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.33.0 — bring your own provider
+
+Web access meant Gemini or nothing. It now also speaks the format almost every other service uses, so Groq, OpenRouter, Together, DeepSeek, Mistral and a server running on your own network all work. Settings > Web access asks for three things: the endpoint, your key, and the model name exactly as they write it.
+
+One difference is worth being clear about, and it is written into the panel rather than left to be discovered. Gemini is set up to read live web pages and tell you which ones it used. Any other provider is a model answering from what it already knows — often better or faster, but not the web. If you asked because you want today's news, keep Gemini.
+
+Your key is treated the way the others are. It is written from the settings screen and never read back out, so the box stays empty afterwards even though the key is saved. The endpoint is checked before anything is sent to it: https only, or 127.0.0.1 if the server is on this machine, because anything else would put your key on the wire in the clear. A typo fails there and then instead of when you next ask a question.
+
+The offline lock still applies to all of it, and the little indicator in the corner names the service you chose rather than saying "network activity".
+
 ## v1.32.0 — as much conversation as your machine can hold
 
 emb3r could only hold about 4,096 tokens of conversation at a time — roughly three thousand words, counting everything: the instructions it runs on, anything you attached, and the reply it is in the middle of writing. Past that it starts dropping the oldest part, and if it cannot drop enough it stops and says so.

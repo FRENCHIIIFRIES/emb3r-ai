@@ -107,6 +107,11 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.33.0",
+    added: [
+      "You can use a provider other than Gemini for web answers. Settings > Web access now takes an endpoint, a key and a model name, which covers most services - Groq, OpenRouter, Together, DeepSeek, Mistral - and a server on your own network. Worth knowing: only Gemini reads live web pages. Another provider gives you its model answering from what it already knows.",
+    ],
+    fixed: [] },
   { version: "1.32.0",
     added: [],
     fixed: [
