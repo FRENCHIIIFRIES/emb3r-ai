@@ -275,6 +275,7 @@ if (config.geminiModel && /^(AQ\.|AIza|ya29\.|sk-)/.test(config.geminiModel)) {
     console.error("Could not rewrite config after clearing the model field:", err);
   }
 }
+
 let chatSession = null;
 let chatSequence = null;
 let modelLoadError = null;
@@ -604,27 +605,27 @@ function safeModeGuard(message) {
 // verbatim in the picker, because a list of filenames and sizes does not tell
 // anyone which model to actually choose.
 const MODEL_CATALOG = [
-  // The newest entry here by a wide margin, and deliberately a small one: at 4B
-  // it answers quickly on the same machines the 3Bs were picked for, which is
-  // what "fast" has to mean when there is no GPU.
+  // Qwen3.5 4B was here and has been taken out. It was added after checking
+  // that it exists, that it is the size claimed, and that its architecture
+  // ("qwen35") is present in the llama.cpp build this app bundles - all true,
+  // and none of it sufficient. It was never asked a question.
   //
-  // Checked before it was added, rather than assumed from the name:
-  //   - the file exists and is 2.55GB (HEAD on the release URL, 200)
-  //   - its GGUF header declares architecture "qwen35", and that architecture
-  //     is present in the llama.cpp build this app bundles (b9842). A model
-  //     whose architecture the runtime does not know fails at load, which is
-  //     the worst possible place to find out.
-  //   - the header carries no vision tensors, so it runs as a text model here
-  //     even though the upstream card describes a vision-language family
+  // It is a reasoning model. It emits a thinking block before every answer,
+  // which node-llama-cpp reports as a "thought" segment and hides from the
+  // reply. Measured here: a prompt of "hi" produced 40 tokens and zero visible
+  // characters. Left to run, that thinking fills the 4096-token window, the
+  // session tries to compress the history to make room, and it cannot - the
+  // system prompt is not evictable - so the user gets:
   //
-  // Its header also advertises a 262,144-token context. That is not what you
-  // get: the session below pins contextSize to 4096, so it is held to the same
-  // window as everything else. Saying otherwise would be selling a number the
-  // app does not honour.
-  { id: "qwen3.5-4b", name: "Qwen3.5 4B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.6, params: 4,
-    strength: "The newest model on this list, and the quickest of the capable ones. Loads fast and answers fast without a GPU.",
-    limit: "Recent enough to have less of a track record than the Qwen2.5 models below it.",
-    repo: "unsloth/Qwen3.5-4B-GGUF", file: "Qwen3.5-4B-Q4_K_M.gguf" },
+  //   Failed to compress chat history for context shift due to a too long
+  //   prompt or system message that cannot be compressed
+  //
+  // It was also not fast, which is the other half of what it was added for: a
+  // 700-token reply did not finish in nine minutes on this machine, CPU-only.
+  //
+  // Reasoning models are not automatically unwelcome here, but they need a
+  // window several times this one and hardware to match, and the catalogue's
+  // whole promise is that anything in it runs on the machine reading it.
   { id: "llama-3.2-3b", name: "Llama 3.2 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.0, params: 3,
     strength: "Fastest to answer. Good for everyday questions, rewriting and short summaries.",
     limit: "Loses the thread on long multi-step reasoning.",
@@ -650,6 +651,32 @@ const MODEL_CATALOG = [
     limit: "Slow to answer unless most of it fits in GPU memory.",
     repo: "bartowski/Qwen2.5-14B-Instruct-GGUF", file: "Qwen2.5-14B-Instruct-Q4_K_M.gguf" },
 ];
+// Qwen3.5 4B shipped in the catalogue for one release and was withdrawn: it is
+// a reasoning model, and its thinking fills a 4096-token window before it
+// answers, so every reply ended in "Failed to compress chat history for context
+// shift". Taking it out of the catalogue does not help anyone who already chose
+// it - the file is still on disk and still resolves by name - so the selection
+// is repaired here rather than left for the user to work out.
+//
+// It is not deleted. It is 2.55GB the user chose to download, and removing
+// somebody's file to fix our mistake is not a trade we get to make; Settings >
+// Models can delete it if they want the space back.
+const WITHDRAWN_MODELS = new Set(["Qwen3.5-4B-Q4_K_M.gguf"]);
+if (WITHDRAWN_MODELS.has(config.activeModel)) {
+  const replacement = MODEL_CATALOG
+    .filter((m) => fs.existsSync(path.join(MODELS_DIR, m.file)))
+    .sort((a, b) => a.minRamGB - b.minRamGB)[0];
+  console.warn(`${config.activeModel} was withdrawn (it needs a larger context `
+    + `window than this app gives it). Switching to `
+    + `${replacement ? replacement.file : "no model"}.`);
+  config.activeModel = replacement ? replacement.file : null;
+  try {
+    saveConfig(config);
+  } catch (err) {
+    console.error("Could not rewrite config after switching model:", err);
+  }
+}
+
 
 // Above this, a CPU-only machine answers slowly enough that the app feels
 // broken rather than thoughtful, however much RAM is installed. Fitting in
