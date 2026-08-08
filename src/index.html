@@ -1431,6 +1431,52 @@ pre{
     width:auto;
 }
 
+.providerHeading{
+    margin-top:26px;
+}
+
+/* The one thing a reader must not miss: another provider is not the web. */
+.settingsNote.providerWarn{
+    border-left:2px solid var(--text-color);
+    padding-left:10px;
+}
+
+#providerRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:6px;
+}
+/* Settings inputs are full width, which stretches a radio and shoves its label
+   across the panel - the same trap the memory toggle fell into. */
+#providerRow input{
+    width:auto;
+    padding:0;
+    flex:0 0 auto;
+}
+#providerRow label{
+    width:auto;
+    margin:0 14px 0 0;
+}
+
+/* hidden until it is the chosen provider, so the panel is not a wall of boxes
+   for the people who never leave Gemini */
+#customApiFields[hidden]{ display:none; }
+
+#customApiButtons{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+}
+
+#customApiStatus{
+    font-size:13px;
+    min-height:1.3em;
+    color:color-mix(in srgb, var(--text-color) 70%, transparent);
+}
+#customApiStatus.bad{ color:#ff8c66; }
+
 #accentHexRow{
     display:flex;
     align-items:center;
@@ -2408,6 +2454,36 @@ canvas:focus-visible,
             <button id="geminiModelReset">Reset to default</button>
         </div>
         <div id="geminiModelStatus"></div>
+
+        <h3 class="providerHeading">Use a different provider</h3>
+        <p class="settingsNote">emb3r can talk to anything that speaks the OpenAI chat format, which is most of them — Groq, OpenRouter, Together, DeepSeek, Mistral, or a server on your own network. You need three things from them: the endpoint, a key, and the model name.</p>
+        <p class="settingsNote providerWarn"><b>One difference worth knowing.</b> Gemini answers from live web pages and tells you which ones it used. Another provider gives you its model answering from what it was trained on — useful, but not the web. If you need current information, keep Gemini.</p>
+
+        <div id="providerRow">
+            <input type="radio" name="apiProvider" id="providerGemini" value="gemini" checked>
+            <label for="providerGemini">Gemini</label>
+            <input type="radio" name="apiProvider" id="providerCustom" value="custom">
+            <label for="providerCustom">Someone else</label>
+        </div>
+
+        <div id="customApiFields">
+            <label for="customApiBase">Endpoint</label>
+            <input type="text" id="customApiBase" placeholder="https://api.groq.com/openai/v1" autocomplete="off" spellcheck="false">
+
+            <label for="customApiKeyInput">API key</label>
+            <input type="password" id="customApiKeyInput" placeholder="paste your key" autocomplete="off">
+
+            <label for="customApiModel">Model name</label>
+            <input type="text" id="customApiModel" placeholder="exactly as your provider writes it" autocomplete="off" spellcheck="false">
+
+            <div id="customApiButtons">
+                <button id="customApiSave">Save</button>
+                <button id="customApiTest">Test it</button>
+                <button id="customApiClear">Clear</button>
+            </div>
+            <div id="customApiStatus"></div>
+            <p class="settingsNote">The endpoint must be <code>https</code>, or <code>127.0.0.1</code> for a server on this machine — anything else would put your key on the wire in clear. <b>Test it</b> makes one real request through the same path a message takes, so a pass here means messages will work.</p>
+        </div>
     </div>
 
     <div class="settingsSection" data-tab="models">

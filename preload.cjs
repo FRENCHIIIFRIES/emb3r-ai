@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld("emb3r", {
   },
 
   geminiKeyStatus: () => ipcRenderer.invoke("emb3r:gemini-key-status"),
+
+  apiProviderStatus: () => ipcRenderer.invoke("emb3r:api-provider-status"),
+  setApiProvider: (provider) => ipcRenderer.invoke("emb3r:set-api-provider", provider),
+  setCustomApi: (payload) => ipcRenderer.invoke("emb3r:set-custom-api", payload),
+  clearCustomApi: () => ipcRenderer.invoke("emb3r:clear-custom-api"),
+  testCustomApi: () => ipcRenderer.invoke("emb3r:test-custom-api"),
   setGeminiKey: (key) => ipcRenderer.invoke("emb3r:set-gemini-key", key),
   clearGeminiKey: () => ipcRenderer.invoke("emb3r:clear-gemini-key"),
   testGeminiKey: () => ipcRenderer.invoke("emb3r:test-gemini-key"),

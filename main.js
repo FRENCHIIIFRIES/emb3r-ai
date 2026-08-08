@@ -63,6 +63,17 @@ function defaultConfig() {
     // a secret, same handling as the spotify tokens below: written from the
     // renderer, never read back to it, and excluded from emb3r:get-config
     geminiApiKey: "",
+    // Which service answers when web access is on. "gemini" is the built-in
+    // one; "custom" is any provider that speaks the OpenAI chat-completions
+    // shape, which is most of them - Groq, OpenRouter, Together, DeepSeek,
+    // Mistral, or a server on your own network.
+    //
+    // These are secrets and are handled like geminiApiKey: written from the
+    // renderer, never read back to it, stripped out of emb3r:get-config.
+    apiProvider: "gemini",
+    customApiKey: "",
+    customApiBaseUrl: "",
+    customApiModel: "",
     // empty means "use the default" (see DEFAULT_GEMINI_MODEL below) - not a
     // secret, so unlike geminiApiKey this one does flow through get-config
     geminiModel: "",
@@ -319,6 +330,10 @@ function describeHost(host) {
   if (h.includes("huggingface.co") || h.includes("hf.co") || h.includes("cdn-lfs")) return "downloading a model";
   if (h.includes("github.com") || h.includes("githubusercontent.com")) return "checking for updates";
   if (h.includes("generativelanguage.googleapis.com")) return "asking the web (Gemini)";
+  // a provider the user configured: name it, so the indicator says where the
+  // message actually went rather than a generic "network activity"
+  const custom = customApiHost();
+  if (custom && h.includes(custom.toLowerCase())) return `asking ${custom}`;
   if (h.includes("spotify.com")) return "Spotify now-playing";
   return h || "unknown";
 }
@@ -1375,7 +1390,8 @@ ipcMain.handle("emb3r:get-config", () => {
   // renderer. The PIN hash is here for the obvious reason: the renderer is the
   // side a student can reach, and handing it the hash to check would let the
   // check be skipped.
-  const { spotifyAccessToken, spotifyRefreshToken, geminiApiKey, safeModePin, ...safe } = config;
+  const { spotifyAccessToken, spotifyRefreshToken, geminiApiKey, customApiKey,
+          safeModePin, ...safe } = config;
   // a boolean is enough for the UI to know whether to ask for one
   safe.safeModePinSet = Boolean(safeModePin);
   return safe;
@@ -2725,6 +2741,113 @@ const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 // answers one message via Gemini with Google Search grounding enabled,
 // streaming through the same onTextChunk shape the local model uses so the
 // renderer's existing streaming UI does not need a second code path
+// Any provider that speaks the OpenAI chat-completions shape, which is nearly
+// all of them. One endpoint, one key, one model name - so Groq, OpenRouter,
+// Together, DeepSeek, Mistral, or a server on your own network all work without
+// emb3r knowing anything about them specifically.
+//
+// What this does NOT give you is the web. Gemini is wired up with Google Search
+// grounding, so it answers from live pages and returns the ones it used.
+// Everything here is just a different model answering from what it was trained
+// on. That difference is stated in Settings rather than buried, because
+// "web access" that silently stops reaching the web would be a lie.
+// One place decides which service answers, so the send path, the key status
+// and the test button cannot disagree about it.
+function usingCustomApi() {
+  return config.apiProvider === "custom";
+}
+
+function customApiHost() {
+  try {
+    return new URL(config.customApiBaseUrl).host;
+  } catch {
+    return "";
+  }
+}
+
+// A base URL is where a secret is about to be sent, so it is checked rather
+// than trusted: https only, because http would put the key on the wire in
+// clear, and a real host so a typo fails here instead of at the first message.
+function validateBaseUrl(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return { ok: false, error: "Enter the endpoint your provider gave you." };
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return { ok: false, error: "That is not a URL. It should look like https://api.groq.com/openai/v1" };
+  }
+  if (url.protocol === "http:" && !isLoopback(url.hostname)) {
+    return { ok: false,
+      error: "That is http, which would send your key unencrypted. Use https - or 127.0.0.1 for a server on this machine." };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { ok: false, error: `${url.protocol} is not a web address.` };
+  }
+  return { ok: true, value: value.replace(/\/+$/, "") };
+}
+
+async function answerWithCustomApi(userMessage, onTextChunk, signal) {
+  const base = String(config.customApiBaseUrl || "").replace(/\/+$/, "");
+  if (!base) throw new Error("No endpoint set for the custom provider.");
+  if (!config.customApiKey) throw new Error("No API key saved for the custom provider.");
+  if (!config.customApiModel) throw new Error("No model name set for the custom provider.");
+
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.customApiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.customApiModel,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt() },
+        { role: "user", content: userMessage },
+      ],
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${detail ? ` - ${detail.slice(0, 200)}` : ""}`);
+  }
+
+  // server-sent events: "data: {json}" per line, ending at "data: [DONE]"
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  while (true) {
+    if (signal.aborted) break;
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === "[DONE]") continue;
+      try {
+        const piece = JSON.parse(payload)?.choices?.[0]?.delta?.content;
+        if (piece) {
+          text += piece;
+          onTextChunk(piece);
+        }
+      } catch {
+        // a partial or non-JSON line: skip it rather than kill the stream
+      }
+    }
+  }
+  // no grounding, so no sources - saying so is more honest than an empty list
+  // that looks like the model simply did not cite anything
+  return { text, sources: [] };
+}
+
 async function answerWithGemini(userMessage, onTextChunk, signal) {
   const client = getGeminiClient();
   if (!client) throw new Error("No Gemini API key configured.");
@@ -2801,6 +2924,91 @@ function describeGeminiError(err) {
 }
 
 ipcMain.handle("emb3r:gemini-key-status", () => ({ configured: Boolean(config.geminiApiKey) }));
+
+// The provider the user picked, and enough about it to render the panel -
+// never the key itself, which follows the same rule as every other secret here.
+ipcMain.handle("emb3r:api-provider-status", () => ({
+  provider: usingCustomApi() ? "custom" : "gemini",
+  geminiConfigured: Boolean(config.geminiApiKey),
+  customConfigured: Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel),
+  baseUrl: config.customApiBaseUrl || "",
+  model: config.customApiModel || "",
+  host: customApiHost(),
+}));
+
+ipcMain.handle("emb3r:set-api-provider", (_e, provider) => {
+  const value = provider === "custom" ? "custom" : "gemini";
+  config.apiProvider = value;
+  saveConfig(config);
+  return { success: true, provider: value };
+});
+
+ipcMain.handle("emb3r:set-custom-api", (_e, payload) => {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const url = validateBaseUrl(p.baseUrl);
+  if (!url.ok) return { success: false, error: url.error };
+
+  const key = typeof p.key === "string" ? p.key.trim() : "";
+  if (!key) return { success: false, error: "Enter the API key your provider gave you." };
+  if (/\s/.test(key)) {
+    return { success: false, error: "That key contains a space or line break - check for a copy-paste error." };
+  }
+
+  const model = typeof p.model === "string" ? p.model.trim() : "";
+  if (!model) return { success: false, error: "Enter the model name, exactly as your provider writes it." };
+
+  config.customApiBaseUrl = url.value;
+  config.customApiKey = key;
+  config.customApiModel = model;
+  config.apiProvider = "custom";
+  saveConfig(config);
+  return { success: true, host: customApiHost() };
+});
+
+ipcMain.handle("emb3r:clear-custom-api", () => {
+  config.customApiKey = "";
+  config.customApiBaseUrl = "";
+  config.customApiModel = "";
+  if (usingCustomApi()) config.apiProvider = "gemini";
+  saveConfig(config);
+  return { success: true };
+});
+
+// Answers "does this actually work" now, rather than leaving it to be found as
+// a reply that quietly fell back to the local model. Same endpoint, same key
+// and same model as a real message, so a pass here means the real path works.
+ipcMain.handle("emb3r:test-custom-api", async () => {
+  if (config.offlineLock) {
+    return { success: false, error: "The offline lock is on, so emb3r is refusing every outbound connection. Turn it off under Privacy first." };
+  }
+  if (!config.internetConsent) return { success: false, error: "Internet access hasn't been granted yet." };
+  if (!config.customApiKey || !config.customApiBaseUrl || !config.customApiModel) {
+    return { success: false, error: "Fill in the endpoint, the key and the model name first." };
+  }
+  const base = config.customApiBaseUrl.replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.customApiKey}` },
+      body: JSON.stringify({ model: config.customApiModel, max_tokens: 8,
+        messages: [{ role: "user", content: "Reply with the single word: ok" }] }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { success: false, host: customApiHost(),
+        error: `${res.status} ${res.statusText}${detail ? ` - ${detail.slice(0, 200)}` : ""}` };
+    }
+    const body = await res.json().catch(() => null);
+    const reply = body?.choices?.[0]?.message?.content;
+    if (typeof reply !== "string") {
+      return { success: false, host: customApiHost(),
+        error: "The endpoint answered, but not in the shape emb3r expects. It needs to speak the OpenAI chat-completions format." };
+    }
+    return { success: true, host: customApiHost(), model: config.customApiModel, reply: reply.trim().slice(0, 60) };
+  } catch (err) {
+    return { success: false, host: customApiHost(), error: String(err.message || err).slice(0, 200) };
+  }
+});
 
 // What is wrong with a key, judged on its shape alone. Returns null when there
 // is nothing to say.
@@ -3055,7 +3263,9 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // subtle "(web)" label on the reply
       if (mainWindow) mainWindow.webContents.send("emb3r:web-search-start");
       try {
-        ({ text, sources } = await answerWithGemini(promptText, onTextChunk, controller.signal));
+        ({ text, sources } = usingCustomApi()
+          ? await answerWithCustomApi(promptText, onTextChunk, controller.signal)
+          : await answerWithGemini(promptText, onTextChunk, controller.signal));
       } catch (geminiErr) {
         // Gemini is a nice-to-have, never a hard dependency - a quota limit,
         // a bad key, or Google having a bad day shouldn't dead-end the
