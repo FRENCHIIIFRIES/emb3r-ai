@@ -968,6 +968,64 @@ function notifyModelReady() {
   }
 }
 
+// How much conversation this machine can afford to hold, for this model.
+//
+// The window used to be 4096 in the CPU fallback and unset - meaning whatever
+// the library picked - on the main path, and the memory panel reported 4096
+// either way whether or not that was true. 4096 is also small enough to cause
+// real failures: six extracts from a PDF came to 1,907 tokens once, leaving
+// 187 for the reply, and the reply was severed mid-sentence when the context
+// shifted underneath it.
+//
+// A flat increase would have been wrong. Asked what a 16,384-token window
+// costs, the models already on this machine answer very differently:
+//
+//     Llama 3.2 3B   2,843MB        Qwen2.5 3B   1,418MB
+//     Qwen3.5 4B     1,593MB
+//
+// So the size is chosen per model, from that model's own estimate rather than
+// from a rule of thumb, and the budget is what is left after the weights and a
+// reserve for the operating system and this application. Free memory is
+// deliberately not the input: on Windows it excludes reclaimable cache and
+// reads far lower than what is actually available, which would pin every
+// machine to the floor.
+const CONTEXT_CANDIDATES = [16384, 8192, 4096];
+const CONTEXT_FLOOR = 4096;          // never worse than it was
+const HOST_RESERVE_BYTES = 2.5 * 1024 ** 3;
+
+function chooseContextSize(model, modelPath) {
+  const trained = model.trainContextSize || CONTEXT_FLOOR;
+  let weights = 0;
+  try {
+    weights = fs.statSync(modelPath).size;
+  } catch {
+    weights = 0;
+  }
+  const budget = os.totalmem() - weights - HOST_RESERVE_BYTES;
+
+  for (const size of CONTEXT_CANDIDATES) {
+    if (size > trained) continue;
+    let cost = null;
+    try {
+      const est = model.fileInsights.estimateContextResourceRequirements({
+        contextSize: size, modelGpuLayers: 0,
+      });
+      cost = Number(est.cpuRam);
+    } catch {
+      cost = null;                   // no estimate available: do not gamble
+    }
+    if (cost !== null && cost <= budget) {
+      console.log(`Context window: ${size} tokens `
+        + `(needs ${Math.round(cost / 1024 / 1024)}MB, `
+        + `budget ${Math.round(budget / 1024 / 1024)}MB)`);
+      return size;
+    }
+  }
+  const floor = Math.min(CONTEXT_FLOOR, trained);
+  console.log(`Context window: ${floor} tokens (the floor - nothing larger fits)`);
+  return floor;
+}
+
 // Real progress, not a fabricated one: node-llama-cpp's loadModel() and
 // createContext() both take an onLoadProgress(0..1) callback (confirmed in
 // node_modules/node-llama-cpp/dist/evaluator/LlamaModel/LlamaModel.d.ts and
@@ -1012,6 +1070,7 @@ async function loadLocalModel(filename, { conversationId } = {}) {
       onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
     });
     const context = await model.createContext({
+      contextSize: chooseContextSize(model, modelPath),
       onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
     });
     // keep the sequence: it is the only way to read how full the context is
@@ -1031,7 +1090,7 @@ async function loadLocalModel(filename, { conversationId } = {}) {
         onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
       });
       const context = await model.createContext({
-        contextSize: 4096,
+        contextSize: chooseContextSize(model, modelPath),
         onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
       });
       chatSequence = context.getSequence();
@@ -1476,7 +1535,10 @@ ipcMain.handle("emb3r:list-memories", () => {
     perQuestion: MEMORY_PICK_MAX,
     // deliberately called an estimate: characters/4, not a tokeniser
     worstCaseTokens: Math.ceil(worst / 4),
-    contextSize: 4096,
+    // the window that was actually allocated, not the number this used to
+    // assume. It varies by model and machine now, so quoting a constant here
+    // would have been telling the user a budget they do not have.
+    contextSize: chatSequence ? chatSequence.contextSize : CONTEXT_FLOOR,
   };
 });
 
