@@ -252,13 +252,31 @@ pre{
 
    The outline stays near-black at every hue. It is what holds the silhouette
    together, and an outline that shifts with the fill stops being an outline. */
-#logoMark .o { fill:#120a07; }
-#logoMark .d { fill:color-mix(in srgb, var(--text-color) 40%, #0f0a07 60%); }
-#logoMark .b { fill:color-mix(in srgb, var(--text-color) 60%, #140d09 40%); }
-#logoMark .g { fill:color-mix(in srgb, var(--text-color) 80%, #1a0f0a 20%); }
-#logoMark .f1{ fill:color-mix(in srgb, var(--text-color) 80%, #000 20%); }
-#logoMark .f2{ fill:var(--text-color); }
-#logoMark .f3{ fill:color-mix(in srgb, var(--text-color) 50%, #fff 50%); }
+#logoMark .o,
+.coilGlyph .o { fill:#120a07; }
+
+/* On the dark theme that outline was #120a07 against a #0b0f0b panel: 1.01:1.
+   Not low contrast - the same colour. A quarter of the drawing was rendering
+   as background, which is why the mark looked like pieces were missing rather
+   than like a dark creature. Lifting it 28% toward the accent gives 2.09:1:
+   visible as an edge, and still well under .d at 3.14 so the five tiers stay
+   in order. Light theme keeps the near-black, where it already reads 18.6:1. */
+:root:not([data-theme="light"]) #logoMark .o,
+:root:not([data-theme="light"]) .coilGlyph .o {
+    fill:color-mix(in srgb, var(--text-color) 28%, #120a07);
+}
+#logoMark .d,
+.coilGlyph .d { fill:color-mix(in srgb, var(--text-color) 40%, #0f0a07 60%); }
+#logoMark .b,
+.coilGlyph .b { fill:color-mix(in srgb, var(--text-color) 60%, #140d09 40%); }
+#logoMark .g,
+.coilGlyph .g { fill:color-mix(in srgb, var(--text-color) 80%, #1a0f0a 20%); }
+#logoMark .f1,
+.coilGlyph .f1{ fill:color-mix(in srgb, var(--text-color) 80%, #000 20%); }
+#logoMark .f2,
+.coilGlyph .f2{ fill:var(--text-color); }
+#logoMark .f3,
+.coilGlyph .f3{ fill:color-mix(in srgb, var(--text-color) 50%, #fff 50%); }
 /* The flames are grouped into the four clusters the artwork actually has, so
    each one lifts from where it meets the body instead of every ember moving
    as one block. transform-box:fill-box makes transform-origin resolve against
@@ -423,6 +441,17 @@ pre{
     flex:0 0 auto;
     white-space:nowrap;
     opacity:.72;
+}
+
+/* Which model answered, set small and quiet at the end of the reply. It is
+   information, not decoration, so it is legible but never competes with what
+   was actually said. */
+#chat .msgModel{
+    display:block;
+    margin-top:4px;
+    font-size:12px;
+    letter-spacing:.04em;
+    color:color-mix(in srgb, var(--text-color) 55%, transparent);
 }
 
 #chat .coilWrap{
