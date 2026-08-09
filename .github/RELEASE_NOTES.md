@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.33.1 — the provider you picked, actually used
+
+Four things, all reported by someone using Groq, and the first one explains most of the rest.
+
+**A provider other than Gemini was never used.** The check that decides whether a question goes out to the web was still asking "is there a Gemini key?" — so if you had set up Groq and no Gemini key, the answer was no, every time, for every message. Everything went to the local model. On a laptop without a graphics card that means minutes for a greeting, and a stop button that looks broken because it is waiting on something that has barely begun. Gemini still only steps in for questions that look like they need current information; a provider you chose by hand and typed a key for now simply answers.
+
+**Replies did not say what answered them.** The salamander tells you whether a reply came from this machine or from the web, which is the part that matters for privacy, but it cannot tell you which model. Replies now carry the name at the end — your local model, or the remote model and the host it came from.
+
+**The salamander beside each reply was invisible.** It was drawing as a solid black shape on a nearly black background. Every rule that gives the creature its colours was written for the one in the header; the small copy was never included, so it fell back to plain black. It has its colours now.
+
+**The mark in the header was nearly invisible on the dark theme.** Its outline was the same colour as the panel behind it, so a quarter of the drawing was rendering as background and the creature looked like it had pieces missing.
+
 ## v1.33.0 — bring your own provider
 
 Web access meant Gemini or nothing. It now also speaks the format almost every other service uses, so Groq, OpenRouter, Together, DeepSeek, Mistral and a server running on your own network all work. Settings > Web access asks for three things: the endpoint, your key, and the model name exactly as they write it.

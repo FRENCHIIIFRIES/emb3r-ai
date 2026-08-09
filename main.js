@@ -107,6 +107,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.33.1",
+    added: [],
+    fixed: [
+      "If you set up a provider other than Gemini, emb3r now actually uses it. It was only ever checking for a Gemini key, so everything went to the local model instead - which is why replies took minutes and the stop button looked stuck.",
+      "Replies say which model answered, at the end of the line: the local model's name, or the remote model and where it came from.",
+      "The salamander beside Ember's replies was drawing as a black shape on a black background. It has its colours back.",
+      "The mark in the header was nearly invisible on the dark theme - its outline was the same colour as the panel behind it.",
+    ] },
   { version: "1.33.0",
     added: [
       "You can use a provider other than Gemini for web answers. Settings > Web access now takes an endpoint, a key and a model name, which covers most services - Groq, OpenRouter, Together, DeepSeek, Mistral - and a server on your own network. Worth knowing: only Gemini reads live web pages. Another provider gives you its model answering from what it already knows.",
