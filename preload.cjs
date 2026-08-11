@@ -28,6 +28,23 @@ contextBridge.exposeInMainWorld("emb3r", {
     ipcRenderer.on("emb3r:web-search-start", () => callback());
   },
 
+  // Ember's voice. speak() returns raw PCM rather than an encoded file, so the
+  // renderer never needs a blob URL and the CSP stays as it is.
+  voiceStatus: () => ipcRenderer.invoke("emb3r:voice-status"),
+  installVoice: () => ipcRenderer.invoke("emb3r:install-voice"),
+  warmVoice: () => ipcRenderer.invoke("emb3r:warm-voice"),
+  speak: (payload) => ipcRenderer.invoke("emb3r:speak", payload),
+  stopSpeaking: () => ipcRenderer.invoke("emb3r:stop-speaking"),
+  onVoiceProgress: (callback) => {
+    ipcRenderer.on("emb3r:voice-progress", (_event, data) => callback(data));
+  },
+
+  // Ember's ears. The renderer captures and downsamples; the transcribing
+  // happens in main, where the model already lives.
+  earsStatus: () => ipcRenderer.invoke("emb3r:ears-status"),
+  warmEars: () => ipcRenderer.invoke("emb3r:warm-ears"),
+  transcribe: (payload) => ipcRenderer.invoke("emb3r:transcribe", payload),
+
   geminiKeyStatus: () => ipcRenderer.invoke("emb3r:gemini-key-status"),
 
   apiProviderStatus: () => ipcRenderer.invoke("emb3r:api-provider-status"),

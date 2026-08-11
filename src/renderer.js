@@ -16,6 +16,16 @@ const stopButton = document.getElementById("stopButton");
 const statsEl    = document.getElementById("genStats");
 const attachBar  = document.getElementById("attachBar");
 
+// face mode: the same creature at poster scale, filling the window
+const faceButton = document.getElementById("faceButton");
+const faceBigEl  = document.getElementById("faceBig");
+const faceSaidEl = document.getElementById("faceSaid");
+const faceHeardEl = document.getElementById("faceHeard");
+const faceExit   = document.getElementById("faceExit");
+const faceMic    = document.getElementById("faceMic");
+const faceMicLabel = document.getElementById("faceMicLabel");
+const micIndicator = document.getElementById("micIndicator");
+
 const FACES = {
   idle:     "( ^_^ )",
   think1:   "( o_o )",
@@ -92,8 +102,73 @@ function setStatus(s) {
   setFire(FIRE_FOR_STATUS[key] || null);
 }
 
+// The big face is built rather than written out. Every kaomoji in FACES is one
+// line of brackets, which is right beside a mood bar and wrong when it is the
+// whole window - at that size a single row reads as very large punctuation
+// rather than as a creature. So the poster version is drawn from parts, and the
+// mouth can change without the eyes moving.
+//
+// Every row is centred to the same width by code. Hand-aligned ASCII art
+// survives exactly until someone edits one line of it.
+const FACE_COLS = 17;
+
+function centreRow(s) {
+  const chars = [...s];
+  const pad = Math.max(0, FACE_COLS - chars.length);
+  const left = Math.floor(pad / 2);
+  return " ".repeat(left) + s + " ".repeat(pad - left);
+}
+
+// eyes and mouth for each of the states the small face already has, so the two
+// renderings say the same thing
+const BIG_FACE = {
+  idle:      { eyes: "●     ●", mouth: "‿‿‿" },
+  think1:    { eyes: "o     o", mouth: " ─ " },
+  think2:    { eyes: "─     ─", mouth: " ─ " },
+  happy:     { eyes: "^     ^", mouth: "‿‿‿" },
+  sad:       { eyes: ";     ;", mouth: "︵︵︵" },
+  sleeping:  { eyes: "u     u", mouth: " ~ " },
+  error:     { eyes: "x     x", mouth: "︵︵︵" },
+  music1:    { eyes: "ᵔ     ᵔ", mouth: " ♪ " },
+  music2:    { eyes: "ᵔ     ᵔ", mouth: " ♫ " },
+  wink:      { eyes: "^     ~", mouth: "‿‿‿" },
+  surprised: { eyes: "o     O", mouth: " o " },
+  search1:   { eyes: ">     >", mouth: " ─ " },
+  search2:   { eyes: "<     <", mouth: " ─ " },
+  delighted: { eyes: "♥     ♥", mouth: "‿‿‿" },
+  dizzy:     { eyes: "@     @", mouth: " ~ " },
+  offline:   { eyes: "·     ·", mouth: " ─ " },
+  listening: { eyes: "◕     ◕", mouth: " o " },
+};
+
+function bigFaceArt(state, mouthOverride) {
+  const parts = BIG_FACE[state] || BIG_FACE.idle;
+  return [
+    centreRow("▁▁▁▁▁▁▁▁▁▁▁"),
+    centreRow(""),
+    centreRow(parts.eyes),
+    centreRow(""),
+    centreRow(mouthOverride || parts.mouth),
+    centreRow(""),
+    centreRow("▔▔▔▔▔▔▔▔▔▔▔"),
+  ].join("\n");
+}
+
+// The face is drawn in two places at once - the small one beside the mood bar
+// and the poster-sized one in face mode - so every change goes through here and
+// the two can never disagree. Which one is visible is CSS's business.
+function paintFace(text, state, mouthOverride) {
+  faceEl.textContent = text;
+  if (faceBigEl) faceBigEl.textContent = bigFaceArt(state || currentFace, mouthOverride);
+}
+
+// kept so the mouth animation knows what to settle back to when Ember stops
+// talking, rather than guessing at idle
+let currentFace = "idle";
+
 function setFace(state) {
-  faceEl.textContent = FACES[state] || FACES.idle;
+  currentFace = FACES[state] ? state : "idle";
+  paintFace(FACES[currentFace]);
 }
 
 function stopThinking() {
@@ -451,6 +526,517 @@ input.addEventListener("keydown", (e) => {
 });
 
 // =============================
+// Voice — Ember reads replies aloud
+// =============================
+
+// The obvious way to do this is speechSynthesis, and it was built first. It is
+// the wrong answer here: the voices it reaches are the ones installed on the
+// machine, and on Windows those are the old concatenative kind - eight of them
+// on this computer, every one of which sounds like a machine reading a receipt.
+// That is a ceiling, not a setting.
+//
+// So Ember speaks with a neural model running in the main process, and this
+// side does two things: decide what is worth saying out loud, and play what
+// comes back. Nothing here touches the network - the renderer cannot - and the
+// audio arrives as raw samples rather than a file, so there is no blob URL and
+// the CSP is untouched.
+
+let voiceEnabled = false;
+let voiceSpeed = 1;
+// whether the speech model is actually on disk. Speech stays silent until it
+// is, rather than failing once per reply.
+let voiceInstalled = false;
+
+// bumped whenever speech should stop. Anything that comes back from the main
+// process carrying an older number is dropped rather than played late.
+let voiceRun = 0;
+// everything scheduled on the audio clock and not yet finished, and the clock
+// time the next piece should begin at
+let voiceSources = [];
+let voiceStartAt = 0;
+
+// Read aloud, a reply is prose - not the punctuation that makes it prose on a
+// screen. Spoken literally, a fenced block is "backtick backtick backtick j s"
+// followed by every brace, and a URL is half a minute of slashes. Both are
+// already on screen for the eyes; what is spoken should be what a person would
+// actually say out loud.
+function speakableText(raw) {
+  let t = String(raw || "");
+
+  // fenced code, said rather than spelled - so a reply that is mostly code
+  // still tells you there is something to look at
+  t = t.replace(/```[\s\S]*?```/g, " (code on screen) ");
+  t = t.replace(/```[\s\S]*$/, " (code on screen) ");   // an unclosed fence, mid-stream
+  t = t.replace(/`([^`\n]+)`/g, "$1");                  // inline code keeps its word
+
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");       // images: the alt text is the content
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");        // links: the label, not the target
+  t = t.replace(/\b(?:https?:\/\/|www\.)\S+/gi, "a link");
+
+  t = t.replace(/^\s{0,3}#{1,6}\s+/gm, "");             // heading marks
+  t = t.replace(/^\s{0,3}>\s?/gm, "");                  // block quotes
+  t = t.replace(/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/gm, ""); // horizontal rules
+  t = t.replace(/^\s*[-*+]\s+/gm, "");                  // bullets
+  t = t.replace(/(\*\*|__)(.+?)\1/gs, "$2");            // bold
+  t = t.replace(/(?<![\w*_])[*_](\S(?:[^*_\n]*\S)?)[*_](?![\w*_])/g, "$1"); // italics
+
+  // Emoji and box-drawing. A voice that announces "grinning face with smiling
+  // eyes" in the middle of a sentence is worse than one that says nothing, and
+  // Ember's own faces are punctuation, not words.
+  t = t.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2500}-\u{259F}\u{FE0F}\u{200D}]/gu, " ");
+
+  t = t.replace(/(\s*\(code on screen\)\s*)+/g, " (code on screen) ");
+  return t.replace(/\s+/g, " ").trim();
+}
+
+// How the reply is cut up decides how it sounds, and the first attempt got this
+// badly wrong. Splitting on sentences alone produced a two-second opener
+// followed by a ten-second one, and since the next piece is only made while the
+// current one plays, a short piece cannot hide a long one behind it: measured,
+// that left 5.7 and 4.2 seconds of dead silence mid-answer.
+//
+// The model synthesises at about 1.15x the speed of speech, so some silence is
+// arithmetic - roughly fifteen per cent of the reply, whatever is done. What
+// can be chosen is where it goes. Small, even pieces spread it into pauses of a
+// few hundred milliseconds at clause boundaries, which is where a person
+// breathes anyway; large uneven ones collect it into stalls that sound broken.
+//
+// About fifteen characters of text becomes a second of speech in this voice, so
+// ninety characters is roughly six seconds - long enough to keep the phrasing
+// of a clause, short enough that the gap behind it stays under a second.
+const SPEECH_CHUNK_CHARS = 90;
+const SPEECH_CHUNK_MIN = 30;
+
+function speechChunks(text) {
+  const pieces = [];
+  const sentences = text.match(/[^.!?…]+[.!?…]+["'”’)\]]*|\S[^.!?…]*$/g) || [];
+
+  for (const sentence of sentences) {
+    let rest = sentence.trim();
+    while (rest.length > SPEECH_CHUNK_CHARS) {
+      // a clause mark first, then any space, and only cut a word in half if the
+      // text offers nothing else - which in practice means a URL survived the
+      // stripper or someone pasted a hash
+      let cut = -1;
+      for (const mark of [",", ";", ":", "—", " "]) {
+        const at = rest.lastIndexOf(mark, SPEECH_CHUNK_CHARS);
+        if (at >= SPEECH_CHUNK_MIN) { cut = at; break; }
+      }
+      if (cut < 0) cut = SPEECH_CHUNK_CHARS;
+      pieces.push(rest.slice(0, cut + 1).trim());
+      rest = rest.slice(cut + 1).trim();
+    }
+    if (rest) pieces.push(rest);
+  }
+
+  // "Yes." on its own would get a whole pause either side of it, which sounds
+  // like a stutter rather than an answer. Short pieces join the one before.
+  const out = [];
+  for (const piece of pieces) {
+    const prev = out[out.length - 1];
+    if (prev && piece.length < SPEECH_CHUNK_MIN
+        && prev.length + piece.length <= SPEECH_CHUNK_CHARS + SPEECH_CHUNK_MIN) {
+      out[out.length - 1] = `${prev} ${piece}`;
+    } else {
+      out.push(piece);
+    }
+  }
+  return out.filter(Boolean);
+}
+
+// Playing each piece when the one before it ends is the obvious design and it
+// does not work. The model makes speech a little slower than speech is spoken -
+// about 1.15x on this machine, worse once a thin laptop has been at it long
+// enough to get warm - so playback catches up with synthesis and waits, and the
+// waiting lands in the middle of a sentence. Measured, that was five and ten
+// seconds of dead air inside one answer.
+//
+// So a lead is banked before the first word. Two and a half seconds of audio
+// held back covers roughly twenty seconds of reply without a single gap, and it
+// costs no more delay at the start than waiting for the first sentence did
+// anyway. Longer answers can still run the buffer dry, which is arithmetic
+// rather than a bug: nothing short of a faster model fixes that.
+const SPEECH_LEAD_SECONDS = 2.5;
+
+// Raw samples into an AudioBuffer. Deliberately not an <audio> element with a
+// blob URL: media would fall through to default-src 'none' and be blocked, and
+// widening a load-bearing CSP for a convenience is not a trade worth making. A
+// buffer built in memory is not a fetch, so the policy never comes into it.
+function bufferFor(pcm, sampleRate) {
+  const ctx = getAudioCtx();
+  const samples = pcm instanceof Float32Array ? pcm : new Float32Array(pcm);
+  if (!samples.length) return null;
+  const buffer = ctx.createBuffer(1, samples.length, sampleRate || 24000);
+  buffer.copyToChannel(samples, 0);
+  return buffer;
+}
+
+// Scheduled against the audio clock rather than started from an onended
+// handler. Consecutive pieces then run sample-accurately back to back; starting
+// each one from a callback leaves a seam at every join, which on a voice reads
+// as a stammer.
+function scheduleBuffer(buffer, rate) {
+  const ctx = getAudioCtx();
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  // The other half of Ember's pitch lift. The main process generates a little
+  // slow and names the rate to play it back at; multiplying them out leaves the
+  // tempo where it started and the voice higher. Playing faster also shortens
+  // the buffer, so the clock has to be advanced by the played length and not
+  // the recorded one - get that wrong and every piece overlaps the last.
+  const playbackRate = rate || 1;
+  source.playbackRate.value = playbackRate;
+  source.connect(ctx.destination);
+  // a few milliseconds of margin, or a buffer scheduled for a moment that has
+  // already passed starts late and drags everything after it
+  const at = Math.max(ctx.currentTime + 0.03, voiceStartAt);
+  source.start(at);
+  voiceStartAt = at + buffer.duration / playbackRate;
+  voiceSources.push(source);
+  source.onended = () => { voiceSources = voiceSources.filter((s) => s !== source); };
+  return at;
+}
+
+function stopSpeaking() {
+  voiceRun += 1;
+  for (const source of voiceSources) {
+    // the handler is cleared first: stop() fires onended, and a filter running
+    // over the array being iterated is a bug waiting for a long reply
+    try { source.onended = null; source.stop(); } catch (e) {}
+  }
+  voiceSources = [];
+  voiceStartAt = 0;
+  // a mouth still moving after the sound stopped is the worst kind of wrong:
+  // it looks like the app is talking to you and you have gone deaf
+  stopMouth();
+  // and tell the main process to abandon anything mid-synthesis, so a piece
+  // already being made does not arrive after the user has moved on
+  try { window.emb3r.stopSpeaking(); } catch (e) {}
+}
+
+function speaking() {
+  return voiceSources.length > 0;
+}
+
+async function speak(text) {
+  if (!voiceEnabled || !voiceInstalled) return;
+  const words = speakableText(text);
+  if (!words) return;
+  const chunks = speechChunks(words);
+  if (!chunks.length) return;
+
+  stopSpeaking();
+  const run = voiceRun;
+  // what Ember is saying, in text, for anyone who cannot hear it - and so that
+  // face mode is never a view with nothing to read
+  if (faceSaidEl) faceSaidEl.textContent = words;
+  const ctx = getAudioCtx();
+  // Chromium suspends a context created before the page has been interacted
+  // with, and a suspended context plays nothing while reporting no error at
+  // all - the exact shape of bug this project keeps catching by looking.
+  if (ctx.state === "suspended") await ctx.resume();
+  voiceStartAt = 0;
+
+  const held = [];
+  let heldSeconds = 0;
+  let playing = false;
+
+  // the next piece is asked for before the current one is dealt with, so the
+  // model is never idle while there is more to say
+  let pending = window.emb3r.speak({ text: chunks[0], speed: voiceSpeed });
+  for (let i = 0; i < chunks.length; i++) {
+    let result;
+    try {
+      result = await pending;
+    } catch (e) {
+      return;
+    }
+    if (run !== voiceRun) return;
+
+    pending = i + 1 < chunks.length
+      ? window.emb3r.speak({ text: chunks[i + 1], speed: voiceSpeed })
+      : null;
+
+    if (!result || !result.success) {
+      // a stale result is the expected outcome of being interrupted, not a
+      // failure worth saying anything about
+      if (result && result.stale) return;
+      if (result && result.needsInstall) {
+        voiceInstalled = false;
+        refreshVoicePanel();
+      }
+      return;
+    }
+
+    const buffer = bufferFor(result.pcm, result.sampleRate);
+    if (!buffer) continue;
+    const rate = result.playbackRate || 1;
+
+    if (playing) {
+      scheduleBuffer(buffer, rate);
+      continue;
+    }
+
+    held.push({ buffer, rate });
+    // the played length, not the recorded one - the lift makes every piece
+    // shorter than it was generated, and a lead counted the other way would be
+    // eleven per cent smaller than it claims
+    heldSeconds += buffer.duration / rate;
+    // start once there is a lead worth having - or once there is nothing left
+    // to wait for, which is what makes a one-line answer immediate
+    if (heldSeconds >= SPEECH_LEAD_SECONDS || i === chunks.length - 1) {
+      playing = true;
+      for (const piece of held) scheduleBuffer(piece.buffer, piece.rate);
+      held.length = 0;
+      // the mouth starts with the sound, not with the request - there is a
+      // second or two between the two and a face chewing on silence is worse
+      // than one that waits
+      startMouth();
+    }
+  }
+
+  // resolve when the sound actually stops rather than when the last piece is
+  // handed to the clock, so callers can say "speaking..." and mean it
+  const remaining = (voiceStartAt - ctx.currentTime) * 1000;
+  if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+  if (run === voiceRun) stopMouth();
+}
+
+// a reply still being spoken after the window has gone is the app talking to
+// an empty room
+window.addEventListener("pagehide", stopSpeaking);
+
+// =============================
+// Face mode
+// =============================
+//
+// Ember's face, filling the window, for when you would rather listen than read.
+// A mode of this window and not a second one: the transcript underneath is
+// untouched, so leaving is one class removal and nothing is lost.
+
+// Only the mouth moves. Swapping whole faces ten times a second reads as a
+// glitch; holding the eyes still and changing one character reads as talking.
+// The shapes are uneven on purpose - a mouth that cycles through a tidy loop
+// looks like a progress indicator rather than speech.
+// Only the mouth moves while Ember talks. The shapes are uneven on purpose - a
+// mouth cycling through a tidy loop looks like a progress indicator rather than
+// speech. Small and large faces get their own vocabulary because one is three
+// characters wide and the other is eleven.
+const MOUTHS = ["o", "O", "ω", "_", "o", "-", "o", "▽"];
+const BIG_MOUTHS = [" o ", " O ", "▁▁▁", " ─ ", " o ", "‿‿‿", " O ", " ▁ "];
+let mouthAt = 0;
+let mouthTimer = null;
+
+function startMouth() {
+  if (mouthTimer) return;
+  // Someone who has asked for less movement still gets an open mouth while
+  // Ember speaks, because that is information rather than decoration. It just
+  // does not flicker.
+  if (!reactionsAllowed()) { paintFace("( ^o^ )", currentFace, " o "); return; }
+  mouthTimer = setInterval(() => {
+    // A gap between pieces is not the end of the reply. Stopping the timer here
+    // was the first version and it was wrong: synthesis runs behind playback,
+    // so the very first silence killed the animation for good and Ember spent
+    // the rest of the answer talking with a closed mouth. The mouth closes and
+    // waits instead; speak() and stopSpeaking() own when it ends.
+    if (!speaking()) {
+      paintFace(FACES[currentFace] || FACES.idle);
+      return;
+    }
+    mouthAt += 1;
+    paintFace(`( ^${MOUTHS[mouthAt % MOUTHS.length]}^ )`,
+      currentFace, BIG_MOUTHS[mouthAt % BIG_MOUTHS.length]);
+  }, 130);
+}
+
+function stopMouth() {
+  if (mouthTimer) { clearInterval(mouthTimer); mouthTimer = null; }
+  paintFace(FACES[currentFace] || FACES.idle);
+}
+
+let faceModeOn = false;
+
+function setFaceMode(on) {
+  faceModeOn = on;
+  appEl.classList.toggle("faceMode", on);
+  paintFace(FACES[currentFace] || FACES.idle);
+  if (on) {
+    faceHeardEl.textContent = "";
+    // the models both take a moment to load, and the moment should not be the
+    // first thing somebody says
+    try { window.emb3r.warmEars(); } catch (e) {}
+    faceMic.focus();
+  } else {
+    stopMouth();
+    stopListening();
+    input.focus();
+  }
+}
+
+faceButton.addEventListener("click", () => setFaceMode(!faceModeOn));
+faceExit.addEventListener("click", () => setFaceMode(false));
+
+// Anything that fills the window has to be trivially reversible, and Escape is
+// where everyone's hand already goes. Registered on the document rather than on
+// a control so it works whatever happens to have focus.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && faceModeOn) setFaceMode(false);
+});
+
+// =============================
+// The microphone
+// =============================
+//
+// Push to talk, held down, never listening on its own. An app that says nothing
+// leaves your machine does not get to open a microphone quietly, and a button
+// you hold is the difference between a tool and a bug.
+//
+// Capture goes through MediaRecorder and is decoded afterwards rather than
+// tapped sample by sample: an AudioWorklet would need its own module file and a
+// second script origin, and decodeAudioData already does the hard part. The
+// resample to 16 kHz happens in an OfflineAudioContext, which is the browser's
+// own resampler rather than one written here at midnight.
+
+let micStream = null;
+let micRecorder = null;
+let micChunks = [];
+let listening = false;
+let transcribing = false;
+
+function setListening(on) {
+  listening = on;
+  appEl.classList.toggle("listening", on);
+  micIndicator.hidden = !on;
+  faceMicLabel.textContent = on ? "listening" : "hold to talk";
+  // the eyes change too, so the state is legible from the face alone
+  if (on) paintFace(FACES.surprised, "listening");
+  else paintFace(FACES[currentFace] || FACES.idle);
+}
+
+async function startListening() {
+  if (listening || transcribing) return;
+  // whatever Ember was saying is over: you are talking now
+  stopSpeaking();
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+  } catch (err) {
+    faceHeardEl.textContent = "";
+    faceSaidEl.textContent = err && err.name === "NotAllowedError"
+      ? "The microphone was refused. Windows asks once, under Privacy settings."
+      : "No microphone was found on this computer.";
+    return;
+  }
+  micChunks = [];
+  micRecorder = new MediaRecorder(micStream);
+  micRecorder.addEventListener("dataavailable", (e) => {
+    if (e.data && e.data.size) micChunks.push(e.data);
+  });
+  micRecorder.addEventListener("stop", handleRecording);
+  micRecorder.start();
+  setListening(true);
+}
+
+function stopListening() {
+  if (!listening) return;
+  setListening(false);
+  try { micRecorder.stop(); } catch (e) {}
+  // the track is stopped as well as the recorder, or the operating system goes
+  // on showing this app as using the microphone
+  if (micStream) {
+    for (const track of micStream.getTracks()) {
+      try { track.stop(); } catch (e) {}
+    }
+    micStream = null;
+  }
+}
+
+// Whisper wants 16 kHz mono floats. The browser's own resampler does it, which
+// is both correct and about a hundred lines shorter than doing it here.
+async function toSixteenKilohertz(blob) {
+  const bytes = await blob.arrayBuffer();
+  const ctx = getAudioCtx();
+  const decoded = await ctx.decodeAudioData(bytes);
+  const frames = Math.ceil(decoded.duration * 16000);
+  if (!frames) return null;
+  const offline = new OfflineAudioContext(1, frames, 16000);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+
+async function handleRecording() {
+  if (!micChunks.length) return;
+  const blob = new Blob(micChunks, { type: micRecorder ? micRecorder.mimeType : "audio/webm" });
+  micChunks = [];
+  transcribing = true;
+  faceSaidEl.textContent = "";
+  faceHeardEl.textContent = "...";
+  setFace("think1");
+
+  try {
+    const pcm = await toSixteenKilohertz(blob);
+    if (!pcm || pcm.length < 16000 * 0.3) {
+      faceHeardEl.textContent = "";
+      faceSaidEl.textContent = "That was too short to make out - hold the button while you talk.";
+      return;
+    }
+    const result = await window.emb3r.transcribe({ pcm });
+    if (!result || !result.success) {
+      faceHeardEl.textContent = "";
+      faceSaidEl.textContent = result && result.needsInstall
+        ? "This build did not ship the listening model."
+        : (result && result.error) || "That could not be transcribed.";
+      return;
+    }
+    const heard = String(result.text || "").trim();
+    if (!heard) {
+      faceHeardEl.textContent = "";
+      faceSaidEl.textContent = "I did not catch that.";
+      return;
+    }
+
+    // Shown before it is sent, and left on screen. Being misheard is the one
+    // thing that goes wrong with speech, and it should never be a mystery why
+    // Ember answered the question she answered.
+    faceHeardEl.textContent = heard;
+    input.value = heard;
+    await onSend();
+  } catch (err) {
+    faceHeardEl.textContent = "";
+    faceSaidEl.textContent = String(err && err.message ? err.message : err);
+  } finally {
+    transcribing = false;
+    setFace(restingFace());
+    if (faceModeOn) faceMic.focus();
+  }
+}
+
+// held, on both the button and the spacebar - the button for a pointer, the
+// spacebar because that is where a hand already is
+faceMic.addEventListener("pointerdown", (e) => { e.preventDefault(); startListening(); });
+faceMic.addEventListener("pointerup", stopListening);
+faceMic.addEventListener("pointerleave", stopListening);
+faceMic.addEventListener("pointercancel", stopListening);
+
+document.addEventListener("keydown", (e) => {
+  if (!faceModeOn || e.code !== "Space" || e.repeat) return;
+  // the button has focus in this mode, and space would otherwise click it too
+  e.preventDefault();
+  startListening();
+});
+
+document.addEventListener("keyup", (e) => {
+  if (!faceModeOn || e.code !== "Space") return;
+  e.preventDefault();
+  stopListening();
+});
+
+// =============================
 // Send
 // =============================
 
@@ -537,6 +1123,10 @@ async function onSend() {
 // `ui` is kept separate from `opts`: opts is forwarded to the main process,
 // and adding presentation flags to it would send them across IPC for no reason.
 async function submitToModel(messageToSend, opts, ui = {}) {
+  // whatever is still being read aloud belongs to the previous question, and
+  // the user has visibly moved on
+  stopSpeaking();
+
   // The scanning face means "this answer is being built from your file", which
   // is true for the whole reply - not "searching now", which finished in
   // milliseconds before the model was ever called.
@@ -586,6 +1176,10 @@ async function submitToModel(messageToSend, opts, ui = {}) {
       if (result.stopped) append("sys", "sys", "stopped");
       if (result.source === "gemini") appendSources(result.sources);
       playReplyBeep();
+      // spoken once the reply is complete rather than token by token: the
+      // stream arrives in fragments that are not words, and a synthesiser fed
+      // fragments reads them as fragments
+      speak(streamText || result.text);
       // a fuller face at full mood, so the bar above it means something visible
       setFace(mood >= 5 ? "delighted" : "happy");
       setStatus("happy");
@@ -744,6 +1338,9 @@ window.emb3r.onWebSearchStart(() => {
 function setGenerating(on) {
   send.disabled = on;
   input.disabled = on;
+  // the microphone is the face-mode equivalent of the send button, and leaving
+  // it live while the terminal one is locked would be one way to ask twice
+  faceMic.disabled = on;
   stopButton.hidden = !on;
   if (!on) statsEl.textContent = "";
 }
@@ -764,6 +1361,9 @@ window.emb3r.onGenStats(({ tokensPerSec, context }) => {
 
 stopButton.addEventListener("click", async () => {
   stopButton.disabled = true;
+  // stop means stop: the sentence being read aloud is part of what was asked
+  // to end, not a separate thing that carries on
+  stopSpeaking();
   // the reply line is captured before awaiting: the stream finishing clears
   // streamLine, and the puff belongs on the sentence that got cut off
   const stopped = streamLine;
@@ -1493,6 +2093,16 @@ const settingsButton = document.getElementById("settingsButton");
 const closeSettings  = document.getElementById("closeSettings");
 const soundToggle    = document.getElementById("soundToggle");
 const animToggle     = document.getElementById("animToggle");
+const voiceToggle    = document.getElementById("voiceToggle");
+const voiceControls  = document.getElementById("voiceControls");
+const voiceRateInput = document.getElementById("voiceRate");
+const voiceRateValue = document.getElementById("voiceRateValue");
+const voiceInstall   = document.getElementById("voiceInstall");
+const voiceInstallState = document.getElementById("voiceInstallState");
+const voiceProgress  = document.getElementById("voiceProgress");
+const voicePreview   = document.getElementById("voicePreview");
+const voiceStopButton = document.getElementById("voiceStop");
+const voiceStatus    = document.getElementById("voiceStatus");
 const settingsTabs   = document.querySelectorAll(".settingsTab");
 
 settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
@@ -1530,7 +2140,8 @@ const SETTINGS_KEYWORDS = {
   hardware:    "ram cpu gpu vram memory cores detect scan specs",
   updates:     "update version upgrade release install newer",
   display:     "theme dark light colour color accent font size glow sound effects reactions " +
-               "animation mute appearance contrast",
+               "animation mute appearance contrast voice speech speak talk aloud read " +
+               "narrate tts spoken pitch speed accessibility",
 };
 
 const settingsSearch = document.getElementById("settingsSearch");
@@ -1620,6 +2231,11 @@ function appendStaticBotLine(text, source) {
 // through the same main-process path that can change which conversation is
 // active.
 async function renderActiveConversationHistory() {
+  // the one funnel every switch passes through, so it is also the one place
+  // that has to silence a reply belonging to the transcript being replaced -
+  // covers switching chat, starting a new one, and changing profile
+  stopSpeaking();
+
   const conv = await window.emb3r.getActiveConversation();
   // an attachment belongs to the conversation it was added to. This is the one
   // funnel every switch passes through, so dropping it here stops a document
@@ -1738,6 +2354,132 @@ animToggle.checked = animationsEnabled;
 animToggle.addEventListener("change", (e) => {
     animationsEnabled = e.target.checked;
     localStorage.setItem("emb3rAnimations", String(animationsEnabled));
+});
+
+// ---- Voice ---------------------------------------------------------------
+// Whether Ember speaks, and how fast, are preferences about this machine's
+// speakers, so they live in localStorage beside sound and reactions. Whether
+// the speech model is on disk is not a preference - that is a fact about the
+// installation, and the main process is the one that knows it.
+
+const VOICE_LINE = "Hello. I'm Ember. I run on this machine, and nothing you say leaves it.";
+
+async function refreshVoicePanel() {
+  let status = null;
+  try {
+    status = await window.emb3r.voiceStatus();
+  } catch (e) {
+    status = null;
+  }
+  voiceInstalled = Boolean(status && status.installed);
+
+  const mb = status ? Math.round(status.downloadBytes / 1024 / 1024) : 92;
+  if (voiceInstalled) {
+    voiceInstallState.textContent = "Ember's voice is on this machine.";
+    voiceInstall.hidden = true;
+  } else if (status && status.offlineLock) {
+    // only reachable in a build packaged without the voice, so it says what is
+    // actually wrong rather than pretending this is the normal first run
+    voiceInstallState.textContent =
+      `This build did not ship the voice, and the offline lock is on. It is a ${mb} MB download.`;
+    // offered anyway rather than hidden: the button explains the lock when
+    // pressed, which is more use than a control that is simply not there
+    voiceInstall.hidden = false;
+  } else {
+    voiceInstallState.textContent = `This build did not ship the voice — it is a ${mb} MB download.`;
+    voiceInstall.hidden = false;
+  }
+  voicePreview.disabled = !voiceInstalled;
+
+  // Load the session now rather than during the first reply. Measured, that
+  // load was most of the 4.4 s between a reply landing and Ember starting to
+  // speak, and switching speech on is a clear enough statement of intent to
+  // spend it here.
+  if (voiceEnabled && voiceInstalled) {
+    try { window.emb3r.warmVoice(); } catch (e) {}
+  }
+}
+
+function showVoiceSpeed() {
+  voiceRateValue.textContent = `${voiceSpeed.toFixed(2)}×`;
+}
+
+const savedVoice = localStorage.getItem("emb3rVoice");
+voiceEnabled = savedVoice === "true";
+voiceSpeed = Number(localStorage.getItem("emb3rVoiceSpeed")) || 1;
+
+voiceToggle.checked = voiceEnabled;
+voiceControls.hidden = !voiceEnabled;
+// The slider is the authority on what a speed can be. Assigning to it clamps
+// to its own min and max, so reading the value straight back is what stops a
+// stored number from an older build - or a hand-edited one - being spoken at
+// while the label beside it says something else.
+voiceRateInput.value = String(voiceSpeed);
+voiceSpeed = Number(voiceRateInput.value) || 1;
+showVoiceSpeed();
+refreshVoicePanel();
+
+voiceToggle.addEventListener("change", (e) => {
+  voiceEnabled = e.target.checked;
+  localStorage.setItem("emb3rVoice", String(voiceEnabled));
+  voiceControls.hidden = !voiceEnabled;
+  // turning it off is a request for silence now, not from the next reply
+  if (!voiceEnabled) stopSpeaking();
+  else refreshVoicePanel();
+});
+
+voiceRateInput.addEventListener("input", (e) => {
+  voiceSpeed = Number(e.target.value) || 1;
+  localStorage.setItem("emb3rVoiceSpeed", String(voiceSpeed));
+  showVoiceSpeed();
+});
+
+voiceInstall.addEventListener("click", async () => {
+  voiceInstall.disabled = true;
+  voiceStatus.textContent = "";
+  voiceInstallState.textContent = "Fetching Ember's voice...";
+  const result = await window.emb3r.installVoice();
+  voiceInstall.disabled = false;
+  if (!result.success) {
+    voiceStatus.classList.add("bad");
+    voiceStatus.textContent = result.error;
+    voiceProgress.textContent = "";
+    await refreshVoicePanel();
+    return;
+  }
+  voiceStatus.classList.remove("bad");
+  voiceProgress.textContent = "";
+  await refreshVoicePanel();
+  voiceStatus.textContent = "Ready.";
+});
+
+// the same meter the model downloads use, so the two read as one idea
+window.emb3r.onVoiceProgress((p) => {
+  if (!p || p.percent === null || p.percent === undefined) return;
+  voiceProgress.textContent = `${progressBar(p.percent, 20)} ${p.percent}%  ${p.file}`;
+});
+
+// A voice you cannot hear before committing to it is a voice you cannot judge.
+// The line is Ember's own claim, which is the thing worth hearing twice.
+voicePreview.addEventListener("click", async () => {
+  if (!voiceInstalled) { voiceStatus.textContent = "Fetch the voice first."; return; }
+  const wasOff = !voiceEnabled;
+  // the preview works with the toggle off, so the voice can be auditioned
+  // without first agreeing to be spoken to
+  if (wasOff) voiceEnabled = true;
+  voiceStatus.classList.remove("bad");
+  voiceStatus.textContent = "speaking...";
+  try {
+    await speak(VOICE_LINE);
+  } finally {
+    if (wasOff) voiceEnabled = false;
+    voiceStatus.textContent = "";
+  }
+});
+
+voiceStopButton.addEventListener("click", () => {
+  stopSpeaking();
+  voiceStatus.textContent = "";
 });
 
 // =============================

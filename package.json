@@ -17,8 +17,10 @@
   },
   "dependencies": {
     "@google/genai": "^2.15.0",
+    "@huggingface/transformers": "^3.8.1",
     "electron-updater": "^6.8.9",
     "fflate": "^0.8.3",
+    "kokoro-js": "^1.2.1",
     "mammoth": "^1.12.0",
     "node-llama-cpp": "^3.19.0",
     "pdfjs-dist": "^6.2.108"
@@ -27,6 +29,7 @@
     "node-llama-cpp@3.19.0": true,
     "electron-winstaller@5.4.0": true,
     "@google/genai@2.12.0": true,
+    "onnxruntime-node@1.21.0": true,
     "protobufjs@7.6.5": true
   },
   "devDependencies": {
@@ -45,7 +48,8 @@
     "asarUnpack": [
       "**/node_modules/node-llama-cpp/**",
       "**/node_modules/@node-llama-cpp/**",
-      "**/node_modules/pdfjs-dist/standard_fonts/**"
+      "**/node_modules/pdfjs-dist/standard_fonts/**",
+      "**/node_modules/onnxruntime-node/bin/**"
     ],
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "files": [
@@ -61,22 +65,45 @@
       "!**/node_modules/pdfjs-dist/image_decoders/**",
       "!**/node_modules/pdfjs-dist/types/**",
       "!**/node_modules/pdfjs-dist/build/**",
-      "!**/node_modules/pdfjs-dist/**/*.map"
+      "!**/node_modules/pdfjs-dist/**/*.map",
+      "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+      "!**/node_modules/onnxruntime-web/**",
+      "!**/node_modules/sharp/**",
+      "!**/node_modules/@img/**",
+      "!**/node_modules/kokoro-js/voices/*.bin",
+      "**/node_modules/kokoro-js/voices/af_heart.bin"
     ],
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "files": [
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/darwin/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
+      ]
     },
+    "beforePack": "./scripts/fetch-voice.cjs",
     "afterPack": "./scripts/after-pack.cjs",
+    "extraResources": [
+      {
+        "from": "build/voice",
+        "to": "voice",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
       "category": "public.app-category.productivity",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "files": [
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/**"
+      ]
     },
     "nsis": {
       "oneClick": false,
