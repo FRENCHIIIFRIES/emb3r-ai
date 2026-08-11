@@ -39,6 +39,10 @@ build/Release
 
 # Dependency directories
 node_modules/
+
+# Ember's speech models, fetched at package time by scripts/fetch-voice.cjs.
+# 135 MB of weights belong in the installer, not in the history.
+build/voice/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)

@@ -1209,6 +1209,30 @@ function createWindow() {
     callback({ cancel: true });
   });
 
+  // Until now this app had no permission handler at all, which meant the
+  // microphone - and the camera, and location, and notifications - were decided
+  // by an Electron default nobody here had chosen. Talking to Ember needs the
+  // microphone, so the door is opened for exactly that, for exactly this
+  // window, and shut on everything else by name.
+  //
+  // Both handlers are set. The request handler answers a prompt; the check
+  // handler answers code that asks "would this be allowed?" without prompting,
+  // and a page that only implements the first can still be told yes by the
+  // second's default.
+  const allowedForWindow = (wc, permission) =>
+    (permission === "media" || permission === "audioCapture")
+    && wc === win.webContents;
+
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
+    callback(allowedForWindow(wc, permission));
+  });
+  win.webContents.session.setPermissionCheckHandler((wc, permission) =>
+    allowedForWindow(wc, permission));
+
+  // "media" covers audio and video together, so a page asking for both would be
+  // handed a camera as well. This refuses video specifically, leaving audio.
+  win.webContents.session.setDevicePermissionHandler(() => false);
+
   win.loadFile(path.join(__dirname, "src", "index.html"));
   return win;
 }
@@ -2456,6 +2480,336 @@ ipcMain.handle("emb3r:cancel-download", (_e, modelId) => {
   if (!controller) return { success: false, error: "No download in progress for that model." };
   controller.abort();
   return { success: true };
+});
+
+// =============================
+// Ember's voice
+// =============================
+//
+// The operating system's own speech voices were built first and rejected on the
+// only grounds that matter: they sound like a machine reading a receipt. That
+// is not a settings problem. This machine has eight voices installed and every
+// one is the old concatenative kind - SAPI5 Hazel, David, Zira and five OneCore
+// siblings. There are no neural voices to pick, and Chromium's speech path
+// would not expose Windows' newer ones even if they were installed.
+//
+// So Ember speaks with a neural model of her own, running here, downloaded
+// once: Kokoro-82M in ONNX form, 92 MB quantised. On a 2021 laptop CPU it
+// synthesises at about 1.15x realtime - measured over three runs at steady
+// state, not quoted from a README - which is the reason replies are spoken one
+// sentence at a time rather than rendered whole and then played.
+//
+// It lives in the main process for the same reason document parsing does: the
+// renderer has a microphone and no network and no disk, and a WASM engine there
+// would have needed 'wasm-unsafe-eval' added to a CSP that is load-bearing.
+// What crosses back is raw PCM, which the renderer plays through an
+// AudioContext - no blob URL, no <audio> element, and so no CSP change at all.
+
+const SPEECH_MODELS_DIR = path.join(app.getPath("userData"), "speech-models");
+// The voice ships inside the installer - scripts/fetch-voice.cjs puts it there
+// at package time - so a fresh install can speak the first time it is opened,
+// with the offline lock on, having downloaded nothing. The userData copy is the
+// fallback for a build that was packaged without it.
+const BUNDLED_SPEECH_DIR = app.isPackaged
+  ? path.join(process.resourcesPath, "voice")
+  : path.join(__dirname, "build", "voice");
+const VOICE_REPO = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const VOICE_BYTES = 92_361_116;
+
+function voiceWeightsIn(dir) {
+  return path.join(dir, "onnx-community", "Kokoro-82M-v1.0-ONNX", "onnx", "model_quantized.onnx");
+}
+
+// One voice, chosen rather than offered. Kokoro ships fifty-seven of them and a
+// picker would turn Ember into a text-to-speech front end instead of a
+// character.
+//
+// The first choice was made by measurement - af_heart's fundamental sat closest
+// to a reference recording - and it was wrong. It came back as "cold, more like
+// an Emily than an Ember", which is a verdict about warmth, and warmth is not
+// pitch. So the second choice was made by listening to eight takes.
+//
+// bf_lily is British, which is the most direct answer to sounding like a
+// generic American assistant, and it keeps a normal pace: af_nicole is warmer
+// still but speaks about fifty per cent slower for the same words, and with
+// synthesis already slower than speech that cost is paid twice.
+const EMBER_VOICE = "bf_lily";
+
+// The lift. Kokoro has no pitch control, so this borrows one: generate a little
+// slow, play back a little fast, and the tempo lands where it started while the
+// voice sits about eleven per cent higher. Ember is a small creature and should
+// not sound like an adult reading a manual - and the point of doing it this way
+// is that the result is nobody's stock voice.
+const VOICE_GENERATE_SPEED = 0.9;
+const VOICE_PLAYBACK_RATE = 1.11;
+
+// A whole reply handed over at once would be a minute of silence before a
+// minute of speech. Sentences are the unit: the first one is spoken while the
+// second is still being made. Kept generous enough that ordinary punctuation
+// does not chop a sentence into fragments that lose their intonation.
+const MAX_SPEECH_CHARS = 600;
+
+function voiceWeightsPresent(dir) {
+  try {
+    // not an exact match: the repository could be re-uploaded with a byte or
+    // two of difference and that is no reason to declare the voice missing
+    return fs.statSync(voiceWeightsIn(dir)).size > VOICE_BYTES * 0.98;
+  } catch {
+    return false;
+  }
+}
+
+// The shipped copy is preferred and used where it sits. Copying 92 MB into
+// userData on first run would double the disk cost to no end, and the install
+// directory being read-only is fine when nothing writes to it.
+function speechCacheDir() {
+  return voiceWeightsPresent(BUNDLED_SPEECH_DIR) ? BUNDLED_SPEECH_DIR : SPEECH_MODELS_DIR;
+}
+
+function voiceInstalled() {
+  return voiceWeightsPresent(BUNDLED_SPEECH_DIR) || voiceWeightsPresent(SPEECH_MODELS_DIR);
+}
+
+let voicePromise = null;
+let voiceLoading = false;
+// bumped by stop-speaking, so a sentence that was already being synthesised
+// when the user moved on is thrown away instead of arriving late and speaking
+let voiceGeneration = 0;
+// onnxruntime is asked for one utterance at a time - two concurrent generate()
+// calls on one session is not a thing worth finding out about in the field
+let voiceQueue = Promise.resolve();
+
+function sendVoiceProgress(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("emb3r:voice-progress", payload);
+  }
+}
+
+async function getVoice() {
+  if (voicePromise) return voicePromise;
+  voiceLoading = true;
+  voicePromise = (async () => {
+    // kokoro-js and this file resolve @huggingface/transformers to the same
+    // file, so they share one module instance and this is the setting that
+    // puts the weights beside the language models in userData rather than
+    // inside node_modules. allowLocalModels is turned off because the local
+    // lookup path would otherwise probe MODELS_DIR for a repository that has
+    // never been there.
+    const { env } = await import("@huggingface/transformers");
+    env.cacheDir = speechCacheDir();
+    env.allowLocalModels = false;
+
+    const { KokoroTTS } = await import("kokoro-js");
+    return KokoroTTS.from_pretrained(VOICE_REPO, {
+      dtype: "q8",
+      device: "cpu",
+      // Threads are left at the default deliberately. Pinning intraOpNumThreads
+      // to all eight cores measured slower, not faster: 1.27x realtime against
+      // 1.15x. onnxruntime's own choice wins.
+      progress_callback: (p) => {
+        if (!p || !p.file) return;
+        sendVoiceProgress({
+          file: String(p.file),
+          status: String(p.status || ""),
+          percent: typeof p.progress === "number" ? Math.round(p.progress) : null,
+          loaded: p.loaded || 0,
+          total: p.total || 0,
+        });
+      },
+    });
+  })();
+  voicePromise
+    .then(() => { voiceLoading = false; })
+    .catch(() => { voiceLoading = false; voicePromise = null; });
+  return voicePromise;
+}
+
+ipcMain.handle("emb3r:voice-status", () => ({
+  installed: voiceInstalled(),
+  loaded: Boolean(voicePromise) && !voiceLoading,
+  loading: voiceLoading,
+  downloadBytes: VOICE_BYTES,
+  voice: EMBER_VOICE,
+  offlineLock: Boolean(config.offlineLock),
+}));
+
+// Downloading is its own step rather than something that happens the first time
+// Ember tries to speak. Ninety-two megabytes arriving unannounced is exactly
+// the kind of thing this app exists not to do.
+ipcMain.handle("emb3r:install-voice", async () => {
+  if (voiceInstalled() && voicePromise) return { success: true, alreadyInstalled: true };
+  // the fetch guard would refuse anyway and log it, but saying so plainly
+  // beats surfacing an OfflineLockError as a stack trace
+  if (config.offlineLock && !voiceInstalled()) {
+    return { success: false, error: "The offline lock is on, so the voice cannot be downloaded. Turn it off in Privacy, fetch the voice once, and it will work with the lock back on." };
+  }
+  try {
+    await getVoice();
+    return { success: true, installed: voiceInstalled() };
+  } catch (err) {
+    return { success: false, error: `The voice could not be downloaded: ${err?.message || err}` };
+  }
+});
+
+// Loading the session takes a second or two, and measured end to end that was
+// most of the 4.4 s wait before Ember said her first word. Switching speech on
+// is a clear enough statement of intent to pay that cost then instead of in the
+// middle of the first reply. Returns immediately: the caller is announcing an
+// intention, not waiting for a result.
+ipcMain.handle("emb3r:warm-voice", () => {
+  if (voiceInstalled() && !voicePromise) getVoice().catch(() => {});
+  return { success: true };
+});
+
+// text in, raw audio out. The renderer decides what a sentence is and asks for
+// them one at a time, which is what lets it play the first while the second is
+// still being made.
+ipcMain.handle("emb3r:speak", async (_e, payload) => {
+  const text = String(payload?.text || "").slice(0, MAX_SPEECH_CHARS).trim();
+  if (!text) return { success: false, error: "Nothing to say." };
+  if (!voiceInstalled()) return { success: false, needsInstall: true };
+
+  const speed = Math.min(1.5, Math.max(0.6, Number(payload?.speed) || 1));
+  const generation = voiceGeneration;
+
+  const run = voiceQueue.then(async () => {
+    // checked again after waiting in the queue: the user may have moved on
+    // while an earlier sentence was still being synthesised
+    if (generation !== voiceGeneration) return { success: false, stale: true };
+    const tts = await getVoice();
+    if (generation !== voiceGeneration) return { success: false, stale: true };
+    const audio = await tts.generate(text, { voice: EMBER_VOICE, speed: speed * VOICE_GENERATE_SPEED });
+    if (generation !== voiceGeneration) return { success: false, stale: true };
+    return {
+      success: true,
+      // a Float32Array survives the structured clone intact, so the renderer
+      // can hand it straight to an AudioBuffer without decoding anything
+      pcm: audio.audio,
+      sampleRate: audio.sampling_rate,
+      // the other half of the lift, sent rather than duplicated: the voice's
+      // identity is decided here, and the renderer only carries it out
+      playbackRate: VOICE_PLAYBACK_RATE,
+      seconds: audio.audio.length / audio.sampling_rate / VOICE_PLAYBACK_RATE,
+    };
+  }).catch((err) => ({ success: false, error: String(err?.message || err) }));
+
+  // the queue advances whatever happened, or one failure would wedge every
+  // sentence after it
+  voiceQueue = run.then(() => {}, () => {});
+  return run;
+});
+
+ipcMain.handle("emb3r:stop-speaking", () => {
+  voiceGeneration += 1;
+  return { success: true };
+});
+
+// =============================
+// Ember's ears
+// =============================
+//
+// The obvious way to add speech recognition to an Electron app is
+// webkitSpeechRecognition, and it is disqualified on the first line of the
+// product description: it streams your microphone to Google. It also does not
+// work here, because Chromium's speech API needs keys Electron does not ship.
+//
+// So Whisper, in ONNX, in this process, next to the voice. Tiny-English is
+// 43 MB and transcribes a four-second clip in about 1.3 seconds - measured, on
+// this machine, before any of this was built. It ships inside the installer for
+// the same reason the voice does, which is what lets the whole round trip work
+// with the offline lock on. That is the part worth testing: a voice assistant
+// that needs the internet to hear you is not this product.
+const EARS_REPO = "onnx-community/whisper-tiny.en";
+const EARS_BYTES = 30_718_858;   // the merged decoder, the largest of the files
+
+// Whisper is trained on 16 kHz mono and everything upstream of here converts to
+// it. A minute is far more than anyone says in one breath, and it bounds how
+// long a bad recording can tie up the queue.
+const MAX_SPEECH_SECONDS = 60;
+const ASR_SAMPLE_RATE = 16000;
+
+let earsPromise = null;
+let earsLoading = false;
+
+function earsWeightsIn(dir) {
+  return path.join(dir, "onnx-community", "whisper-tiny.en", "onnx",
+    "decoder_model_merged_quantized.onnx");
+}
+
+function earsPresent(dir) {
+  try {
+    return fs.statSync(earsWeightsIn(dir)).size > EARS_BYTES * 0.98;
+  } catch {
+    return false;
+  }
+}
+
+function earsInstalled() {
+  return earsPresent(BUNDLED_SPEECH_DIR) || earsPresent(SPEECH_MODELS_DIR);
+}
+
+function earsCacheDir() {
+  return earsPresent(BUNDLED_SPEECH_DIR) ? BUNDLED_SPEECH_DIR : SPEECH_MODELS_DIR;
+}
+
+async function getEars() {
+  if (earsPromise) return earsPromise;
+  earsLoading = true;
+  earsPromise = (async () => {
+    const { pipeline, env } = await import("@huggingface/transformers");
+    env.cacheDir = earsCacheDir();
+    env.allowLocalModels = false;
+    return pipeline("automatic-speech-recognition", EARS_REPO, { dtype: "q8" });
+  })();
+  earsPromise
+    .then(() => { earsLoading = false; })
+    .catch(() => { earsLoading = false; earsPromise = null; });
+  return earsPromise;
+}
+
+ipcMain.handle("emb3r:ears-status", () => ({
+  installed: earsInstalled(),
+  loaded: Boolean(earsPromise) && !earsLoading,
+  loading: earsLoading,
+}));
+
+// warmed the same way the voice is, and for the same reason: the first thing
+// somebody says should not be the thing that pays for loading the model
+ipcMain.handle("emb3r:warm-ears", () => {
+  if (earsInstalled() && !earsPromise) getEars().catch(() => {});
+  return { success: true };
+});
+
+// Audio in, words out. Deliberately the whole utterance rather than a stream:
+// push-to-talk means the end of the recording is a fact rather than a guess,
+// and guessing where someone stopped talking is the part of live transcription
+// that goes wrong.
+ipcMain.handle("emb3r:transcribe", async (_e, payload) => {
+  if (!earsInstalled()) return { success: false, needsInstall: true };
+  const pcm = payload && payload.pcm;
+  if (!pcm || typeof pcm.length !== "number" || !pcm.length) {
+    return { success: false, error: "That recording was empty." };
+  }
+  const seconds = pcm.length / ASR_SAMPLE_RATE;
+  if (seconds > MAX_SPEECH_SECONDS) {
+    return { success: false, error: `That was ${Math.round(seconds)} seconds. Keep it under a minute.` };
+  }
+
+  try {
+    const transcribe = await getEars();
+    const audio = pcm instanceof Float32Array ? pcm : Float32Array.from(pcm);
+    const started = Date.now();
+    const result = await transcribe(audio);
+    const text = String(result?.text || "").trim();
+    return {
+      success: true,
+      text,
+      seconds: Number(seconds.toFixed(2)),
+      tookMs: Date.now() - started,
+    };
+  } catch (err) {
+    return { success: false, error: `That could not be transcribed: ${err?.message || err}` };
+  }
 });
 
 // Models are 1.9-9GB each and the catalogue offers six of them, so a machine

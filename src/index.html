@@ -1297,10 +1297,225 @@ pre{
 }
 
 #soundToggleRow,
-#animToggleRow{
+#animToggleRow,
+#voiceToggleRow{
     display:flex;
     align-items:center;
     gap:8px;
+}
+
+/* Indented under its toggle so the relationship is visible without a heading:
+   these belong to the checkbox above them, and nothing else in Display does. */
+#voiceControls{
+    margin-top:8px;
+    padding-left:14px;
+    border-left:1px solid var(--hover-color);
+}
+
+#voiceButtons{
+    display:flex;
+    gap:8px;
+    margin-top:8px;
+}
+
+/* ---------- face mode -------------------------------------------------
+   One creature, filling the window. Everything that is a control goes away and
+   the two things that are not - the face and the network light - stay.
+
+   Hidden by a class on #app rather than by moving anything: the transcript is
+   still there, still scrolled where it was, and coming back is one class
+   removal rather than a re-render. */
+#faceMode{ display:none; }
+
+#app.faceMode #pet,
+#app.faceMode #chat,
+#app.faceMode #attachBar,
+#app.faceMode #row,
+#app.faceMode #genStats{ display:none; }
+
+#app.faceMode #faceMode{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:clamp(14px, 3vh, 30px);
+    /* fills what is left below the topbar, so the face is centred in the
+       window rather than sitting under it */
+    min-height:calc(100vh - 90px);
+    text-align:center;
+}
+
+/* Poster scale. The face is the entire interface here, not a 26px line beside
+   a mood bar, and at this size the eyes do the work the transcript used to.
+
+   Drawn several lines tall rather than as a one-line kaomoji: at this size a
+   single row of brackets is a very large piece of punctuation, not a creature.
+   Built from parts in renderer.js so the eyes and the mouth move separately. */
+#faceBig{
+    margin:0;
+    font-family:inherit;
+    font-size:clamp(15px, 3.4vw, 40px);
+    line-height:1.08;
+    white-space:pre;
+    color:var(--text-color);
+    text-shadow:0 0 calc(var(--glow) * 2) var(--text-color);
+}
+
+/* Listening lifts the whole face slightly and warms the glow. The state has to
+   be visible from across a room - the point of this view is that you are not
+   reading it closely. */
+#app.listening #faceBig{
+    text-shadow:0 0 calc(var(--glow) * 4) var(--text-color);
+}
+
+#faceHeard{
+    max-width:44ch;
+    font-size:clamp(14px, 1.5vw, 17px);
+    opacity:0.55;
+    min-height:1.4em;
+}
+
+#faceHeard::before{ content:"you said  "; opacity:0.6; }
+#faceHeard:empty::before{ content:none; }
+
+/* Big, round, and obviously a thing you hold down. Sized for a pointer that is
+   not being aimed carefully, because in this view nobody is looking at it. */
+#faceMic{
+    width:auto;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:12px 26px;
+    border:1px solid var(--text-color);
+    border-radius:999px;
+    background:transparent;
+    font-size:15px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    cursor:pointer;
+    user-select:none;
+}
+
+#faceMic:hover{ background:var(--hover-color); }
+
+#app.listening #faceMic{
+    background:var(--text-color);
+    color:var(--bg-color);
+}
+
+#faceMicDot{
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:currentColor;
+    opacity:0.4;
+}
+
+#app.listening #faceMicDot{
+    opacity:1;
+    animation:micPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes micPulse{
+    0%,100%{ transform:scale(1); opacity:1 }
+    50%{ transform:scale(1.5); opacity:0.5 }
+}
+
+/* The topbar indicator, matching the network one beside it. */
+#micIndicator{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size:12px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    margin-left:12px;
+}
+
+#micDot{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:var(--text-color);
+    animation:micPulse 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce){
+    #faceMicDot,
+    #micDot{ animation:none; }
+}
+
+#faceSaid{
+    max-width:44ch;
+    font-size:clamp(15px, 1.7vw, 19px);
+    line-height:1.5;
+    opacity:0.85;
+    min-height:3em;
+}
+
+#faceHint{
+    font-size:13px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    opacity:0.45;
+}
+
+#faceExit{
+    width:auto;
+    opacity:0.6;
+    background:transparent;
+}
+
+#faceExit:hover{ opacity:1; }
+
+/* Someone who has asked for less movement gets a face that changes on state
+   and not on a timer. The mouth still opens while Ember speaks - that is
+   information, not decoration - it simply stops flickering between shapes. */
+@media (prefers-reduced-motion: reduce){
+    #faceBig{ transition:none; }
+}
+
+#voiceInstallRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:6px;
+}
+
+#voiceInstallRow button{
+    width:auto;
+    padding:4px 10px;
+    font-size:13px;
+}
+
+#voiceInstallState{
+    font-size:13px;
+    opacity:0.85;
+}
+
+/* the download meter, in the same idiom as the model downloads - a monospace
+   bar rather than a styled progress element, so it reads as the same thing */
+#voiceProgress{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    min-height:1.2em;
+    opacity:0.8;
+}
+
+#voiceButtons button{
+    flex:1;
+    width:auto;
+}
+
+/* Same shape as #geminiKeyStatus: reserves its line so the panel does not jump
+   by one row the first time it has something to say. */
+#voiceStatus{
+    font-size:13px;
+    min-height:1.2em;
+    margin-top:4px;
+    opacity:0.75;
 }
 
 .profileRow{
@@ -1455,7 +1670,8 @@ pre{
 #offlineLockRow input,
 #safeModeRow input,
 #memoryRow input,
-#animToggleRow input{
+#animToggleRow input,
+#voiceToggleRow input{
     padding:0;
     width:auto;
 }
@@ -2326,6 +2542,13 @@ canvas:focus-visible,
     <div id="netIndicator" title="Network activity">
         <span id="netDot"></span><span id="netLabel">no network activity</span>
     </div>
+    <!-- The same idea as the network light, for the same reason. A live
+         microphone is a promise of exactly the class the indicator beside it
+         makes, so it is shown continuously and in the same place rather than
+         being implied by a button looking pressed. -->
+    <div id="micIndicator" hidden title="Microphone">
+        <span id="micDot"></span><span id="micLabel">listening</span>
+    </div>
     <div id="historyWrap">
         <button id="historyButton" title="Conversation history">History</button>
         <div id="historyPanel">
@@ -2333,6 +2556,9 @@ canvas:focus-visible,
             <div id="historyList"></div>
         </div>
     </div>
+    <!-- The way into the voice-first view. Left of Settings because it is
+         something you do with Ember, not something you configure about her. -->
+    <button id="faceButton" title="Talk to Ember face to face">Face</button>
     <button id="settingsButton">Settings</button>
 </div>
 
@@ -2589,6 +2815,40 @@ canvas:focus-visible,
             <input type="checkbox" id="animToggle" checked>
             <label for="animToggle">Reactions — sparkles, hearts and transitions</label>
         </div>
+
+        <!-- Off until asked for. A program that starts talking out loud the
+             first time you open it after an update is startling in a way a
+             sparkle is not. -->
+        <div id="voiceToggleRow">
+            <input type="checkbox" id="voiceToggle">
+            <label for="voiceToggle">Speech — Ember reads replies aloud</label>
+        </div>
+
+        <!-- Four controls for a feature nobody has switched on is four controls
+             of noise, so they stay folded away until the toggle is on. -->
+        <div id="voiceControls" hidden>
+            <!-- No voice picker. Ember has one voice, the same way she has one
+                 face; a list of fifty-seven would make her a text-to-speech
+                 front end instead of a character. -->
+            <div id="voiceInstallRow">
+                <div id="voiceInstallState"></div>
+                <button id="voiceInstall" hidden>Fetch Ember's voice</button>
+            </div>
+            <div id="voiceProgress"></div>
+
+            <!-- Unlike the operating system's speech, this speed is a number the
+                 model actually uses, so a fine slider here is honest. -->
+            <label for="voiceRate">Speed — <span id="voiceRateValue">1.00×</span></label>
+            <input type="range" id="voiceRate" min="0.7" max="1.3" step="0.05" value="1">
+
+            <div id="voiceButtons">
+                <button id="voicePreview">Hear it</button>
+                <button id="voiceStop">Stop</button>
+            </div>
+            <div id="voiceStatus"></div>
+
+            <p class="settingsNote">Ember's voice is a speech model that runs on this computer, and it ships inside emb3r — there is nothing to fetch and nothing to sign up for. It works with the offline lock on, from the first time you open the app. Nothing you hear was made anywhere else, and nothing said to you is sent anywhere.</p>
+        </div>
     </div>
 
     </div><!-- /settingsContent -->
@@ -2655,6 +2915,36 @@ canvas:focus-visible,
 </div>
 
 
+
+<!-- Face mode. A mode of this window rather than a second one: a floating pet
+     is a different product, and this is still the same conversation - the
+     transcript is untouched underneath and comes straight back on the way out.
+
+     The topbar deliberately stays. Everything else goes, but the network
+     indicator is the one thing on screen that is a promise rather than a
+     control, and it matters more here than anywhere: in a view built for not
+     looking at the screen, "nothing is leaving this machine" is exactly what
+     you cannot afford to have hidden. -->
+<div id="faceMode" hidden>
+    <pre id="faceBig" aria-hidden="true"></pre>
+    <!-- what Ember is saying, in text, for anyone who cannot hear it and for
+         anyone whose speakers are off. aria-live so a screen reader gets the
+         reply rather than a face made of brackets. -->
+    <div id="faceSaid" aria-live="polite"></div>
+    <!-- what Ember heard. Kept separate from what she said and shown as soon as
+         it exists, because the one thing that goes wrong with speech is being
+         misheard, and you should not have to guess whether that happened. -->
+    <div id="faceHeard"></div>
+
+    <!-- Push to talk, not always-on listening. A microphone that opens itself
+         is not something to add quietly to an app whose whole claim is about
+         what does and does not leave your machine. -->
+    <button id="faceMic" type="button">
+        <span id="faceMicDot"></span><span id="faceMicLabel">hold to talk</span>
+    </button>
+    <div id="faceHint">hold the button or the spacebar · Esc to go back</div>
+    <button id="faceExit">[ back to the terminal ]</button>
+</div>
 
 <div id="chat">
 <span class="dim">// ember terminal ready. type below and hit enter.</span>
