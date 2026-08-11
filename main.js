@@ -107,6 +107,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.34.0",
+    added: [
+      "Ember can talk. Turn on Speech in Settings > Display and she reads her replies aloud, in a voice that is made on this computer - nothing is sent anywhere to be spoken, and it works with the offline lock on.",
+      "You can talk back to her. The new Face button opens a view where Ember fills the window: hold the button or the spacebar, say something, and let go. What she heard is shown on screen before she answers it, and Esc puts everything back.",
+      "Both work the first time you open emb3r, with nothing to download and nothing to sign up for. The two speech models come inside the app, which is most of why this update is about 135 MB larger.",
+      "The microphone is only ever open while you are holding the button, and there is an indicator beside the network one that shows when it is live.",
+    ],
+    fixed: [] },
   { version: "1.33.1",
     added: [],
     fixed: [

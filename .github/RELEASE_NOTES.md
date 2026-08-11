@@ -1,5 +1,23 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.34.0 — she can talk, and hear you
+
+emb3r can be spoken to, and answers out loud. Both halves run on your own machine, which is the whole difficulty and most of the work.
+
+**Turn on Speech in Settings > Display** and Ember reads her replies aloud. There is no voice picker, on purpose — she has one voice the way she has one face.
+
+**Press Face in the top bar to talk to her.** Ember fills the window, the transcript and the typing box go away, and you hold the button or the spacebar while you speak. What she heard is printed on screen before she answers it, because being misheard is the one thing that goes wrong with talking to a computer and you should never have to guess whether that is what happened. Esc puts everything back.
+
+**None of it leaves this machine, and that took the long route.** Every convenient way to add speech to an app like this sends audio to somebody's server — the recognition built into browsers streams your microphone to Google. Using it would have made the sentence on the front of this app false. So emb3r carries its own two speech models, one for speaking and one for listening, and both run here. The network indicator in the corner stays dark the whole time you are talking to her, which is the point.
+
+**The first attempt was thrown away.** Windows will read text aloud using the voices it already has, and that version worked within an hour. It sounded like a machine reading a receipt, and there was no fixing it — this computer has eight voices installed and every one of them is the old kind. Its speed control turned out to be a fiction as well: set to 0.8, 1.0 or 1.2, the same sentence came out the same length to within eight milliseconds.
+
+**A word about waiting.** Making speech is slower than saying it, so Ember banks a couple of seconds of audio before she starts. Ordinary replies then run without a break. A very long answer can still catch up with her and pause part-way through; that is arithmetic rather than a fault, and it is better than what it replaced, which was a five-second stall in the middle of a sentence.
+
+**The download is bigger — about 135 MB.** That is the two speech models, and they are in there so that all of the above works the first time you open emb3r, with the offline lock switched on, having fetched nothing at all.
+
+The microphone is only ever open while you hold the button, there is an indicator beside the network one showing when it is live, and emb3r now turns down camera, location and notification requests by name rather than leaving them to a default it never chose.
+
 ## v1.33.1 — the provider you picked, actually used
 
 Four things, all reported by someone using Groq, and the first one explains most of the rest.

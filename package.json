@@ -1,6 +1,6 @@
 {
   "name": "emb3r",
-  "version": "1.33.1",
+  "version": "1.34.0",
   "description": "Local LLM desktop app powered by node-llama-cpp",
   "author": "Ziyan",
   "license": "MIT",
