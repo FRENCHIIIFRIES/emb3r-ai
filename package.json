@@ -49,7 +49,9 @@
       "**/node_modules/node-llama-cpp/**",
       "**/node_modules/@node-llama-cpp/**",
       "**/node_modules/pdfjs-dist/standard_fonts/**",
-      "**/node_modules/onnxruntime-node/bin/**"
+      "**/node_modules/onnxruntime-node/bin/**",
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**"
     ],
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "files": [
@@ -68,8 +70,10 @@
       "!**/node_modules/pdfjs-dist/**/*.map",
       "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
       "!**/node_modules/onnxruntime-web/**",
-      "!**/node_modules/sharp/**",
-      "!**/node_modules/@img/**",
+      "!**/node_modules/@img/sharp-libvips-dev/**",
+      "!**/node_modules/@img/sharp-libvips-linux*/**",
+      "!**/node_modules/@img/sharp-linux*/**",
+      "!**/node_modules/@img/sharp-wasm32/**",
       "!**/node_modules/kokoro-js/voices/*.bin",
       "**/node_modules/kokoro-js/voices/af_heart.bin"
     ],

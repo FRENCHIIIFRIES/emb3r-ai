@@ -858,7 +858,10 @@ function setFaceMode(on) {
   }
 }
 
-faceButton.addEventListener("click", () => setFaceMode(!faceModeOn));
+faceButton.addEventListener("click", () => {
+  historyWrap.classList.remove("open");
+  setFaceMode(!faceModeOn);
+});
 faceExit.addEventListener("click", () => setFaceMode(false));
 
 // Anything that fills the window has to be trivially reversible, and Escape is
@@ -2094,7 +2097,10 @@ const voiceStopButton = document.getElementById("voiceStop");
 const voiceStatus    = document.getElementById("voiceStatus");
 const settingsTabs   = document.querySelectorAll(".settingsTab");
 
-settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
+settingsButton.addEventListener("click", () => {
+  historyWrap.classList.remove("open");
+  appEl.classList.add("settingsOpen");
+});
 
 function showSettingsTab(tab) {
   settingsTabs.forEach((t) => t.classList.remove("active"));
@@ -3159,18 +3165,8 @@ window.emb3r.onUpdateStatus((status) => {
       showUpdateButtons();
       break;
     case "available":
-      if (status.manual) {
-        // macOS will not let the app replace itself, so there is nothing to
-        // gain by offering a download here - it would fetch the whole thing
-        // and then be refused. Said plainly, and as a fact about macOS rather
-        // than as something that has gone wrong.
-        updateStatusEl.textContent =
-          `v${status.version} is available. On macOS it has to be installed by hand.`;
-        showUpdateButtons({ openReleases: true });
-      } else {
-        updateStatusEl.textContent = `update available: v${status.version}`;
-        showUpdateButtons({ download: true });
-      }
+      updateStatusEl.textContent = `update available: v${status.version}`;
+      showUpdateButtons({ download: true });
       break;
     case "downloading": {
       const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";
