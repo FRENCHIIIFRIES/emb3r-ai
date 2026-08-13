@@ -1026,13 +1026,28 @@ function notifyModelReady() {
 //
 // So the size is chosen per model, from that model's own estimate rather than
 // from a rule of thumb, and the budget is what is left after the weights and a
-// reserve for the operating system and this application. Free memory is
-// deliberately not the input: on Windows it excludes reclaimable cache and
-// reads far lower than what is actually available, which would pin every
-// machine to the floor.
+// reserve for the operating system and this application.
+//
+// That budget was first written against total memory alone, on the reasoning
+// that free memory under-reports because it excludes reclaimable cache. That is
+// true on Linux and wrong on Windows, where os.freemem() maps to ullAvailPhys -
+// the same figure Task Manager calls Available, standby pages included.
+//
+// The cost of getting it wrong was measured on a 7.76 GB laptop with the 3B
+// model: total-only budgeting chose 16,384 tokens, which needs 2.78 GB of KV on
+// top of 1.88 GB of weights. It asked for 4.66 GB on a machine with 0.44 GB
+// free, and the operating system paged the difference. Replies that should take
+// seconds took minutes, and the app looked broken when it was only swapping.
+//
+// So there are two ceilings now and the lower one wins: what the machine could
+// spare if it were idle, and what is genuinely free at this moment. On an idle
+// machine the second is never the binding one and nothing changes.
 const CONTEXT_CANDIDATES = [16384, 8192, 4096];
 const CONTEXT_FLOOR = 4096;          // never worse than it was
 const HOST_RESERVE_BYTES = 2.5 * 1024 ** 3;
+// left to the host out of what is free right now, so choosing a context does
+// not itself push the machine into swapping
+const LIVE_RESERVE_BYTES = 0.75 * 1024 ** 3;
 
 function chooseContextSize(model, modelPath) {
   const trained = model.trainContextSize || CONTEXT_FLOOR;
@@ -1042,7 +1057,13 @@ function chooseContextSize(model, modelPath) {
   } catch {
     weights = 0;
   }
-  const budget = os.totalmem() - weights - HOST_RESERVE_BYTES;
+  const idleBudget = os.totalmem() - weights - HOST_RESERVE_BYTES;
+  const liveBudget = Math.max(0, os.freemem() - LIVE_RESERVE_BYTES);
+  const budget = Math.min(idleBudget, liveBudget);
+  const bound = liveBudget < idleBudget ? "what is free now" : "what this machine holds";
+  console.log(`Context budget: ${Math.round(budget / 1024 / 1024)}MB `
+    + `(bound by ${bound}; ${Math.round(os.freemem() / 1024 / 1024)}MB free `
+    + `of ${Math.round(os.totalmem() / 1024 / 1024)}MB)`);
 
   for (const size of CONTEXT_CANDIDATES) {
     if (size > trained) continue;
