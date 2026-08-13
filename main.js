@@ -108,6 +108,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.36.0",
+    added: [
+      "History, Talk and Settings are now one menu in the corner, so the only thing left up there is the light that tells you whether anything is leaving your machine.",
+    ],
+    fixed: [
+      "Talking to Ember did not work in the installed app at all. A piece the speech recogniser needs was being left out of the download, so holding the button and speaking always ended in an error about a missing package. It is included now. This affected both Windows and Mac.",
+      "Updates install themselves on a Mac again. macOS will not let an app replace itself unless it was signed with a certificate emb3r does not have, so it now downloads the new version, checks it against the checksum published with the release, and puts it in place itself. If anything goes wrong at the last step the old version is put back rather than left half-replaced.",
+    ] },
   { version: "1.35.0",
     added: [
       "Ember's face fills the window in Face mode, and she has five new expressions - all of them about talking to you. She looks wide-eyed while the microphone is open, thoughtful while she works out what you said, and puzzled when she could not make it out. If your microphone is missing or refused, she tells you with her face instead of an error.",

@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.36.0 — talking works in the installed app, and Macs can update again
+
+Two of these are apologies.
+
+**Talking to Ember never worked in the installed app.** It worked here while it was being built, and it worked in every test — but the version you download was missing one piece the speech recogniser loads before it does anything, so holding the button and speaking always ended in an error about a missing package. It has been broken since voice shipped, on Windows and on Mac. It is included now, and this time the check was done on a real installed copy rather than on the development one.
+
+**Updates install themselves on a Mac again.** macOS refuses to let an application replace itself unless it was signed with an Apple certificate, which emb3r does not have — so the built-in updater was being turned away at the last step, after downloading the whole thing. emb3r now does that part itself: it downloads the new version, checks it against the checksum published alongside the release, and puts it in place. If anything fails at the final step the old version is put back rather than left half-replaced.
+
+Worth knowing what that trade is. The Apple certificate is a promise that the app came from who it says; without one, the check is that the download matches the checksum the release published over an encrypted connection. That is a real check, and it is not the same check.
+
+**History, Talk and Settings are one menu now.** They were three buttons crowding the corner with the network light — the one thing up there that is a promise rather than a control. The light has the room now.
+
 ## v1.35.0 — a bigger face, and replies that are not waiting on the disk
 
 Two things: Ember's face got much larger and learned five new expressions, and a memory bug that made replies crawl on a busy machine is fixed.
