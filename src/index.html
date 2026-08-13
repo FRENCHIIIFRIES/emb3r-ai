@@ -1005,6 +1005,63 @@ pre{
     margin-bottom:8px;
 }
 
+/* A menu that reads like the rest of the application: no borders around each
+   item, no hover cards, just rows of monospace with a bracketed key on the
+   left. Full width so the whole row is the target - a menu item you have to aim
+   at is a button in disguise. */
+#historyPanel > #faceButton,
+#historyPanel > #settingsButton,
+#newChatButton{
+    width:100%;
+    margin:0 0 2px;
+    padding:5px 6px;
+    text-align:left;
+    border:none;
+    background:transparent;
+    font-size:14px;
+    letter-spacing:0.04em;
+}
+
+#historyPanel > #faceButton:hover,
+#historyPanel > #settingsButton:hover,
+#newChatButton:hover{
+    background:var(--hover-color);
+}
+
+/* The bracketed glyph in front of each row. Dimmed, because it is punctuation
+   telling you where the row starts, not a second thing to read. */
+.menuKey{
+    opacity:0.55;
+    margin-right:8px;
+}
+
+#historyPanel > button:hover .menuKey{ opacity:1; }
+
+/* Drawn with characters rather than a border, so the rule belongs to the same
+   drawing as everything around it. */
+.menuRule{
+    height:auto;
+    background:none;
+    margin:8px 0;
+    opacity:0.35;
+    font-size:12px;
+    overflow:hidden;
+    white-space:nowrap;
+}
+
+.menuRule::before{
+    content:"────────────────────────────";
+}
+
+/* The trigger, bracketed like [ send ] and [ stop ] elsewhere. */
+#historyButton{
+    width:auto;
+    min-width:44px;
+    font-size:14px;
+    line-height:1;
+    letter-spacing:0.08em;
+}
+
 .historyRow{
     display:flex;
     align-items:center;
@@ -2567,17 +2624,24 @@ canvas:focus-visible,
     <div id="micIndicator" hidden title="Microphone">
         <span id="micDot"></span><span id="micLabel">listening</span>
     </div>
+    <!-- One control instead of three. History, the voice view and Settings were
+         three buttons competing for the corner with the network indicator, which
+         is the one thing up here that is a promise rather than a control. They
+         are now behind a single menu, and the indicator has the room. -->
     <div id="historyWrap">
-        <button id="historyButton" title="Conversation history">History</button>
+        <button id="historyButton" title="Menu" aria-haspopup="true">[ &equiv; ]</button>
         <div id="historyPanel">
-            <button id="newChatButton">+ New chat</button>
+            <!-- The microphone, drawn rather than borrowed from an emoji font:
+                 a round head on a stem, in the same characters the rest of the
+                 interface is built from. An emoji here would be the one glyph
+                 on screen rendered by somebody else's typeface. -->
+            <button id="faceButton" title="Talk to Ember"><span class="menuKey">[o]</span> talk</button>
+            <button id="settingsButton"><span class="menuKey">[=]</span> settings</button>
+            <div class="menuRule"></div>
+            <button id="newChatButton"><span class="menuKey">[+]</span> new chat</button>
             <div id="historyList"></div>
         </div>
     </div>
-    <!-- The way into the voice-first view. Left of Settings because it is
-         something you do with Ember, not something you configure about her. -->
-    <button id="faceButton" title="Talk to Ember face to face">Face</button>
-    <button id="settingsButton">Settings</button>
 </div>
 
 <div id="settingsPanel">

@@ -5,6 +5,7 @@ import os from "os";
 import https from "https";
 import http from "http";
 import crypto from "crypto";
+import { execFileSync, spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
@@ -1311,7 +1312,12 @@ function sendUpdateStatus(payload) {
 }
 
 autoUpdater.on("checking-for-update", () => sendUpdateStatus({ state: "checking" }));
-autoUpdater.on("update-available", (info) => sendUpdateStatus({ state: "available", version: info.version }));
+// macOS does not go through Squirrel at all - see stageMacUpdate below - so
+// there is nothing platform-specific to say here any more.
+autoUpdater.on("update-available", (info) => sendUpdateStatus({
+  state: "available",
+  version: info.version,
+}));
 autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ state: "not-available", version: info.version }));
 autoUpdater.on("download-progress", (p) => {
   sendUpdateStatus({ state: "downloading", percent: p.percent, transferred: p.transferred, total: p.total });
@@ -1398,6 +1404,9 @@ ipcMain.handle("emb3r:check-for-updates", async () => {
 
 ipcMain.handle("emb3r:download-update", async () => {
   if (!app.isPackaged) return { success: false, error: "Updates are only available in the packaged app." };
+  // macOS fetches and verifies it itself rather than handing the job to
+  // Squirrel, which would refuse to install the result
+  if (process.platform === "darwin") return stageMacUpdate();
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
@@ -1406,7 +1415,184 @@ ipcMain.handle("emb3r:download-update", async () => {
   }
 });
 
+// =============================
+// Updating a Mac without a certificate
+// =============================
+//
+// Squirrel.Mac refuses to install an update unless the new copy is signed by a
+// Developer ID it trusts, and emb3r has no certificate. That leaves two
+// options: buy one, or stop asking Squirrel and replace the application
+// directory ourselves. This is the second.
+//
+// What Squirrel actually provides is not the copying - it is the guarantee that
+// the thing being copied in is genuinely emb3r. That guarantee has to be
+// replaced rather than dropped, so the download is checked against the SHA-512
+// published in the update manifest, which was itself fetched over HTTPS from
+// the same release. An update whose hash does not match is discarded without
+// anything on disk being touched.
+//
+// The swap cannot happen from inside the running application - macOS will not
+// let a program delete the bundle it is executing from - so a small shell
+// script is spawned detached, waits for this process to exit, and does the work
+// after it is gone.
+
+const MAC_UPDATE_DIR = path.join(app.getPath("userData"), "update-staging");
+
+function macUpdateManifestName() {
+  // the same two channels the auto-updater uses, for the same reason
+  return process.arch === "arm64" ? "arm64-mac.yml" : "latest-mac.yml";
+}
+
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    const get = (target, depth) => {
+      if (depth > 5) return reject(new Error("too many redirects"));
+      https.get(target, { headers: { "user-agent": "emb3r" } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          return get(new URL(res.headers.location, target).href, depth + 1);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`${target} returned ${res.statusCode}`));
+        }
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => { body += c; });
+        res.on("end", () => resolve(body));
+        res.on("error", reject);
+      }).on("error", reject);
+    };
+    get(url, 0);
+  });
+}
+
+// The manifest is small and rigidly shaped, so this reads the three fields it
+// needs rather than taking a YAML parser as a dependency for one file.
+function parseMacManifest(text) {
+  const version = (text.match(/^version:\s*(.+)$/m) || [])[1];
+  const url = (text.match(/^path:\s*(.+)$/m) || [])[1];
+  // "sha512:" appears against every file as well; the one at column zero after
+  // path: is the one belonging to the package being installed
+  const sha = (text.match(/^sha512:\s*(.+)$/m) || [])[1];
+  if (!version || !url || !sha) throw new Error("update manifest was not readable");
+  return { version: version.trim(), file: url.trim(), sha512: sha.trim() };
+}
+
+function sha512Of(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha512");
+    const stream = fs.createReadStream(file);
+    stream.on("data", (d) => hash.update(d));
+    stream.on("end", () => resolve(hash.digest("base64")));
+    stream.on("error", reject);
+  });
+}
+
+// Staged in two halves so the interface behaves the way it does everywhere
+// else: Download fetches and checks, then Restart & Install does the swap.
+let macStagedUpdate = null;
+
+async function stageMacUpdate() {
+  if (config.offlineLock) {
+    return { success: false, error: "The offline lock is on, so the update cannot be fetched." };
+  }
+
+  try {
+    const base = "https://github.com/FRENCHIIIFRIES/emb3r-ai/releases/latest/download";
+    const manifest = parseMacManifest(await fetchText(`${base}/${macUpdateManifestName()}`));
+
+    fs.rmSync(MAC_UPDATE_DIR, { recursive: true, force: true });
+    fs.mkdirSync(MAC_UPDATE_DIR, { recursive: true });
+    const zipPath = path.join(MAC_UPDATE_DIR, manifest.file);
+
+    sendUpdateStatus({ state: "downloading", percent: 0, transferred: 0, total: 0 });
+    await downloadFile(`${base}/${manifest.file}`, zipPath, (percent, downloaded, total) => {
+      sendUpdateStatus({ state: "downloading", percent, transferred: downloaded, total });
+    });
+
+    // The whole security of this path. Squirrel would have checked a signature;
+    // this checks the hash the release itself published, over HTTPS, and
+    // refuses to go near the installed application if it does not match.
+    const got = await sha512Of(zipPath);
+    if (got !== manifest.sha512) {
+      fs.rmSync(MAC_UPDATE_DIR, { recursive: true, force: true });
+      throw new Error("the download did not match its checksum and was discarded");
+    }
+
+    // ditto rather than unzip: it is Apple's own tool and preserves the
+    // symlinks and extended attributes inside a .app that a plain unzip
+    // quietly flattens - which would break the signature that lets it launch.
+    const unpacked = path.join(MAC_UPDATE_DIR, "unpacked");
+    fs.mkdirSync(unpacked, { recursive: true });
+    execFileSync("ditto", ["-x", "-k", zipPath, unpacked], { stdio: "pipe" });
+
+    const appName = fs.readdirSync(unpacked).find((n) => n.endsWith(".app"));
+    if (!appName) throw new Error("the update did not contain an application");
+    const staged = path.join(unpacked, appName);
+
+    // it has to be able to launch once it is in place, so that is checked
+    // before the installed copy is disturbed rather than after
+    try {
+      execFileSync("codesign", ["--verify", "--deep", staged], { stdio: "pipe" });
+    } catch {
+      throw new Error("the downloaded application failed its signature check");
+    }
+
+    // .../emb3r.app/Contents/MacOS/emb3r -> .../emb3r.app
+    const current = app.getPath("exe").replace(/\/Contents\/MacOS\/[^/]+$/, "");
+    if (!current.endsWith(".app")) throw new Error("could not find where emb3r is installed");
+
+    macStagedUpdate = { staged, current, version: manifest.version };
+    sendUpdateStatus({ state: "downloaded", version: manifest.version });
+    return { success: true };
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    sendUpdateStatus({ state: "error", message, releasesUrl: RELEASES_URL });
+    return { success: false, error: message };
+  }
+}
+
+// Runs after this process is gone - macOS will not let a program delete the
+// bundle it is executing from. The installed copy is moved aside rather than
+// deleted and put back if the replacement fails: the one outcome worth
+// engineering against is an update that ends with no application at all.
+function installStagedMacUpdate() {
+  if (!macStagedUpdate) return { success: false, error: "No update has been downloaded yet." };
+  const { staged, current } = macStagedUpdate;
+  const backup = path.join(MAC_UPDATE_DIR, "previous.app");
+
+  const script = [
+    "#!/bin/bash",
+    `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done`,
+    "sleep 0.5",
+    `rm -rf ${JSON.stringify(backup)}`,
+    `if ! mv ${JSON.stringify(current)} ${JSON.stringify(backup)}; then`,
+    `  open ${JSON.stringify(current)}; exit 1`,
+    "fi",
+    `if ditto ${JSON.stringify(staged)} ${JSON.stringify(current)}; then`,
+    `  xattr -dr com.apple.quarantine ${JSON.stringify(current)} 2>/dev/null`,
+    `  rm -rf ${JSON.stringify(backup)}`,
+    "else",
+    `  rm -rf ${JSON.stringify(current)}`,
+    `  mv ${JSON.stringify(backup)} ${JSON.stringify(current)}`,
+    "fi",
+    `open ${JSON.stringify(current)}`,
+  ].join("\n");
+
+  const scriptPath = path.join(MAC_UPDATE_DIR, "swap.sh");
+  fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+
+  const child = spawn("/bin/bash", [scriptPath], { detached: true, stdio: "ignore" });
+  child.unref();
+  setTimeout(() => app.quit(), 300);
+  return { success: true };
+}
+
 ipcMain.handle("emb3r:install-update", () => {
+  // macOS replaces its own bundle rather than asking Squirrel, which would
+  // refuse for want of a Developer ID
+  if (process.platform === "darwin") return installStagedMacUpdate();
   // isSilent defaults to false, which on Windows shows the same assisted
   // installer UI a first-time install would - deliberately not overridden,
   // matching the oneClick:false choice already made for a fresh install

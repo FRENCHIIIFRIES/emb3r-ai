@@ -858,7 +858,10 @@ function setFaceMode(on) {
   }
 }
 
-faceButton.addEventListener("click", () => setFaceMode(!faceModeOn));
+faceButton.addEventListener("click", () => {
+  historyWrap.classList.remove("open");
+  setFaceMode(!faceModeOn);
+});
 faceExit.addEventListener("click", () => setFaceMode(false));
 
 // Anything that fills the window has to be trivially reversible, and Escape is
@@ -2094,7 +2097,10 @@ const voiceStopButton = document.getElementById("voiceStop");
 const voiceStatus    = document.getElementById("voiceStatus");
 const settingsTabs   = document.querySelectorAll(".settingsTab");
 
-settingsButton.addEventListener("click", () => appEl.classList.add("settingsOpen"));
+settingsButton.addEventListener("click", () => {
+  historyWrap.classList.remove("open");
+  appEl.classList.add("settingsOpen");
+});
 
 function showSettingsTab(tab) {
   settingsTabs.forEach((t) => t.classList.remove("active"));
