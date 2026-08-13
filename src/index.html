@@ -1351,21 +1351,33 @@ pre{
    Drawn several lines tall rather than as a one-line kaomoji: at this size a
    single row of brackets is a very large piece of punctuation, not a creature.
    Built from parts in renderer.js so the eyes and the mouth move separately. */
+/* Poster scale. The face is the entire interface here rather than a 26px line
+   beside a mood bar, so it is sized to be read from across a room. */
 #faceBig{
     margin:0;
     font-family:inherit;
-    font-size:clamp(15px, 3.4vw, 40px);
-    line-height:1.08;
+    font-size:clamp(46px, 12vw, 132px);
+    line-height:1.1;
     white-space:pre;
-    color:var(--text-color);
-    text-shadow:0 0 calc(var(--glow) * 2) var(--text-color);
+    letter-spacing:-0.02em;
+    /* The gradient rides on the text itself. background-clip:text paints the
+       glyphs with the image behind them, which is how a colour anyone picks
+       becomes a gradient without the face needing to be a drawing. */
+    background-image:linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--text-color) 55%, #ffffff),
+        var(--text-color) 45%,
+        color-mix(in srgb, var(--text-color) 62%, #000000));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+    filter:drop-shadow(0 0 calc(var(--glow) * 1.5) var(--text-color));
 }
 
-/* Listening lifts the whole face slightly and warms the glow. The state has to
-   be visible from across a room - the point of this view is that you are not
-   reading it closely. */
+/* Listening warms the glow. The state has to be readable from across a room -
+   the point of this view is that you are not looking at it closely. */
 #app.listening #faceBig{
-    text-shadow:0 0 calc(var(--glow) * 4) var(--text-color);
+    filter:drop-shadow(0 0 calc(var(--glow) * 3) var(--text-color));
 }
 
 #faceHeard{
@@ -1431,6 +1443,12 @@ pre{
     text-transform:uppercase;
     margin-left:12px;
 }
+
+/* An author rule beats the browser's own [hidden] { display: none }, so
+   without this the indicator claims the microphone is live from the moment the
+   app opens - which is the single most alarming thing it could get wrong.
+   Caught in a screenshot, not in the markup, where it looks perfectly fine. */
+#micIndicator[hidden]{ display:none; }
 
 #micDot{
     width:8px;
@@ -2926,7 +2944,10 @@ canvas:focus-visible,
      looking at the screen, "nothing is leaving this machine" is exactly what
      you cannot afford to have hidden. -->
 <div id="faceMode" hidden>
-    <pre id="faceBig" aria-hidden="true"></pre>
+    <!-- The same face as the one beside the mood bar, at size. aria-hidden
+         because a row of brackets says nothing useful to a screen reader;
+         #faceSaid below carries the actual words. -->
+    <pre id="faceBig" aria-hidden="true">( ^_^ )</pre>
     <!-- what Ember is saying, in text, for anyone who cannot hear it and for
          anyone whose speakers are off. aria-live so a screen reader gets the
          reply rather than a face made of brackets. -->

@@ -46,6 +46,21 @@ const FACES = {
   search2:   "( <_< )",
   delighted: "( ♥‿♥ )",          // replied while mood is full
   dizzy:     "( @_@ )",          // the model failed to load, not just a bad reply
+
+  // The voice states. Face mode made these worth having: it is a view built for
+  // not reading the screen, so the face is doing the work the status line used
+  // to, and "listening" borrowing the surprised face was the app telling you the
+  // wrong thing in the one place it mattered.
+  // Kept to characters the monospace font actually has. The first try used ◕
+  // and ˘, which are not in it - they came back from a fallback face 33% and
+  // 11% wider than an ASCII row, and at poster size the ◕ rendered as two
+  // enormous filled discs. Measured, then looked at; the measurement said
+  // "wider", only the picture said "wrong".
+  listening: "( O_O )",          // the microphone is open, right now
+  hearing:   "( ·_· )?",         // holding what you said, working out the words
+  puzzled:   "( ?_? )",          // it heard nothing it could make sense of
+  talking:   "( ^o^ )",          // mid-reply, before the mouth starts cycling
+  deaf:      "( ×_· )",          // the microphone was refused or is missing
   offline:   "( ·_· )",          // offline lock engaged: calm, deliberately shut
 };
 
@@ -102,64 +117,26 @@ function setStatus(s) {
   setFire(FIRE_FOR_STATUS[key] || null);
 }
 
-// The big face is built rather than written out. Every kaomoji in FACES is one
-// line of brackets, which is right beside a mood bar and wrong when it is the
-// whole window - at that size a single row reads as very large punctuation
-// rather than as a creature. So the poster version is drawn from parts, and the
-// mouth can change without the eyes moving.
+// =============================
+// The face, at size
+// =============================
 //
-// Every row is centred to the same width by code. Hand-aligned ASCII art
-// survives exactly until someone edits one line of it.
-const FACE_COLS = 17;
+// Face mode shows the same expressions as the little face beside the mood bar,
+// only large. That is the whole design now, and it is the third one: a halftone
+// drawing read as creepy, a dotted creature read as childish, and a traced pair
+// of fish took four rounds and still was not it. The kaomoji were never the
+// problem - they had been carrying every state in this app for thirty-odd
+// releases already.
+//
+// So there is no canvas, no dot field and no artwork to keep in step with the
+// code. One string per state, drawn twice at two sizes.
 
-function centreRow(s) {
-  const chars = [...s];
-  const pad = Math.max(0, FACE_COLS - chars.length);
-  const left = Math.floor(pad / 2);
-  return " ".repeat(left) + s + " ".repeat(pad - left);
-}
-
-// eyes and mouth for each of the states the small face already has, so the two
-// renderings say the same thing
-const BIG_FACE = {
-  idle:      { eyes: "●     ●", mouth: "‿‿‿" },
-  think1:    { eyes: "o     o", mouth: " ─ " },
-  think2:    { eyes: "─     ─", mouth: " ─ " },
-  happy:     { eyes: "^     ^", mouth: "‿‿‿" },
-  sad:       { eyes: ";     ;", mouth: "︵︵︵" },
-  sleeping:  { eyes: "u     u", mouth: " ~ " },
-  error:     { eyes: "x     x", mouth: "︵︵︵" },
-  music1:    { eyes: "ᵔ     ᵔ", mouth: " ♪ " },
-  music2:    { eyes: "ᵔ     ᵔ", mouth: " ♫ " },
-  wink:      { eyes: "^     ~", mouth: "‿‿‿" },
-  surprised: { eyes: "o     O", mouth: " o " },
-  search1:   { eyes: ">     >", mouth: " ─ " },
-  search2:   { eyes: "<     <", mouth: " ─ " },
-  delighted: { eyes: "♥     ♥", mouth: "‿‿‿" },
-  dizzy:     { eyes: "@     @", mouth: " ~ " },
-  offline:   { eyes: "·     ·", mouth: " ─ " },
-  listening: { eyes: "◕     ◕", mouth: " o " },
-};
-
-function bigFaceArt(state, mouthOverride) {
-  const parts = BIG_FACE[state] || BIG_FACE.idle;
-  return [
-    centreRow("▁▁▁▁▁▁▁▁▁▁▁"),
-    centreRow(""),
-    centreRow(parts.eyes),
-    centreRow(""),
-    centreRow(mouthOverride || parts.mouth),
-    centreRow(""),
-    centreRow("▔▔▔▔▔▔▔▔▔▔▔"),
-  ].join("\n");
-}
-
-// The face is drawn in two places at once - the small one beside the mood bar
-// and the poster-sized one in face mode - so every change goes through here and
-// the two can never disagree. Which one is visible is CSS's business.
-function paintFace(text, state, mouthOverride) {
+// The face is drawn in two places at once - beside the mood bar and filling the
+// window in face mode - so every change goes through here and the two can never
+// disagree. Which one is visible is CSS's business.
+function paintFace(text) {
   faceEl.textContent = text;
-  if (faceBigEl) faceBigEl.textContent = bigFaceArt(state || currentFace, mouthOverride);
+  if (faceBigEl) faceBigEl.textContent = text;
 }
 
 // kept so the mouth animation knows what to settle back to when Ember stops
@@ -788,6 +765,7 @@ async function speak(text) {
       playing = true;
       for (const piece of held) scheduleBuffer(piece.buffer, piece.rate);
       held.length = 0;
+      setFace("talking");
       // the mouth starts with the sound, not with the request - there is a
       // second or two between the two and a face chewing on silence is worse
       // than one that waits
@@ -799,7 +777,13 @@ async function speak(text) {
   // handed to the clock, so callers can say "speaking..." and mean it
   const remaining = (voiceStartAt - ctx.currentTime) * 1000;
   if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
-  if (run === voiceRun) stopMouth();
+  // "talking" is the state while she is talking, so it cannot also be what she
+  // settles back to - stopMouth() repaints whatever currentFace holds, and
+  // without this the face stayed open-mouthed after the sound had stopped
+  if (run === voiceRun) {
+    setFace(restingFace());
+    stopMouth();
+  }
 }
 
 // a reply still being spoken after the window has gone is the app talking to
@@ -818,12 +802,11 @@ window.addEventListener("pagehide", stopSpeaking);
 // glitch; holding the eyes still and changing one character reads as talking.
 // The shapes are uneven on purpose - a mouth that cycles through a tidy loop
 // looks like a progress indicator rather than speech.
-// Only the mouth moves while Ember talks. The shapes are uneven on purpose - a
-// mouth cycling through a tidy loop looks like a progress indicator rather than
-// speech. Small and large faces get their own vocabulary because one is three
-// characters wide and the other is eleven.
+// Only the mouth moves while Ember talks. The openings are uneven on purpose -
+// a mouth cycling through a tidy loop looks like a progress indicator rather
+// than speech. The small face gets characters; the creature gets a number, and
+// eases towards it so a syllable is a movement instead of a jump.
 const MOUTHS = ["o", "O", "ω", "_", "o", "-", "o", "▽"];
-const BIG_MOUTHS = [" o ", " O ", "▁▁▁", " ─ ", " o ", "‿‿‿", " O ", " ▁ "];
 let mouthAt = 0;
 let mouthTimer = null;
 
@@ -832,7 +815,10 @@ function startMouth() {
   // Someone who has asked for less movement still gets an open mouth while
   // Ember speaks, because that is information rather than decoration. It just
   // does not flicker.
-  if (!reactionsAllowed()) { paintFace("( ^o^ )", currentFace, " o "); return; }
+  if (!reactionsAllowed()) {
+    paintFace("( ^o^ )");
+    return;
+  }
   mouthTimer = setInterval(() => {
     // A gap between pieces is not the end of the reply. Stopping the timer here
     // was the first version and it was wrong: synthesis runs behind playback,
@@ -844,8 +830,7 @@ function startMouth() {
       return;
     }
     mouthAt += 1;
-    paintFace(`( ^${MOUTHS[mouthAt % MOUTHS.length]}^ )`,
-      currentFace, BIG_MOUTHS[mouthAt % BIG_MOUTHS.length]);
+    paintFace(`( ^${MOUTHS[mouthAt % MOUTHS.length]}^ )`);
   }, 130);
 }
 
@@ -908,8 +893,9 @@ function setListening(on) {
   appEl.classList.toggle("listening", on);
   micIndicator.hidden = !on;
   faceMicLabel.textContent = on ? "listening" : "hold to talk";
-  // the eyes change too, so the state is legible from the face alone
-  if (on) paintFace(FACES.surprised, "listening");
+  // the eyes change too, so the state is legible from the creature alone -
+  // which is the whole point of a view you are not reading
+  if (on) paintFace(FACES.listening);
   else paintFace(FACES[currentFace] || FACES.idle);
 }
 
@@ -926,6 +912,7 @@ async function startListening() {
     faceSaidEl.textContent = err && err.name === "NotAllowedError"
       ? "The microphone was refused. Windows asks once, under Privacy settings."
       : "No microphone was found on this computer.";
+    setFace("deaf");
     return;
   }
   micChunks = [];
@@ -976,13 +963,14 @@ async function handleRecording() {
   transcribing = true;
   faceSaidEl.textContent = "";
   faceHeardEl.textContent = "...";
-  setFace("think1");
+  setFace("hearing");
 
   try {
     const pcm = await toSixteenKilohertz(blob);
     if (!pcm || pcm.length < 16000 * 0.3) {
       faceHeardEl.textContent = "";
       faceSaidEl.textContent = "That was too short to make out - hold the button while you talk.";
+      setFace("puzzled");
       return;
     }
     const result = await window.emb3r.transcribe({ pcm });
@@ -997,6 +985,7 @@ async function handleRecording() {
     if (!heard) {
       faceHeardEl.textContent = "";
       faceSaidEl.textContent = "I did not catch that.";
+      setFace("puzzled");
       return;
     }
 
