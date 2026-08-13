@@ -3159,8 +3159,18 @@ window.emb3r.onUpdateStatus((status) => {
       showUpdateButtons();
       break;
     case "available":
-      updateStatusEl.textContent = `update available: v${status.version}`;
-      showUpdateButtons({ download: true });
+      if (status.manual) {
+        // macOS will not let the app replace itself, so there is nothing to
+        // gain by offering a download here - it would fetch the whole thing
+        // and then be refused. Said plainly, and as a fact about macOS rather
+        // than as something that has gone wrong.
+        updateStatusEl.textContent =
+          `v${status.version} is available. On macOS it has to be installed by hand.`;
+        showUpdateButtons({ openReleases: true });
+      } else {
+        updateStatusEl.textContent = `update available: v${status.version}`;
+        showUpdateButtons({ download: true });
+      }
       break;
     case "downloading": {
       const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";

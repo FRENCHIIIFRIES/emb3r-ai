@@ -1311,7 +1311,23 @@ function sendUpdateStatus(payload) {
 }
 
 autoUpdater.on("checking-for-update", () => sendUpdateStatus({ state: "checking" }));
-autoUpdater.on("update-available", (info) => sendUpdateStatus({ state: "available", version: info.version }));
+// Checking works everywhere - it only reads a small YAML file. Installing is
+// what macOS refuses: Squirrel.Mac will not replace a running app unless the
+// new one carries a signature from a Developer ID it trusts, and emb3r is
+// ad-hoc signed because there is no certificate to sign it with (see
+// scripts/after-pack.cjs and the error handler below).
+//
+// The old behaviour was to offer the download anyway, fetch three hundred
+// megabytes, and then fail at the last step. Saying so now costs the user
+// nothing and saves them the download.
+const MANUAL_UPDATE_ONLY = process.platform === "darwin";
+
+autoUpdater.on("update-available", (info) => sendUpdateStatus({
+  state: "available",
+  version: info.version,
+  manual: MANUAL_UPDATE_ONLY,
+  releasesUrl: RELEASES_URL,
+}));
 autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ state: "not-available", version: info.version }));
 autoUpdater.on("download-progress", (p) => {
   sendUpdateStatus({ state: "downloading", percent: p.percent, transferred: p.transferred, total: p.total });
@@ -1398,6 +1414,13 @@ ipcMain.handle("emb3r:check-for-updates", async () => {
 
 ipcMain.handle("emb3r:download-update", async () => {
   if (!app.isPackaged) return { success: false, error: "Updates are only available in the packaged app." };
+  // belt and braces: the button that calls this is already hidden on macOS,
+  // but downloading an update that provably cannot be installed is worth
+  // refusing at the source rather than only in the interface
+  if (MANUAL_UPDATE_ONLY) {
+    return { success: false, manual: true, releasesUrl: RELEASES_URL,
+      error: "On macOS the update has to be installed by hand." };
+  }
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
