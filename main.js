@@ -107,6 +107,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.35.0",
+    added: [
+      "Ember's face fills the window in Face mode, and she has five new expressions - all of them about talking to you. She looks wide-eyed while the microphone is open, thoughtful while she works out what you said, and puzzled when she could not make it out. If your microphone is missing or refused, she tells you with her face instead of an error.",
+      "Her face takes your colour. It is painted with a gradient built from whatever accent you have chosen, or emb3r's own fire if you have not picked one.",
+    ],
+    fixed: [
+      "Replies could take minutes on a machine that was low on memory. emb3r was working out how much conversation to hold from how much memory your computer has in total, rather than how much was actually free - so on a busy machine it asked for more than there was and Windows spent the difference shuffling to disk. It now looks at what is free as well, and gives itself less room when the machine is busy. If you have memory to spare, nothing changes.",
+    ] },
   { version: "1.34.0",
     added: [
       "Ember can talk. Turn on Speech in Settings > Display and she reads her replies aloud, in a voice that is made on this computer - nothing is sent anywhere to be spoken, and it works with the offline lock on.",

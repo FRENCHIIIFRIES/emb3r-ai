@@ -1,5 +1,21 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.35.0 — a bigger face, and replies that are not waiting on the disk
+
+Two things: Ember's face got much larger and learned five new expressions, and a memory bug that made replies crawl on a busy machine is fixed.
+
+**Press Face in the top bar and she fills the window.** She has always had a set of expressions tied to what the app is actually doing — you have only ever seen them at the size of a line of text. Now they are the size of the window.
+
+**Five new ones, all about talking to her.** Wide-eyed while the microphone is open, thoughtful while she works out what you said, puzzled when she could not make it out. If your microphone is missing or refused she tells you with her face rather than with an error. Before this, "listening" borrowed the surprised expression — the one view built for *not* reading the screen was showing you the wrong thing.
+
+**She takes your colour.** The face is painted with a gradient built from whatever accent you have picked, lighter at the top and deeper at the bottom. If you have not picked one, she burns in emb3r's own fire instead of the interface green.
+
+**Replies could take minutes on a machine that was low on memory, and that is fixed.** emb3r decides how much conversation to hold based on how much memory it can spare. It was working that out from how much memory your computer has *in total*, which assumes emb3r is the only thing running. On a laptop with everything else open it was asking for four and a half gigabytes when well under one was actually free, and Windows made up the difference by shuffling to disk. That is not slow thinking, it is a machine out of room — and it looks identical from the outside.
+
+It now looks at what is genuinely free as well, and takes less when the machine is busy. If you have memory to spare nothing changes at all; the smaller window is only chosen when the alternative is swapping.
+
+**What went out.** Face mode briefly had a drawn creature in it, with its own animation loop. Three designs were tried and none earned their place — one managed to be unsettling, another childish. That is a lot of machinery to maintain for something the faces were already doing well, so it is gone.
+
 ## v1.34.0 — she can talk, and hear you
 
 emb3r can be spoken to, and answers out loud. Both halves run on your own machine, which is the whole difficulty and most of the work.
