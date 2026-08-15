@@ -666,6 +666,7 @@ pre{
 }
 
 #send,
+#micButton,
 #uploadButton{
     background:var(--bg-color);
     color:var(--text-color);
@@ -1499,6 +1500,13 @@ pre{
     letter-spacing:0.08em;
     text-transform:uppercase;
     margin-left:12px;
+}
+
+/* The terminal microphone, lit while it is actually open. Same promise as the
+   indicator in the top bar, made where the hand already is. */
+#app.listening #micButton{
+    background:var(--text-color);
+    color:var(--bg-color);
 }
 
 /* An author rule beats the browser's own [hidden] { display: none }, so
@@ -2937,7 +2945,7 @@ canvas:focus-visible,
              sparkle is not. -->
         <div id="voiceToggleRow">
             <input type="checkbox" id="voiceToggle">
-            <label for="voiceToggle">Speech — Ember reads replies aloud</label>
+            <label for="voiceToggle">Read replies aloud in the terminal</label>
         </div>
 
         <!-- Four controls for a feature nobody has switched on is four controls
@@ -2963,7 +2971,8 @@ canvas:focus-visible,
             </div>
             <div id="voiceStatus"></div>
 
-            <p class="settingsNote">Ember's voice is a speech model that runs on this computer, and it ships inside emb3r — there is nothing to fetch and nothing to sign up for. It works with the offline lock on, from the first time you open the app. Nothing you hear was made anywhere else, and nothing said to you is sent anywhere.</p>
+            <p class="settingsNote">This is about the terminal only. <b>Talk</b> always speaks — it is the whole point of that view — and it does not need this switched on.</p>
+            <p class="settingsNote">Ember's voice is a speech model that runs on this computer, and it ships inside emb3r — there is nothing to fetch and nothing to sign up for. It works with the offline lock on, from the first time you open the app. Nothing you hear was made anywhere else, and nothing said to you is sent anywhere. You can speak to her in either place: hold <b>[o]</b> beside the message box, or the button in Talk.</p>
         </div>
     </div>
 
@@ -3080,6 +3089,11 @@ canvas:focus-visible,
     autocomplete="off"
     placeholder="say something..."
 >
+<!-- Dictation for the terminal. Same microphone as face mode, different
+     ending: there the transcript is sent, here it is put in the box so it can
+     be read and corrected first. Speech recognition is wrong often enough that
+     sending unseen text is worse than one extra keypress. -->
+<button id="micButton" title="Hold to speak">[o]</button>
 <button id="uploadButton" title="Attach a file">📎</button>
 <input type="file" id="fileInput"
     accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.odt,.ods,.odp,.rtf,.epub,.txt,.md,.markdown,.rst,.csv,.tsv,.json,.jsonl,.yaml,.yml,.xml,.log,.ini,.cfg,.conf,.toml,.js,.mjs,.cjs,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cc,.cs,.php,.sh,.bash,.zsh,.ps1,.sql,.html,.htm,.css,.scss,.less,.vue,.svelte,.r,.lua,.dart,.tex,.srt,.vtt,text/*">
