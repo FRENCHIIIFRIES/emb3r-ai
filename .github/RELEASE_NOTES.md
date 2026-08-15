@@ -1,5 +1,17 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.37.0 — your provider answers when you want it to
+
+If you had set up Groq or another provider, it was answering everything — including "hello". The model on your own machine had stopped being used at all, which is the wrong way round for an application whose whole point is that it runs locally.
+
+That was an overcorrection to the opposite problem a few versions ago, when a provider you had configured was never reached and appeared to do nothing. Rather than swing back and get it wrong in the other direction, **Web access now asks.**
+
+Under the provider fields there are two choices. **Only questions that need current information** is the default: Ember answers everything on your machine, and your provider handles the questions she cannot know the answer to — the same rule Gemini has always followed. **Every message** sends everything to your provider, which is worth having if your machine is slow, and it says plainly that nothing you type stays local.
+
+If you had a provider set up before this update you will be moved to the first option, which is most likely the change you wanted. If you preferred it the other way, the setting is two clicks.
+
+Nothing about Gemini changed, and neither did the offline lock, the consent prompt, or the indicator that tells you when something is leaving your machine.
+
 ## v1.36.0 — talking works in the installed app, and Macs can update again
 
 Two of these are apologies.

@@ -120,6 +120,13 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.37.0",
+    added: [
+      "Web access now asks when your provider should answer. Choose 'only questions that need current information' and Ember answers everything else on this machine; choose 'every message' if this computer is slow and you would rather your provider handled all of it.",
+    ],
+    fixed: [
+      "If you had set up Groq or another provider, it was answering everything - including 'hello' - and the model on your own machine had stopped being used at all. That was the wrong way round. Providers now follow the same rule Gemini always has, and if you had one configured before this update you have been moved to that setting. If you preferred it the other way, it is two clicks in Settings > Web access.",
+    ] },
   { version: "1.36.0",
     added: [
       "History, Talk and Settings are now one menu in the corner, so the only thing left up there is the light that tells you whether anything is leaving your machine.",
