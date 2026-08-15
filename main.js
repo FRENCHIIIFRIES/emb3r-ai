@@ -708,6 +708,23 @@ const MODEL_CATALOG = [
   // Reasoning models are not automatically unwelcome here, but they need a
   // window several times this one and hardware to match, and the catalogue's
   // whole promise is that anything in it runs on the machine reading it.
+  // Qwen3 1.7B was considered for the two entries below and rejected for the
+  // same reason, which is worth recording because it is now twice. It is newer
+  // than everything here (April 2025), it is small, it loads, and asked three
+  // ordinary questions it returned 0, 0 and 0 visible characters - 53s, 41s and
+  // 42s of thinking, all of it hidden, none of it an answer. Recency is not a
+  // qualification. Being asked a question is.
+  //
+  // The two below were asked the same three questions on a machine with 0.44 GB
+  // free, and answered all three correctly.
+  { id: "qwen2.5-0.5b", name: "Qwen2.5 0.5B Instruct", tier: "Tiny", minRamGB: 2, sizeGB: 0.4, params: 0.5,
+    strength: "Runs where nothing else will - a third of a gigabyte, and about seven seconds for a short answer on a laptop with almost no memory free.",
+    limit: "Short factual answers, rewriting and tidying. It will not hold a long argument together.",
+    repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF", file: "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf" },
+  { id: "gemma-3-1b", name: "Gemma 3 1B", tier: "Tiny", minRamGB: 3, sizeGB: 0.8, params: 1,
+    strength: "Twice the size of the 0.5B and noticeably more careful with wording. The newest model here.",
+    limit: "Fuller answers mean slower ones - it tends to offer several options where you wanted one.",
+    repo: "bartowski/google_gemma-3-1b-it-GGUF", file: "google_gemma-3-1b-it-Q4_K_M.gguf" },
   { id: "llama-3.2-3b", name: "Llama 3.2 3B Instruct", tier: "Small", minRamGB: 4, sizeGB: 2.0, params: 3,
     strength: "Fastest to answer. Good for everyday questions, rewriting and short summaries.",
     limit: "Loses the thread on long multi-step reasoning.",
