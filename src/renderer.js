@@ -23,6 +23,7 @@ const faceSaidEl = document.getElementById("faceSaid");
 const faceHeardEl = document.getElementById("faceHeard");
 const faceExit   = document.getElementById("faceExit");
 const faceMic    = document.getElementById("faceMic");
+const micButton  = document.getElementById("micButton");
 const faceMicLabel = document.getElementById("faceMicLabel");
 const micIndicator = document.getElementById("micIndicator");
 
@@ -696,7 +697,17 @@ function speaking() {
 }
 
 async function speak(text) {
-  if (!voiceEnabled || !voiceInstalled) return;
+  // Two different questions, and they used to be one. Face mode is the voice
+  // section: it exists to be listened to, so Ember always speaks there and the
+  // Settings toggle has no say in it. Being silent in the one view built for
+  // hearing her - because a checkbox on another screen was off by default - was
+  // the whole bug.
+  //
+  // In the terminal the toggle still decides, because there the reply is
+  // already on screen and reading it aloud is a preference rather than the
+  // point.
+  if (!voiceInstalled) return;
+  if (!faceModeOn && !voiceEnabled) return;
   const words = speakableText(text);
   if (!words) return;
   const chunks = speechChunks(words);
@@ -997,7 +1008,16 @@ async function handleRecording() {
     // Ember answered the question she answered.
     faceHeardEl.textContent = heard;
     input.value = heard;
-    await onSend();
+
+    // In face mode the transcript is the message - there is no keyboard there
+    // and nothing to correct it with. In the terminal it lands in the box
+    // instead, to be read and fixed before it is sent.
+    if (faceModeOn) {
+      await onSend();
+    } else {
+      input.focus();
+      setStatus("idle");
+    }
   } catch (err) {
     faceHeardEl.textContent = "";
     faceSaidEl.textContent = String(err && err.message ? err.message : err);
@@ -1010,6 +1030,11 @@ async function handleRecording() {
 
 // held, on both the button and the spacebar - the button for a pointer, the
 // spacebar because that is where a hand already is
+micButton.addEventListener("pointerdown", (e) => { e.preventDefault(); startListening(); });
+micButton.addEventListener("pointerup", stopListening);
+micButton.addEventListener("pointerleave", stopListening);
+micButton.addEventListener("pointercancel", stopListening);
+
 faceMic.addEventListener("pointerdown", (e) => { e.preventDefault(); startListening(); });
 faceMic.addEventListener("pointerup", stopListening);
 faceMic.addEventListener("pointerleave", stopListening);
@@ -1333,6 +1358,7 @@ function setGenerating(on) {
   // the microphone is the face-mode equivalent of the send button, and leaving
   // it live while the terminal one is locked would be one way to ask twice
   faceMic.disabled = on;
+  micButton.disabled = on;
   stopButton.hidden = !on;
   if (!on) statsEl.textContent = "";
 }
