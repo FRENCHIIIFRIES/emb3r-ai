@@ -1,5 +1,19 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.38.0 — she talks back in Talk, and two models that fit anywhere
+
+**Ember was silent in Talk.** That view exists to be listened to, and she said nothing in it unless you had found a switch in Settings that is off by default. She always speaks there now. The setting still decides whether replies are read aloud in the terminal — and it now says that is what it does, rather than implying it governs everything.
+
+**You can speak to her in the terminal as well.** Hold the `[o]` button beside the message box, say something, let go. What she heard goes into the box so you can read it before you send it — in Talk it is sent straight away, because there is no keyboard there to fix a misheard word with.
+
+**Two much smaller models.** The smallest thing in the list was 1.9 GB, which is no use on a machine that has half a gigabyte free. **Qwen2.5 0.5B** is 0.4 GB and answered a short question in about seven seconds on exactly such a machine. **Gemma 3 1B** is 0.8 GB, takes more care over its wording, and takes longer to do it.
+
+Both were asked real questions before being added, on a laptop in that state, and the times above are what they actually did rather than anything quoted from a description.
+
+A third was tested and left out. Qwen3 1.7B is a year newer than anything else here and it loads perfectly — and asked three ordinary questions it produced nothing at all, three times over, spending about a minute each time thinking privately. Newer is not better on its own.
+
+Neither of the new models knows anything about the world after it was trained, and no model that runs on your machine does. That is what web access is for.
+
 ## v1.37.0 — your provider answers when you want it to
 
 If you had set up Groq or another provider, it was answering everything — including "hello". The model on your own machine had stopped being used at all, which is the wrong way round for an application whose whole point is that it runs locally.

@@ -120,6 +120,14 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.38.0",
+    added: [
+      "Two models small enough for a laptop with nothing to spare. Qwen2.5 0.5B is 0.4 GB and answers a short question in about seven seconds on a machine with almost no memory free; Gemma 3 1B is 0.8 GB and takes more care over its wording. The smallest model here used to be 1.9 GB.",
+      "You can speak to Ember in the terminal too. Hold the [o] button beside the message box, say something, and let go - what she heard goes into the box so you can read it before sending.",
+    ],
+    fixed: [
+      "Ember was silent in Talk unless you had found the speech switch in Settings, which is off by default. Talk is the view for listening to her, so she always speaks there now. The setting still decides whether replies are read aloud in the terminal, and says so.",
+    ] },
   { version: "1.37.0",
     added: [
       "Web access now asks when your provider should answer. Choose 'only questions that need current information' and Ember answers everything else on this machine; choose 'every message' if this computer is slow and you would rather your provider handled all of it.",
