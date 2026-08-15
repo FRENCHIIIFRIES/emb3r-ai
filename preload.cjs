@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("emb3r", {
 
   apiProviderStatus: () => ipcRenderer.invoke("emb3r:api-provider-status"),
   setApiProvider: (provider) => ipcRenderer.invoke("emb3r:set-api-provider", provider),
+  setCustomApiScope: (scope) => ipcRenderer.invoke("emb3r:set-custom-api-scope", scope),
   setCustomApi: (payload) => ipcRenderer.invoke("emb3r:set-custom-api", payload),
   clearCustomApi: () => ipcRenderer.invoke("emb3r:clear-custom-api"),
   testCustomApi: () => ipcRenderer.invoke("emb3r:test-custom-api"),

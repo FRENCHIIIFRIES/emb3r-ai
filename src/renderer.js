@@ -2900,6 +2900,8 @@ const customApiFields  = document.getElementById("customApiFields");
 const customApiBase    = document.getElementById("customApiBase");
 const customApiKeyIn   = document.getElementById("customApiKeyInput");
 const customApiModel   = document.getElementById("customApiModel");
+const scopeWeb         = document.getElementById("scopeWeb");
+const scopeAlways      = document.getElementById("scopeAlways");
 const customApiSave    = document.getElementById("customApiSave");
 const customApiTest    = document.getElementById("customApiTest");
 const customApiClear   = document.getElementById("customApiClear");
@@ -2920,6 +2922,10 @@ async function refreshProviderPanel() {
   customApiFields.hidden = s.provider !== "custom";
   customApiBase.value = s.baseUrl || "";
   customApiModel.value = s.model || "";
+  // the main process is the authority on this, so it is read back rather than
+  // left wherever the radio happened to be
+  scopeAlways.checked = s.scope === "always";
+  scopeWeb.checked = s.scope !== "always";
   if (s.customConfigured) {
     setCustomStatus(`saved — ${s.model} at ${s.host}. The key is stored but never shown again.`);
   } else if (s.provider === "custom") {
@@ -2931,6 +2937,14 @@ async function chooseProvider(provider) {
   await window.emb3r.setApiProvider(provider);
   await refreshProviderPanel();
 }
+
+const setScope = async (scope) => {
+  await window.emb3r.setCustomApiScope(scope);
+  await refreshProviderPanel();
+};
+
+scopeWeb.addEventListener("change", () => { if (scopeWeb.checked) setScope("web"); });
+scopeAlways.addEventListener("change", () => { if (scopeAlways.checked) setScope("always"); });
 
 providerGemini.addEventListener("change", () => { if (providerGemini.checked) chooseProvider("gemini"); });
 providerCustom.addEventListener("change", () => { if (providerCustom.checked) chooseProvider("custom"); });

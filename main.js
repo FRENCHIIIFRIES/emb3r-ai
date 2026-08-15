@@ -75,6 +75,18 @@ function defaultConfig() {
     customApiKey: "",
     customApiBaseUrl: "",
     customApiModel: "",
+    // When a provider you configured actually answers. "web" means only the
+    // questions that look like they need current information, which is how
+    // Gemini has always behaved and keeps the local model as the default
+    // answerer. "always" hands it everything.
+    //
+    // This is a setting rather than a decision because it was got wrong twice
+    // in both directions: first the provider was never reached at all, then it
+    // swallowed every message and the local model stopped being used. The two
+    // intentions behind configuring one - "my laptop is slow, use this" and
+    // "use this when the answer needs the web" - are both reasonable and
+    // cannot be told apart from a key.
+    customApiScope: "web",
     // empty means "use the default" (see DEFAULT_GEMINI_MODEL below) - not a
     // secret, so unlike geminiApiKey this one does flow through get-config
     geminiModel: "",
@@ -3532,7 +3544,16 @@ ipcMain.handle("emb3r:api-provider-status", () => ({
   baseUrl: config.customApiBaseUrl || "",
   model: config.customApiModel || "",
   host: customApiHost(),
+  scope: config.customApiScope === "always" ? "always" : "web",
 }));
+
+// Only two values are accepted, and anything else lands on the local-first one
+// rather than being stored and quietly meaning something later.
+ipcMain.handle("emb3r:set-custom-api-scope", (_e, scope) => {
+  config.customApiScope = scope === "always" ? "always" : "web";
+  saveConfig(config);
+  return { success: true, scope: config.customApiScope };
+});
 
 ipcMain.handle("emb3r:set-api-provider", (_e, provider) => {
   const value = provider === "custom" ? "custom" : "gemini";
@@ -3818,17 +3839,19 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // to the local model and the provider they had just set up and tested
   // appeared to do nothing.
   //
-  // The two are gated differently on purpose. Gemini fires only on questions
-  // that look like they need current information, because it is the fallback
-  // for "the local model cannot know this". A provider the user picked by hand
-  // and typed a key for is a different intention: they chose who answers, so it
-  // answers - anything less makes the setting a lie. Consent still gates it,
-  // the offline lock still stops it, and every call still shows in the
-  // indicator.
+  // The fix for that overcorrected. Routing every message to the provider made
+  // the local model stop being used at all, which inverts the thing this
+  // application is for - and the comment that used to sit here argued that
+  // choosing a provider means choosing who answers. That is one reasonable
+  // intention. "Use it for the questions my local model cannot answer" is
+  // another, and a key cannot tell them apart, so it is asked rather than
+  // guessed. The default is local-first, because that is what emb3r is.
   const customReady = usingCustomApi()
     && Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel);
+  const customAnswers = customReady
+    && (config.customApiScope === "always" || needsCurrentInfo(userMessage));
   const wantsGemini = !opts.forceLocal && (
-    customReady || (Boolean(config.geminiApiKey) && needsCurrentInfo(userMessage))
+    customAnswers || (Boolean(config.geminiApiKey) && needsCurrentInfo(userMessage))
   );
   if (wantsGemini && !config.internetConsent) {
     return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
