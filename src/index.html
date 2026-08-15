@@ -1770,6 +1770,26 @@ pre{
 }
 /* Settings inputs are full width, which stretches a radio and shoves its label
    across the panel - the same trap the memory toggle fell into. */
+/* Same shape as #providerRow: the radio keeps its own size and the label wraps
+   beside it rather than being pushed to the far side of the panel. */
+#customScopeRow,
+#customScopeRow2{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    margin-bottom:6px;
+    font-size:14px;
+    line-height:1.45;
+}
+
+#customScopeRow input,
+#customScopeRow2 input{
+    width:auto;
+    padding:0;
+    margin-top:3px;
+    flex:0 0 auto;
+}
+
 #providerRow input{
     width:auto;
     padding:0;
@@ -2819,6 +2839,20 @@ canvas:focus-visible,
                 <button id="customApiClear">Clear</button>
             </div>
             <div id="customApiStatus"></div>
+
+            <!-- Asked rather than assumed. Both answers are reasonable and a
+                 key cannot tell them apart, which is why this went wrong twice
+                 before it became a question. -->
+            <label>When should it answer?</label>
+            <div id="customScopeRow">
+                <input type="radio" name="customApiScope" id="scopeWeb" value="web" checked>
+                <label for="scopeWeb">Only questions that need current information — Ember answers everything else on this machine</label>
+            </div>
+            <div id="customScopeRow2">
+                <input type="radio" name="customApiScope" id="scopeAlways" value="always">
+                <label for="scopeAlways">Every message — useful if this machine is slow, but nothing you type stays local</label>
+            </div>
+
             <p class="settingsNote">The endpoint must be <code>https</code>, or <code>127.0.0.1</code> for a server on this machine — anything else would put your key on the wire in clear. <b>Test it</b> makes one real request through the same path a message takes, so a pass here means messages will work.</p>
         </div>
     </div>
