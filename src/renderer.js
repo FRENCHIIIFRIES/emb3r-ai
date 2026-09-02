@@ -696,6 +696,20 @@ function speaking() {
   return voiceSources.length > 0;
 }
 
+// Why there is no sound. In face mode this is the only channel there is, so it
+// goes on screen; in the terminal it goes in the transcript, where every other
+// thing that went wrong already goes. Silence with no explanation is the worst
+// of the three outcomes, and was what happened before.
+function voiceTrouble(reason) {
+  const message = `couldn't speak that aloud - ${reason}`;
+  if (faceModeOn && faceSaidEl) {
+    faceSaidEl.textContent = message;
+  } else {
+    append("sys", "sys", message);
+  }
+  console.warn("[voice]", reason);
+}
+
 async function speak(text) {
   // Two different questions, and they used to be one. Face mode is the voice
   // section: it exists to be listened to, so Ember always speaks there and the
@@ -706,7 +720,10 @@ async function speak(text) {
   // In the terminal the toggle still decides, because there the reply is
   // already on screen and reading it aloud is a preference rather than the
   // point.
-  if (!voiceInstalled) return;
+  if (!voiceInstalled) {
+    voiceTrouble("The speech model is not on this machine, so there is nothing to speak with.");
+    return;
+  }
   if (!faceModeOn && !voiceEnabled) return;
   const words = speakableText(text);
   if (!words) return;
@@ -737,6 +754,7 @@ async function speak(text) {
     try {
       result = await pending;
     } catch (e) {
+      voiceTrouble(String(e && e.message ? e.message : e));
       return;
     }
     if (run !== voiceRun) return;
@@ -746,13 +764,18 @@ async function speak(text) {
       : null;
 
     if (!result || !result.success) {
-      // a stale result is the expected outcome of being interrupted, not a
-      // failure worth saying anything about
+      // A stale result is the expected outcome of being interrupted and is not
+      // worth mentioning. Everything else is: this used to return silently, so
+      // a machine that could not load the speech model produced no sound and no
+      // reason, and there was nothing to tell the two apart from the outside.
       if (result && result.stale) return;
       if (result && result.needsInstall) {
         voiceInstalled = false;
         refreshVoicePanel();
+        voiceTrouble("The speech model is missing from this installation.");
+        return;
       }
+      voiceTrouble((result && result.error) || "The speech model did not answer.");
       return;
     }
 
@@ -858,9 +881,11 @@ function setFaceMode(on) {
   paintFace(FACES[currentFace] || FACES.idle);
   if (on) {
     faceHeardEl.textContent = "";
-    // the models both take a moment to load, and the moment should not be the
-    // first thing somebody says
-    try { window.emb3r.warmEars(); } catch (e) {}
+    // Warm the voice, because entering this view means she is about to speak.
+    // The listening model is deliberately not warmed here: holding the button
+    // is what makes it certain, and loading it on the chance costs memory the
+    // language model needs on exactly the machines this matters on.
+    try { window.emb3r.warmVoice(); } catch (e) {}
     faceMic.focus();
   } else {
     stopMouth();
@@ -915,6 +940,8 @@ function setListening(on) {
 
 async function startListening() {
   if (listening || transcribing) return;
+  // a head start while the sentence is still being spoken
+  try { window.emb3r.warmEars(); } catch (e) {}
   // whatever Ember was saying is over: you are talking now
   stopSpeaking();
   try {
@@ -2412,13 +2439,6 @@ async function refreshVoicePanel() {
   }
   voicePreview.disabled = !voiceInstalled;
 
-  // Load the session now rather than during the first reply. Measured, that
-  // load was most of the 4.4 s between a reply landing and Ember starting to
-  // speak, and switching speech on is a clear enough statement of intent to
-  // spend it here.
-  if (voiceEnabled && voiceInstalled) {
-    try { window.emb3r.warmVoice(); } catch (e) {}
-  }
 }
 
 function showVoiceSpeed() {
