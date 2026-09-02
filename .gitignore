@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 .vite/
 
 models/*.gguf
+# Windows drops these into synced folders
+desktop.ini
+Thumbs.db
