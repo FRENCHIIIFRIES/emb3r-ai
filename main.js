@@ -2947,6 +2947,7 @@ ipcMain.handle("emb3r:speak", async (_e, payload) => {
   const speed = Math.min(1.5, Math.max(0.6, Number(payload?.speed) || 1));
   const generation = voiceGeneration;
 
+  touchSpeech();
   const run = voiceQueue.then(async () => {
     // checked again after waiting in the queue: the user may have moved on
     // while an earlier sentence was still being synthesised
@@ -2978,6 +2979,41 @@ ipcMain.handle("emb3r:stop-speaking", () => {
   voiceGeneration += 1;
   return { success: true };
 });
+
+// The speech models are held open so the next sentence is quick, and on a
+// machine with room that is the right trade. On one without, it is not: two
+// ONNX sessions sitting resident are memory the language model then has to do
+// without, and a reply that used to take seconds starts waiting on the disk
+// instead. So they are let go after a spell of not being used.
+//
+// The cost of being wrong is a second or two on the next thing said. The cost
+// of holding on is every reply for as long as the app is open.
+const SPEECH_IDLE_MS = 90_000;
+let speechIdleTimer = null;
+
+function releaseSpeechModels() {
+  for (const [name, promise] of [["voice", voicePromise], ["ears", earsPromise]]) {
+    if (!promise) continue;
+    promise.then((held) => {
+      try {
+        // transformers.js models expose dispose(); kokoro wraps one
+        const target = held && (held.model || held);
+        if (target && typeof target.dispose === "function") target.dispose();
+      } catch (err) {
+        console.error(`Could not release the ${name} model:`, err);
+      }
+    }).catch(() => {});
+  }
+  voicePromise = null;
+  earsPromise = null;
+}
+
+function touchSpeech() {
+  if (speechIdleTimer) clearTimeout(speechIdleTimer);
+  speechIdleTimer = setTimeout(releaseSpeechModels, SPEECH_IDLE_MS);
+  // never hold the process open on account of this
+  if (speechIdleTimer.unref) speechIdleTimer.unref();
+}
 
 // =============================
 // Ember's ears
@@ -3070,6 +3106,7 @@ ipcMain.handle("emb3r:transcribe", async (_e, payload) => {
     return { success: false, error: `That was ${Math.round(seconds)} seconds. Keep it under a minute.` };
   }
 
+  touchSpeech();
   try {
     const transcribe = await getEars();
     const audio = pcm instanceof Float32Array ? pcm : Float32Array.from(pcm);
