@@ -120,6 +120,12 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.38.1",
+    added: [],
+    fixed: [
+      "When Ember could not speak she said nothing at all, which looked exactly like the feature being missing. She now tells you what went wrong - most often that there was not enough memory free to load her voice.",
+      "Replies should be quicker again. Her voice and her hearing were staying loaded for as long as emb3r was open, taking memory the model needs to think with. They are let go after a minute and a half unused, and neither loads until it is actually needed.",
+    ] },
   { version: "1.38.0",
     added: [
       "Two models small enough for a laptop with nothing to spare. Qwen2.5 0.5B is 0.4 GB and answers a short question in about seven seconds on a machine with almost no memory free; Gemma 3 1B is 0.8 GB and takes more care over its wording. The smallest model here used to be 1.9 GB.",

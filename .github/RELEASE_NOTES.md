@@ -1,5 +1,15 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.38.1 — she tells you when she cannot speak, and gives the memory back
+
+**When Ember could not speak, she said nothing at all.** No sound and no reason, which looks exactly like the feature not existing — and is why the only thing anyone could report was "I can't hear her". There were three separate ways for this to happen silently and all three now say what went wrong. On a machine short of memory the answer is usually that there was not enough free to load her voice.
+
+**Replies should be quicker again.** Her voice and her hearing were staying loaded for as long as emb3r was open. Measured, the voice alone takes the app from 59 MB to 343 MB — memory the model then has to think without, which on a laptop with half a gigabyte free is the difference between thinking and waiting on the disk. Both are now let go after a minute and a half unused, which gives back 130 MB of it, and neither loads until it is actually needed rather than on the chance.
+
+If replies are still slow, the thing that will help most is switching to **Qwen2.5 0.5B** in Settings → Models. At 0.4 GB it is the only model in the list that comfortably fits a machine with very little free.
+
+One thing that was tried and not shipped: pinning how many processor threads the model uses. Measured across five settings, the default it already chooses was fastest, and every value tested made it slower. Left alone.
+
 ## v1.38.0 — she talks back in Talk, and two models that fit anywhere
 
 **Ember was silent in Talk.** That view exists to be listened to, and she said nothing in it unless you had found a switch in Settings that is off by default. She always speaks there now. The setting still decides whether replies are read aloud in the terminal — and it now says that is what it does, rather than implying it governs everything.
