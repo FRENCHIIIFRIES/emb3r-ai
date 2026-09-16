@@ -696,14 +696,21 @@ function speaking() {
   return voiceSources.length > 0;
 }
 
-// Why there is no sound. In face mode this is the only channel there is, so it
-// goes on screen; in the terminal it goes in the transcript, where every other
-// thing that went wrong already goes. Silence with no explanation is the worst
-// of the three outcomes, and was what happened before.
+// Why there is no sound. In the terminal it goes in the transcript, where every
+// other thing that went wrong already goes. In face mode it goes under the words
+// rather than over them: the words are the answer, and that view has nowhere
+// else to read it. Replacing them - which this did at first - turned a voice
+// that failed into an answer that vanished. Silence with no explanation is still
+// the worst of the outcomes, and was what happened before either.
 function voiceTrouble(reason) {
   const message = `couldn't speak that aloud - ${reason}`;
   if (faceModeOn && faceSaidEl) {
-    faceSaidEl.textContent = message;
+    const previous = faceSaidEl.querySelector(".faceTrouble");
+    if (previous) previous.remove();
+    const note = document.createElement("div");
+    note.className = "faceTrouble";
+    note.textContent = message;
+    faceSaidEl.appendChild(note);
   } else {
     append("sys", "sys", message);
   }
@@ -720,10 +727,10 @@ async function speak(text) {
   // In the terminal the toggle still decides, because there the reply is
   // already on screen and reading it aloud is a preference rather than the
   // point.
-  if (!voiceInstalled) {
-    voiceTrouble("The speech model is not on this machine, so there is nothing to speak with.");
-    return;
-  }
+  //
+  // So the toggle is asked first. Checking for the model first meant a terminal
+  // with speech switched off - the default - still said it could not speak,
+  // after every single reply, on any machine where the model was missing.
   if (!faceModeOn && !voiceEnabled) return;
   const words = speakableText(text);
   if (!words) return;
@@ -733,8 +740,13 @@ async function speak(text) {
   stopSpeaking();
   const run = voiceRun;
   // what Ember is saying, in text, for anyone who cannot hear it - and so that
-  // face mode is never a view with nothing to read
+  // face mode is never a view with nothing to read. Set before anything can
+  // fail, so that a failure has words to sit under.
   if (faceSaidEl) faceSaidEl.textContent = words;
+  if (!voiceInstalled) {
+    voiceTrouble("The speech model is not on this machine, so there is nothing to speak with.");
+    return;
+  }
   const ctx = getAudioCtx();
   // Chromium suspends a context created before the page has been interacted
   // with, and a suspended context plays nothing while reporting no error at
@@ -3652,7 +3664,11 @@ function renderModelList() {
     const metaEl = document.createElement("div");
     metaEl.className = "modelMeta";
     const bits = [`${m.sizeGB}GB`, `needs ${m.minRamGB}GB+ RAM`];
-    if (m.speedNote) bits.push(m.speedNote);
+    // The speed note only answers "how fast would it be here", so on a model
+    // this machine cannot hold it read "workable here" beside a button saying
+    // it needs more memory than there is. A model that does not fit is not
+    // workable at any speed, and the button already says why.
+    if (m.speedNote && !tooBig) bits.push(m.speedNote);
     if (m.downloaded) bits.push("on disk");
     metaEl.textContent = bits.join("  ·  ");
 
