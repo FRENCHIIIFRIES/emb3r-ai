@@ -1,7 +1,7 @@
 # emb3r for Android — design
 
 **Date:** 25 September 2026
-**Status:** approved, ready for an implementation plan
+**Status:** built and running on the phone; see "Answered on the phone"
 
 ## What this is
 
@@ -191,6 +191,23 @@ the answer to show the error.**
 3. **Talk**: hold to speak, the three models in a line, the face following state.
 
 Each stage ends with something installable and a screenshot from a real phone.
+
+## Answered on the phone - Nothing Phone (3a), Android 17, 25 September
+
+Measured on the real device by the spike test, not assumed:
+
+| Question | Answer |
+|---|---|
+| Does stop cancel generation, or only hide it? | **It cancels.** A full reply took 5.0 s for 196 characters; stopped after the first chunk, the same request ended at 0.8 s with 25. |
+| Does the Qwen template fix hold? | **Yes.** Asked who she is: "I'm a small terminal-dwelling, artificial intelligence." Nothing of the bundle's "You are Qwen". |
+| Can she hear herself? | **Yes.** Kokoro said "The capital of France is Paris."; Whisper heard exactly that, in 1.3 s. |
+| How fast is the answering model? | Loads in 1.4 s; 55 characters in 4.0 s. |
+| How fast is her voice? | **Slower than real time.** 2.6 s of speech takes 3.2 s to make (RTF 1.25), so she pauses between sentences. This bundle's model is full precision; an int8 Kokoro would be faster, if it still carries bf_lily - to be checked, not assumed. |
+| What does Android say the app may do? | One permission, RECORD_AUDIO, not granted until asked. No INTERNET - and pressed on 5G, the proof reads "Permission denied (missing INTERNET permission?)". |
+
+A limit worth recording rather than hiding: at 0.5B parameters she follows her
+instructions loosely - she describes herself but rarely says her name, and slang
+("wyd") loses her. That is the smallest model's ceiling, not a fault in the app.
 
 ## Open questions, named rather than discovered later
 
