@@ -3472,6 +3472,18 @@ function usingCustomApi() {
   return config.apiProvider === "custom";
 }
 
+// "The custom provider is usable": endpoint, key and model name all present.
+// One predicate rather than three spellings of the same invariant - routing
+// decides with it, the settings panel reports it, and Test it refuses on it. A
+// fourth required field would otherwise have to be remembered in three places,
+// and the two that were updated would quietly disagree with the one that was not.
+//
+// answerWithCustomApi still checks the three separately, on purpose: it says
+// which one is missing, and that is a different question from whether to go.
+function customApiReady() {
+  return Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel);
+}
+
 // Which remote service answers a message, or null when this machine does.
 //
 // The choice in Web access picks the remote, and only that one is considered.
@@ -3485,8 +3497,7 @@ function usingCustomApi() {
 function remoteFor(userMessage, opts = {}) {
   if (opts.forceLocal) return null;
   if (usingCustomApi()) {
-    const ready = Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel);
-    if (!ready) return null;
+    if (!customApiReady()) return null;
     return config.customApiScope === "always" || needsCurrentInfo(userMessage) ? "custom" : null;
   }
   return config.geminiApiKey && needsCurrentInfo(userMessage) ? "gemini" : null;
@@ -3665,7 +3676,7 @@ ipcMain.handle("emb3r:gemini-key-status", () => ({ configured: Boolean(config.ge
 ipcMain.handle("emb3r:api-provider-status", () => ({
   provider: usingCustomApi() ? "custom" : "gemini",
   geminiConfigured: Boolean(config.geminiApiKey),
-  customConfigured: Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel),
+  customConfigured: customApiReady(),
   baseUrl: config.customApiBaseUrl || "",
   model: config.customApiModel || "",
   host: customApiHost(),
@@ -3726,7 +3737,7 @@ ipcMain.handle("emb3r:test-custom-api", async () => {
     return { success: false, error: "The offline lock is on, so emb3r is refusing every outbound connection. Turn it off under Privacy first." };
   }
   if (!config.internetConsent) return { success: false, error: "Internet access hasn't been granted yet." };
-  if (!config.customApiKey || !config.customApiBaseUrl || !config.customApiModel) {
+  if (!customApiReady()) {
     return { success: false, error: "Fill in the endpoint, the key and the model name first." };
   }
   const base = config.customApiBaseUrl.replace(/\/+$/, "");
