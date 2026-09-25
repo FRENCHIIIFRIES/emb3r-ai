@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import io.github.frenchiiifries.emb3r.ui.Recorder
 
 /**
  * Held while the button is held. Records 16 kHz mono floats, which is what
@@ -13,14 +14,14 @@ import android.media.MediaRecorder
  * held - never at launch - so this class assumes it has already been granted and
  * says so plainly if it has not.
  */
-class Microphone {
+class Microphone : Recorder {
     @Volatile private var running = false
     private var record: AudioRecord? = null
     private var reader: Thread? = null
     private val chunks = ArrayList<FloatArray>()
 
     @SuppressLint("MissingPermission")
-    fun start() {
+    override fun start() {
         if (running) return
         val minBuffer = AudioRecord.getMinBufferSize(
             Ears.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT,
@@ -50,7 +51,7 @@ class Microphone {
     }
 
     /** Stops recording and returns everything heard since [start]. */
-    fun stop(): FloatArray {
+    override fun stop(): FloatArray {
         if (!running) return FloatArray(0)
         running = false
         reader?.join(500)

@@ -1,19 +1,25 @@
 package io.github.frenchiiifries.emb3r.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
+import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import io.github.frenchiiifries.emb3r.R
 
@@ -34,30 +40,83 @@ object Emb3rTokens {
     val lightUserText = Color(0xFF1A5C33)
     val lightHover = Color(0xFFDFF2E4)
 
+    // #chat .err, #chat .sys and .dim
+    val err = Color(0xFFFF7C7C)
+    val sys = Color(0xFF8FD6FF)
+    val dim = Color(0xFF33AA55)
+
     // --glow-small and --glow-big
     const val glowSmall = 2f
     const val glowBig = 6f
+
+    // html, body { font-size: 20px; line-height: 1.35 }
+    val bodySize = 20.sp
+    const val lineHeight = 1.35f
 }
 
-val Mono = FontFamily(Font(R.font.jetbrains_mono_regular))
-val Display = FontFamily(Font(R.font.vt323_regular))
+/**
+ * The body face. The desktop's stack is "VT323", "JetBrains Mono", monospace:
+ * VT323 first, for everything, at 20px.
+ */
+val Vt323 = FontFamily(Font(R.font.vt323_regular))
 
 /**
- * The phosphor glow every lit thing on the desktop carries: the text colour
- * bled around the glyph itself, at 2px for ordinary text and 6px for the
- * things that are meant to look hot.
+ * The full JetBrains Mono, for what VT323 cannot draw. On the desktop the
+ * EMB3R wordmark's box-drawing characters exist in neither bundled font and
+ * come from whatever monospace the operating system supplies; here that is not
+ * guaranteed to be monospaced at all, so the app carries a font that has them.
  */
-fun phosphor(color: Color, big: Boolean = false) =
-    Shadow(color = color, offset = Offset.Zero, blurRadius = if (big) Emb3rTokens.glowBig else Emb3rTokens.glowSmall)
+val Mono = FontFamily(Font(R.font.jetbrains_mono_regular))
 
-fun emberText(color: Color, size: Int = 15, big: Boolean = false) = TextStyle(
-    fontFamily = Mono,
-    fontSize = size.sp,
-    color = color,
-    shadow = phosphor(color, big),
+/**
+ * CSS gives every lit thing two shadows at once - 2px and 6px - and a Compose
+ * text style holds only one. So a lit line is drawn twice, the wide glow
+ * underneath and the tight one on top, which is what the desktop's body
+ * text-shadow does in one declaration.
+ */
+@Composable
+fun Lit(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: TextUnit = Emb3rTokens.bodySize,
+    family: FontFamily = Vt323,
+    letterSpacing: TextUnit = TextUnit.Unspecified,
+    align: TextAlign? = null,
+    glow: Boolean = true,
+    lineHeight: Float = Emb3rTokens.lineHeight,
+) {
+    val base = TextStyle(
+        fontFamily = family,
+        fontSize = size,
+        lineHeight = (size.value * lineHeight).sp,
+        letterSpacing = letterSpacing,
+        color = color,
+        textAlign = align ?: TextAlign.Unspecified,
+    )
+    if (!glow) {
+        Text(text, modifier, style = base)
+        return
+    }
+    Box(modifier) {
+        Text(text, style = base.copy(shadow = Shadow(color, Offset.Zero, Emb3rTokens.glowBig)))
+        Text(text, style = base.copy(shadow = Shadow(color, Offset.Zero, Emb3rTokens.glowSmall)))
+    }
+}
+
+/**
+ * #faceBig's gradient: lighter at the top, the colour itself at 45%, darker at
+ * the bottom - so whatever accent is chosen becomes a gradient without the face
+ * needing to be a drawing.
+ */
+fun faceGradient(accent: Color) = Brush.verticalGradient(
+    0.00f to mixSrgb(accent, 0.55f, Color.White),
+    0.45f to accent,
+    1.00f to mixSrgb(accent, 0.62f, Color.Black),
 )
 
 val LocalAccent = compositionLocalOf { Emb3rTokens.text }
+val LocalDark = compositionLocalOf { true }
 
 @Composable
 fun Emb3rTheme(
@@ -71,24 +130,31 @@ fun Emb3rTheme(
         darkColorScheme(
             primary = accent, onPrimary = background,
             background = background, onBackground = accent,
-            surface = surface, onSurface = accent,
+            surface = background, onSurface = accent,
+            surfaceVariant = surface, secondaryContainer = surface,
         )
     } else {
         lightColorScheme(
             primary = accent, onPrimary = background,
             background = background, onBackground = accent,
-            surface = surface, onSurface = accent,
+            surface = background, onSurface = accent,
+            surfaceVariant = surface, secondaryContainer = surface,
         )
     }
-    CompositionLocalProvider(LocalAccent provides accent) {
-        MaterialTheme(
-            colorScheme = scheme,
-            typography = Typography(
-                bodyMedium = emberText(accent, 15),
-                bodySmall = emberText(accent, 13),
-                displayLarge = TextStyle(fontFamily = Display, fontSize = 64.sp, color = accent, shadow = phosphor(accent, big = true)),
-            ),
-            content = content,
-        )
+    CompositionLocalProvider(LocalAccent provides accent, LocalDark provides dark) {
+        MaterialTheme(colorScheme = scheme, content = content)
     }
 }
+
+/** Kept for the tests and for anything that wants a single-shadow style. */
+fun emberText(color: Color, size: Int = 20, big: Boolean = false) = TextStyle(
+    fontFamily = Vt323,
+    fontSize = size.sp,
+    color = color,
+    shadow = phosphor(color, big),
+)
+
+fun phosphor(color: Color, big: Boolean = false) =
+    Shadow(color = color, offset = Offset.Zero, blurRadius = if (big) Emb3rTokens.glowBig else Emb3rTokens.glowSmall)
+
+val tightSpacing = (-0.02).em
