@@ -167,4 +167,6 @@ private fun androidx.compose.animation.core.InfiniteTransition.phase(ms: Int, he
 
 /** Android's equivalent of prefers-reduced-motion: animations switched off in the system. */
 private fun animationsOff(context: android.content.Context): Boolean =
-    Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    runCatching {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }.getOrDefault(false)

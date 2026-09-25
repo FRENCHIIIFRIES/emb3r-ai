@@ -68,21 +68,21 @@ fun ModelScreen(
 
         ModelRow(
             name = engine.modelName() ?: "The answering model",
-            meta = paths.llm?.let { "${gb(sizeOf(it))} · on this phone" } ?: "not imported",
+            meta = paths.llm?.let { "${gb(sizeOf(it))} · on this phone" } ?: "bring: a .task file, such as Qwen2.5 0.5B Instruct",
             about = "Answers you, on this phone. Qwen2.5 0.5B is the model the desktop recommends " +
                 "for the smallest machines - a third of a gigabyte, and it runs where nothing else will.",
             part = if (paths.llm == null) Part.Missing else llm,
         )
         ModelRow(
             name = "Ember's voice",
-            meta = paths.kokoroDir?.let { "${gb(sizeOf(it))} · Kokoro · bf_lily, speaker 23" } ?: "not imported",
+            meta = paths.kokoroDir?.let { "${gb(sizeOf(it))} · Kokoro · bf_lily, speaker 23" } ?: "bring: the kokoro-multi-lang-v1_0 folder",
             about = "The voice chosen on the desktop in step 34. Made at 0.9 speed and played at 1.11, " +
                 "so she sits a little higher than the stock voice and is nobody else's.",
             part = if (paths.kokoroDir == null) Part.Missing else voice,
         )
         ModelRow(
             name = "Her hearing",
-            meta = paths.whisperDir?.let { "${gb(sizeOf(it))} · Whisper tiny.en · int8" } ?: "not imported",
+            meta = paths.whisperDir?.let { "${gb(sizeOf(it))} · Whisper tiny.en · int8" } ?: "bring: the sherpa-onnx-whisper-tiny.en folder",
             about = "Turns what you say into words when you hold the button. The same model the desktop uses.",
             part = if (paths.whisperDir == null) Part.Missing else ears,
         )
@@ -121,6 +121,7 @@ private fun ModelRow(name: String, meta: String, about: String, part: Part) {
     val active = part == Part.Ready
     val (state, stateColour) = when (part) {
         Part.Missing -> "not imported" to accent.copy(alpha = 0.55f)
+        Part.Present -> "on this phone · loads when it's needed" to accent.copy(alpha = 0.75f)
         Part.Loading -> "loading..." to accent
         Part.Ready -> "● loaded" to accent
         is Part.Failed -> part.why to Emb3rTokens.err

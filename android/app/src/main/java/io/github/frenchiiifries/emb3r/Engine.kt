@@ -18,6 +18,8 @@ import kotlinx.coroutines.launch
 /** Where one of the three models stands, said the way the screen will say it. */
 sealed interface Part {
     data object Missing : Part
+    /** On the phone, not loaded yet - it loads the first time it is needed. */
+    data object Present : Part
     data object Loading : Part
     data object Ready : Part
     data class Failed(val why: String) : Part
@@ -34,9 +36,12 @@ class Engine(private val context: Context, private val scope: CoroutineScope) {
 
     val paths = ModelPaths.inAppStorage(context.filesDir)
 
-    private val _llm = MutableStateFlow<Part>(Part.Missing)
-    private val _voice = MutableStateFlow<Part>(Part.Missing)
-    private val _ears = MutableStateFlow<Part>(Part.Missing)
+    // Imported and not yet loaded is its own state. With only "missing" and
+    // "ready", a model sitting on the phone waiting to be needed was labelled
+    // "not imported" - found by rendering the model screen, not by reading it.
+    private val _llm = MutableStateFlow(presence(paths.llm))
+    private val _voice = MutableStateFlow(presence(paths.kokoroDir))
+    private val _ears = MutableStateFlow(presence(paths.whisperDir))
     val llm: StateFlow<Part> = _llm.asStateFlow()
     val voiceState: StateFlow<Part> = _voice.asStateFlow()
     val earsState: StateFlow<Part> = _ears.asStateFlow()
@@ -53,10 +58,12 @@ class Engine(private val context: Context, private val scope: CoroutineScope) {
     fun modelName(): String? = paths.llm?.name?.let(::prettyModelName)
 
     fun refresh() {
-        if (paths.llm == null) _llm.value = Part.Missing
-        if (paths.kokoroDir == null) _voice.value = Part.Missing
-        if (paths.whisperDir == null) _ears.value = Part.Missing
+        if (answerer == null) _llm.value = presence(paths.llm)
+        if (voice == null) _voice.value = presence(paths.kokoroDir)
+        if (ears == null) _ears.value = presence(paths.whisperDir)
     }
+
+    private fun presence(file: java.io.File?): Part = if (file == null) Part.Missing else Part.Present
 
     fun warmAnswers() {
         val file = paths.llm ?: run { _llm.value = Part.Missing; return }
