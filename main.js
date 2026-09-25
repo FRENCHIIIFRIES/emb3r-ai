@@ -2899,8 +2899,11 @@ async function getVoice() {
       },
     });
   })();
+  // A load is what arms the idle timer, not only a request. Warming the voice on
+  // entering Talk loaded it without ever starting the countdown, so opening
+  // Talk and saying nothing kept it resident for as long as emb3r was open.
   voicePromise
-    .then(() => { voiceLoading = false; })
+    .then(() => { voiceLoading = false; touchSpeech(); })
     .catch(() => { voiceLoading = false; voicePromise = null; });
   return voicePromise;
 }
@@ -2954,7 +2957,7 @@ ipcMain.handle("emb3r:speak", async (_e, payload) => {
   const generation = voiceGeneration;
 
   touchSpeech();
-  const run = voiceQueue.then(async () => {
+  const run = voiceQueue.then(() => usingSpeech(async () => {
     // checked again after waiting in the queue: the user may have moved on
     // while an earlier sentence was still being synthesised
     if (generation !== voiceGeneration) return { success: false, stale: true };
@@ -2973,7 +2976,7 @@ ipcMain.handle("emb3r:speak", async (_e, payload) => {
       playbackRate: VOICE_PLAYBACK_RATE,
       seconds: audio.audio.length / audio.sampling_rate / VOICE_PLAYBACK_RATE,
     };
-  }).catch((err) => ({ success: false, error: String(err?.message || err) }));
+  })).catch((err) => ({ success: false, error: String(err?.message || err) }));
 
   // the queue advances whatever happened, or one failure would wedge every
   // sentence after it
@@ -2996,8 +2999,31 @@ ipcMain.handle("emb3r:stop-speaking", () => {
 // of holding on is every reply for as long as the app is open.
 const SPEECH_IDLE_MS = 90_000;
 let speechIdleTimer = null;
+// Sentences being synthesised and recordings being transcribed at this moment.
+// The countdown starts when something is asked for, and on a machine short of
+// memory a slow load followed by a long sentence can outlast it - which let the
+// release dispose of the voice while a sentence was still being made with it,
+// and that sentence failed. A model in use is not idle, however long ago it was
+// asked for.
+let speechInUse = 0;
+
+async function usingSpeech(work) {
+  speechInUse += 1;
+  try {
+    return await work();
+  } finally {
+    speechInUse -= 1;
+    // idle is counted from the end of the last use rather than its start
+    touchSpeech();
+  }
+}
 
 function releaseSpeechModels() {
+  // still being loaded or still being used: look again after another spell
+  if (speechInUse > 0 || voiceLoading || earsLoading) {
+    touchSpeech();
+    return;
+  }
   for (const [name, promise] of [["voice", voicePromise], ["ears", earsPromise]]) {
     if (!promise) continue;
     promise.then((held) => {
@@ -3078,8 +3104,10 @@ async function getEars() {
     env.allowLocalModels = false;
     return pipeline("automatic-speech-recognition", EARS_REPO, { dtype: "q8" });
   })();
+  // armed on load for the same reason as the voice: warming must not mean
+  // holding on for good
   earsPromise
-    .then(() => { earsLoading = false; })
+    .then(() => { earsLoading = false; touchSpeech(); })
     .catch(() => { earsLoading = false; earsPromise = null; });
   return earsPromise;
 }
@@ -3114,17 +3142,19 @@ ipcMain.handle("emb3r:transcribe", async (_e, payload) => {
 
   touchSpeech();
   try {
-    const transcribe = await getEars();
-    const audio = pcm instanceof Float32Array ? pcm : Float32Array.from(pcm);
-    const started = Date.now();
-    const result = await transcribe(audio);
-    const text = String(result?.text || "").trim();
-    return {
-      success: true,
-      text,
-      seconds: Number(seconds.toFixed(2)),
-      tookMs: Date.now() - started,
-    };
+    return await usingSpeech(async () => {
+      const transcribe = await getEars();
+      const audio = pcm instanceof Float32Array ? pcm : Float32Array.from(pcm);
+      const started = Date.now();
+      const result = await transcribe(audio);
+      const text = String(result?.text || "").trim();
+      return {
+        success: true,
+        text,
+        seconds: Number(seconds.toFixed(2)),
+        tookMs: Date.now() - started,
+      };
+    });
   } catch (err) {
     return { success: false, error: `That could not be transcribed: ${err?.message || err}` };
   }
@@ -3442,6 +3472,37 @@ function usingCustomApi() {
   return config.apiProvider === "custom";
 }
 
+// "The custom provider is usable": endpoint, key and model name all present.
+// One predicate rather than three spellings of the same invariant - routing
+// decides with it, the settings panel reports it, and Test it refuses on it. A
+// fourth required field would otherwise have to be remembered in three places,
+// and the two that were updated would quietly disagree with the one that was not.
+//
+// answerWithCustomApi still checks the three separately, on purpose: it says
+// which one is missing, and that is a different question from whether to go.
+function customApiReady() {
+  return Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel);
+}
+
+// Which remote service answers a message, or null when this machine does.
+//
+// The choice in Web access picks the remote, and only that one is considered.
+// This used to be two separate questions: whether a message should leave the
+// machine counted a saved Gemini key whichever provider was chosen, and where it
+// then went was decided by the choice alone. So with "Someone else" picked but
+// not finished - no key yet, say - and an old Gemini key still saved, a question
+// about the news asked for consent on Gemini's account, was sent to the
+// unfinished provider, failed before a request could even be made, and was
+// reported as that provider not answering.
+function remoteFor(userMessage, opts = {}) {
+  if (opts.forceLocal) return null;
+  if (usingCustomApi()) {
+    if (!customApiReady()) return null;
+    return config.customApiScope === "always" || needsCurrentInfo(userMessage) ? "custom" : null;
+  }
+  return config.geminiApiKey && needsCurrentInfo(userMessage) ? "gemini" : null;
+}
+
 function customApiHost() {
   try {
     return new URL(config.customApiBaseUrl).host;
@@ -3615,7 +3676,7 @@ ipcMain.handle("emb3r:gemini-key-status", () => ({ configured: Boolean(config.ge
 ipcMain.handle("emb3r:api-provider-status", () => ({
   provider: usingCustomApi() ? "custom" : "gemini",
   geminiConfigured: Boolean(config.geminiApiKey),
-  customConfigured: Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel),
+  customConfigured: customApiReady(),
   baseUrl: config.customApiBaseUrl || "",
   model: config.customApiModel || "",
   host: customApiHost(),
@@ -3676,7 +3737,7 @@ ipcMain.handle("emb3r:test-custom-api", async () => {
     return { success: false, error: "The offline lock is on, so emb3r is refusing every outbound connection. Turn it off under Privacy first." };
   }
   if (!config.internetConsent) return { success: false, error: "Internet access hasn't been granted yet." };
-  if (!config.customApiKey || !config.customApiBaseUrl || !config.customApiModel) {
+  if (!customApiReady()) {
     return { success: false, error: "Fill in the endpoint, the key and the model name first." };
   }
   const base = config.customApiBaseUrl.replace(/\/+$/, "");
@@ -3921,14 +3982,11 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // intention. "Use it for the questions my local model cannot answer" is
   // another, and a key cannot tell them apart, so it is asked rather than
   // guessed. The default is local-first, because that is what emb3r is.
-  const customReady = usingCustomApi()
-    && Boolean(config.customApiKey && config.customApiBaseUrl && config.customApiModel);
-  const customAnswers = customReady
-    && (config.customApiScope === "always" || needsCurrentInfo(userMessage));
-  const wantsGemini = !opts.forceLocal && (
-    customAnswers || (Boolean(config.geminiApiKey) && needsCurrentInfo(userMessage))
-  );
-  if (wantsGemini && !config.internetConsent) {
+  //
+  // And the gate and the dispatch now read one decision, so they cannot ask
+  // different questions again - see remoteFor.
+  const remote = remoteFor(userMessage, opts);
+  if (remote && !config.internetConsent) {
     return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
   }
 
@@ -3965,14 +4023,14 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
 
   try {
     let text, sources;
-    let source = wantsGemini ? "gemini" : "local";
+    let source = remote ? "gemini" : "local";
     // Name the thing that is answering. Before this the reply carried no model
     // at all once the coil replaced the "ember (web) >" prefix, so somebody
     // using Groq had no way to tell which of the two was talking, or which
     // model of theirs it had reached.
     const answerModel = () => {
       if (source === "local") return modelDisplayName(config.activeModel);
-      if (usingCustomApi()) return `${config.customApiModel} · ${customApiHost()}`;
+      if (remote === "custom") return `${config.customApiModel} · ${customApiHost()}`;
       return config.geminiModel || DEFAULT_GEMINI_MODEL;
     };
     // sent explicitly either way, so the renderer never has to assume "no
@@ -3981,7 +4039,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       mainWindow.webContents.send("emb3r:answer-source", { source, model: answerModel() });
     }
 
-    if (wantsGemini) {
+    if (remote) {
       // the automatic keyword detection that got here is silent by design -
       // consent for it is only ever asked once, not per message - so this is
       // the one place a user finds out *this specific message* is about to
@@ -3989,7 +4047,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // subtle "(web)" label on the reply
       if (mainWindow) mainWindow.webContents.send("emb3r:web-search-start");
       try {
-        ({ text, sources } = usingCustomApi()
+        ({ text, sources } = remote === "custom"
           ? await answerWithCustomApi(promptText, onTextChunk, controller.signal)
           : await answerWithGemini(promptText, onTextChunk, controller.signal));
       } catch (geminiErr) {
@@ -4001,7 +4059,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
         if (mainWindow) {
           // naming Google when it was the user's own provider that failed sends
           // them to the wrong settings box entirely
-          const reason = usingCustomApi()
+          const reason = remote === "custom"
             ? `${customApiHost() || "Your provider"} did not answer: `
               + `${String(geminiErr.message || geminiErr).slice(0, 160)}. `
               + `Answering with the local model instead - check the endpoint, key and model name under Web access.`
@@ -4051,7 +4109,7 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // local model's own history has no idea it happened. Replaying the
       // full persisted transcript keeps a mixed conversation coherent if the
       // next message goes back to the local model. Checked against the
-      // actual source, not the original wantsGemini intent - a fallback to
+      // actual source, not the original remote intent - a fallback to
       // local after a Gemini failure did go through chatSession.prompt(),
       // so re-syncing here would be redundant.
       if (source === "gemini") {
