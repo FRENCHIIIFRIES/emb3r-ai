@@ -68,11 +68,20 @@ val Vt323 = FontFamily(Font(R.font.vt323_regular))
  */
 val Mono = FontFamily(Font(R.font.jetbrains_mono_regular))
 
+/** The body's text-shadow: 6px underneath, 2px on top. */
+val DOUBLE_GLOW = listOf(Emb3rTokens.glowBig, Emb3rTokens.glowSmall)
+/** A button's: button { text-shadow: 0 0 var(--glow-small) } */
+val BUTTON_GLOW = listOf(Emb3rTokens.glowSmall)
+/** #chat .sys and .err: 0 0 4px in their own colour */
+val NOTE_GLOW = listOf(4f)
+/** .dim { text-shadow: none } */
+val NO_GLOW = emptyList<Float>()
+
 /**
- * CSS gives every lit thing two shadows at once - 2px and 6px - and a Compose
- * text style holds only one. So a lit line is drawn twice, the wide glow
- * underneath and the tight one on top, which is what the desktop's body
- * text-shadow does in one declaration.
+ * CSS can give one line of text several shadows at once, and the desktop's body
+ * does - 2px and 6px. A Compose text style holds only one, so lit text is drawn
+ * once per glow, widest underneath, which is what the single CSS declaration
+ * does in one pass.
  */
 @Composable
 fun Lit(
@@ -83,8 +92,10 @@ fun Lit(
     family: FontFamily = Vt323,
     letterSpacing: TextUnit = TextUnit.Unspecified,
     align: TextAlign? = null,
-    glow: Boolean = true,
+    glows: List<Float> = DOUBLE_GLOW,
     lineHeight: Float = Emb3rTokens.lineHeight,
+    bold: Boolean = false,
+    softWrap: Boolean = true,
 ) {
     val base = TextStyle(
         fontFamily = family,
@@ -93,14 +104,16 @@ fun Lit(
         letterSpacing = letterSpacing,
         color = color,
         textAlign = align ?: TextAlign.Unspecified,
+        fontWeight = if (bold) androidx.compose.ui.text.font.FontWeight.Bold else null,
     )
-    if (!glow) {
-        Text(text, modifier, style = base)
+    if (glows.isEmpty()) {
+        Text(text, modifier, style = base, softWrap = softWrap)
         return
     }
     Box(modifier) {
-        Text(text, style = base.copy(shadow = Shadow(color, Offset.Zero, Emb3rTokens.glowBig)))
-        Text(text, style = base.copy(shadow = Shadow(color, Offset.Zero, Emb3rTokens.glowSmall)))
+        for (radius in glows) {
+            Text(text, style = base.copy(shadow = Shadow(color, Offset.Zero, radius)), softWrap = softWrap)
+        }
     }
 }
 

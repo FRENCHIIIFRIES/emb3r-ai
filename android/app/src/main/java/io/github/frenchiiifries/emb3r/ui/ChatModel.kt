@@ -4,6 +4,7 @@ import io.github.frenchiiifries.emb3r.infer.Answers
 import io.github.frenchiiifries.emb3r.infer.Turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,11 +38,54 @@ class ChatModel(
 
     private var job: Job? = null
 
+    /**
+     * The desktop's pet stat, with the desktop's mechanics: it starts full, drops
+     * by one every 45 seconds, and each message sent lifts it by one. At two or
+     * below she looks sad when resting. It is shown because something drives it.
+     */
+    private val _mood = MutableStateFlow(MOOD_MAX)
+    val mood: StateFlow<Int> = _mood.asStateFlow()
+
+    private var idle: Job? = null
+    private var clocks: CoroutineScope? = null
+
+    /**
+     * Starts the mood decay and the idle timers. Taken as a separate scope so a
+     * test can run them on a clock it controls and that does not keep it waiting.
+     */
+    fun startClocks(scope: CoroutineScope) {
+        clocks = scope
+        scope.launch {
+            while (true) {
+                delay(MOOD_DECAY_MS)
+                _mood.value = maxOf(0, _mood.value - 1)
+                if (!_generating.value && _mood.value <= 2 && _face.value in RESTING) _face.value = FaceState.SAD
+            }
+        }
+        resetIdle()
+    }
+
+    /** After a minute alone she rests; after two, she sleeps - as on the desktop. */
+    private fun resetIdle() {
+        val scope = clocks ?: return
+        idle?.cancel()
+        idle = scope.launch {
+            delay(IDLE_MS)
+            if (!_generating.value) _face.value = restingFace()
+            delay(SLEEP_MS - IDLE_MS)
+            if (!_generating.value) _face.value = FaceState.SLEEPING
+        }
+    }
+
+    fun restingFace() = if (_mood.value <= 2) FaceState.SAD else FaceState.IDLE
+
     fun send(raw: String) {
         val text = raw.trim()
         if (text.isEmpty() || _generating.value) return
         val history = turns()
         append(Line(Who.YOU, text))
+        _mood.value = minOf(MOOD_MAX, _mood.value + 1)
+        resetIdle()
 
         val answerer = answers()
         if (answerer == null) {
@@ -71,7 +115,7 @@ class ChatModel(
                     append(Line(Who.SYSTEM, "she had nothing to say to that - try asking another way"))
                     _face.value = FaceState.PUZZLED
                 } else {
-                    _face.value = FaceState.IDLE
+                    _face.value = restingFace()
                 }
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -80,6 +124,7 @@ class ChatModel(
                 _face.value = FaceState.ERROR
             } finally {
                 _generating.value = false
+                resetIdle()
             }
         }
     }
@@ -89,6 +134,9 @@ class ChatModel(
         if (!_generating.value) return
         answers()?.stop()
     }
+
+    /** A system line in the transcript - where the terminal says what went wrong. */
+    fun note(text: String) = append(Line(Who.SYSTEM, text))
 
     fun newChat() {
         stop()
@@ -117,6 +165,18 @@ class ChatModel(
     private fun replaceLast(line: Line) { _lines.value = _lines.value.dropLast(1) + line }
 
     companion object {
+        const val MOOD_MAX = 5
+        const val MOOD_DECAY_MS = 45_000L
+        const val IDLE_MS = 60_000L
+        const val SLEEP_MS = 120_000L
+        private val RESTING = setOf(FaceState.IDLE, FaceState.SAD, FaceState.SLEEPING)
+
+        /** bar() in renderer.js: a # for each point of mood, a - for the rest. */
+        fun bar(n: Int): String {
+            val m = n.coerceIn(0, MOOD_MAX)
+            return "#".repeat(m) + "-".repeat(MOOD_MAX - m)
+        }
+
         /** The desktop's own first line, word for word. */
         val NEW_CHAT = Line(Who.DIM, "// new chat. type below and hit enter.")
     }

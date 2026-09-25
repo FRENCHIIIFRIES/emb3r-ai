@@ -46,8 +46,8 @@ class TalkModelTest {
         voice: Speaks? = FakeVoice(),
         ears: Hears? = FakeEars("what is the capital of france"),
         recorder: Recorder = FakeRecorder(1.5),
-        micAllowed: Boolean = true,
-    ) = TalkModel(this, { answers }, { voice }, { ears }, recorder, { micAllowed })
+        mic: MicAccess = MicAccess.GRANTED,
+    ) = TalkModel(this, { answers }, { voice }, { ears }, recorder, { mic })
 
     @Test
     fun `holding listens, letting go answers out loud`() = runTest(StandardTestDispatcher()) {
@@ -91,7 +91,7 @@ class TalkModelTest {
 
     @Test
     fun `a refused microphone shows on her face`() = runTest(StandardTestDispatcher()) {
-        val t = talk(micAllowed = false)
+        val t = talk(mic = MicAccess.REFUSED)
         t.hold()
         assertEquals(FaceState.DEAF, t.face.value)
         assertEquals(TalkModel.MIC_REFUSED, t.said.value)
@@ -110,5 +110,13 @@ class TalkModelTest {
         val (ready, rest) = Sentences.split("The capital is Paris. It has been since the tenth cen")
         assertEquals(listOf("The capital is Paris."), ready)
         assertEquals("It has been since the tenth cen", rest)
+    }
+
+    @Test
+    fun `while Android is still asking, she does not claim the microphone was refused`() = runTest(StandardTestDispatcher()) {
+        val t = talk(mic = MicAccess.ASKING)
+        t.hold()
+        assertEquals(TalkModel.ASKING_MIC, t.said.value)
+        assertEquals(FaceState.IDLE, t.face.value)
     }
 }

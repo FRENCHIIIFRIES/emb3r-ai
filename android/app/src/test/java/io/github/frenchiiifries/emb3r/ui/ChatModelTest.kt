@@ -104,4 +104,41 @@ class ChatModelTest {
         assertEquals(listOf(ChatModel.NEW_CHAT), chat.lines.value)
         assertEquals("// new chat. type below and hit enter.", ChatModel.NEW_CHAT.text)
     }
+
+    @Test
+    fun `the mood bar is drawn as the desktop draws it`() {
+        assertEquals("#####", ChatModel.bar(5))
+        assertEquals("##---", ChatModel.bar(2))
+        assertEquals("-----", ChatModel.bar(-3))
+    }
+
+    @Test
+    fun `mood drops every 45 seconds, and at two or below she looks sad`() = runTest(StandardTestDispatcher()) {
+        val chat = model(FakeAnswers(listOf("ok")))
+        chat.startClocks(backgroundScope)
+        advanceTimeBy(45_000 * 3 + 1)
+        assertEquals(2, chat.mood.value)
+        assertEquals(FaceState.SAD, chat.face.value)
+    }
+
+    @Test
+    fun `talking to her lifts the mood, capped at full`() = runTest(StandardTestDispatcher()) {
+        val chat = model(FakeAnswers(listOf("ok")))
+        chat.startClocks(backgroundScope)
+        advanceTimeBy(45_000 * 2 + 1)
+        assertEquals(3, chat.mood.value)
+        chat.send("hi"); advanceTimeBy(100)
+        assertEquals(4, chat.mood.value)
+        chat.send("again"); advanceTimeBy(100); chat.send("more"); advanceTimeBy(100)
+        assertEquals(ChatModel.MOOD_MAX, chat.mood.value)
+    }
+
+    @Test
+    fun `left alone for two minutes she falls asleep`() = runTest(StandardTestDispatcher()) {
+        val chat = model(FakeAnswers(listOf("ok")))
+        chat.startClocks(backgroundScope)
+        advanceTimeBy(ChatModel.SLEEP_MS + 1)
+        assertEquals(FaceState.SLEEPING, chat.face.value)
+        assertEquals("( u_u ) zZz", Faces.forState(chat.face.value))
+    }
 }

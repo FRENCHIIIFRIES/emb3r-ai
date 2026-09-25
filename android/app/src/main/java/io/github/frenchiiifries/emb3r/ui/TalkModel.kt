@@ -12,6 +12,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * Where the microphone stands. Three states rather than two: the first time the
+ * button is held, Android's own dialog is on screen, and saying "refused" while
+ * the person is still deciding would be telling them something untrue.
+ */
+enum class MicAccess { GRANTED, ASKING, REFUSED }
+
 /** Whatever records while the button is held. */
 interface Recorder {
     fun start()
@@ -33,7 +40,7 @@ class TalkModel(
     private val voice: () -> Speaks?,
     private val ears: () -> Hears?,
     private val recorder: Recorder,
-    private val micAllowed: () -> Boolean,
+    private val micAccess: () -> MicAccess,
 ) {
     private val _face = MutableStateFlow(FaceState.IDLE)
     val face: StateFlow<FaceState> = _face.asStateFlow()
@@ -61,11 +68,20 @@ class TalkModel(
         answers()?.stop()
         _trouble.value = null
 
-        if (!micAllowed()) {
-            _heard.value = ""
-            _said.value = MIC_REFUSED
-            _face.value = FaceState.DEAF
-            return
+        when (micAccess()) {
+            MicAccess.GRANTED -> Unit
+            MicAccess.ASKING -> {
+                _heard.value = ""
+                _said.value = ASKING_MIC
+                _face.value = FaceState.IDLE
+                return
+            }
+            MicAccess.REFUSED -> {
+                _heard.value = ""
+                _said.value = MIC_REFUSED
+                _face.value = FaceState.DEAF
+                return
+            }
         }
         try {
             recorder.start()
@@ -180,6 +196,7 @@ class TalkModel(
         // The desktop's words, adapted only where they would otherwise be untrue here.
         const val MIC_REFUSED = "The microphone was refused. Android asks once - allow it for emb3r in Settings, under Permissions."
         const val NO_MIC = "No microphone was found on this phone."
+        const val ASKING_MIC = "Allow the microphone, then hold the button again."
         const val TOO_SHORT = "That was too short to make out - hold the button while you talk."
         const val NOT_CAUGHT = "I did not catch that."
         const val NO_EARS = "Her hearing isn't imported yet - bring it in on the model screen."
