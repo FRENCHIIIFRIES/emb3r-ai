@@ -150,3 +150,14 @@ models/*.gguf
 # Windows drops these into synced folders
 desktop.ini
 Thumbs.db
+
+# Android app
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/.kotlin/
+
+# fetched and checksum-verified at build time, not stored in the repo
+android/app/libs/*.aar

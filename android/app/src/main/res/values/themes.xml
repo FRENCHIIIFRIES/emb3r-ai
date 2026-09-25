@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window itself is emb3r's background, so there is no white flash
+         between the launcher and the first frame Compose draws. -->
+    <style name="Theme.Emb3r" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/emb3r_bg</item>
+        <item name="android:statusBarColor">@color/emb3r_bg</item>
+        <item name="android:navigationBarColor">@color/emb3r_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

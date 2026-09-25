@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the bg-color custom property from src/index.html -->
+    <color name="emb3r_bg">#0B0F0B</color>
+    <!-- the text-color custom property -->
+    <color name="emb3r_text">#7CFF9E</color>
+</resources>

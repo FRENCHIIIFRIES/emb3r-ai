@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      There is deliberately no android.permission.INTERNET here.
+
+      emb3r's claim is that nothing you type leaves the machine. On the desktop
+      that needed a content security policy and a guard on every outbound call.
+      Here the operating system enforces it: without this permission the process
+      cannot open a socket at all, and no code of ours is trusted to behave.
+
+      The build fails if this permission ever appears in a merged manifest -
+      including from a library - see no-internet.gradle.kts. The About screen
+      demonstrates the refusal rather than asserting it.
+
+      RECORD_AUDIO is asked for at the moment the microphone is first held, and
+      is the only permission this app wants.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="emb3r"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.Emb3r">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Emb3r">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
