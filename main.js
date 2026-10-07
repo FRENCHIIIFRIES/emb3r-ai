@@ -4078,6 +4078,29 @@ function forgetAttachmentContext(userMessage) {
   }
 }
 
+// A reply that did not come from a model - student mode's fixed answers and
+// Spotify commands - saved like any other exchange, so the history agrees with
+// what was on screen.
+function persistFixedExchange(userMessage, reply, source) {
+  if (!activeConversation) return;
+  const now = Date.now();
+  const isFirstExchange = activeConversation.messages.length === 0;
+  activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source });
+  activeConversation.messages.push({ role: "model", text: reply, ts: now, source });
+  activeConversation.updatedAt = now;
+  if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
+  saveConversationFile(activeConversation.profileId, activeConversation);
+}
+
+// What she is told about the music for this question: the last answer if it
+// is seconds old, otherwise a fresh one, so "what is this?" means the song
+// playing now. Nothing at all without Spotify, or under the offline lock.
+async function currentMusicContext() {
+  if (!config.spotifyAccessToken || config.offlineLock) return null;
+  const fresh = spotifyLast && Date.now() - spotifyLast.at < 15_000;
+  return musicContext(fresh ? spotifyLast.data : await readNowPlaying());
+}
+
 ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // Checked first, ahead of the model-ready check and ahead of the Gemini
   // decision below. Ahead of the model because these answers are worth giving
@@ -4092,16 +4115,25 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     // Persisted like any other exchange. Hiding it would make the history
     // disagree with what was on screen, and a teacher reviewing the log is a
     // reason to keep it, not to lose it.
-    if (activeConversation) {
-      const now = Date.now();
-      const isFirstExchange = activeConversation.messages.length === 0;
-      activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source: "safe-mode" });
-      activeConversation.messages.push({ role: "model", text: guarded, ts: now, source: "safe-mode" });
-      activeConversation.updatedAt = now;
-      if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
-      saveConversationFile(activeConversation.profileId, activeConversation);
-    }
+    persistFixedExchange(userMessage, guarded, "safe-mode");
     return { success: true, text: guarded, source: "safe-mode", stopped: false };
+  }
+
+  // "pause", "skip", "go back": done, not discussed. After student mode's
+  // guard, and ahead of the model-ready check so they work while the model is
+  // still loading - and only with Spotify connected, because without it the
+  // word is just something said to her.
+  const command = config.spotifyAccessToken ? parseMusicCommand(userMessage) : null;
+  if (command) {
+    const result = await spotifyControl(command);
+    const reply = result.success ? result.reply : result.error;
+    if (mainWindow) {
+      // named under the reply, so it is plain the model did not write it
+      mainWindow.webContents.send("emb3r:answer-source", { source: "spotify", model: "Spotify" });
+      mainWindow.webContents.send("emb3r:token", { text: reply });
+    }
+    persistFixedExchange(userMessage, reply, "spotify");
+    return { success: true, text: reply, source: "spotify", stopped: false };
   }
 
   if (!chatSession) {
@@ -4150,7 +4182,13 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // this question touches, alongside it rather than inside it, and trimmed back
   // out of the history afterwards by the same call that trims the extracts.
   const memories = memoryContext(userMessage);
-  const extras = [memories, attachmentContext].filter(Boolean).join("\n\n");
+
+  // The song travels the same way, and only to the model on this machine: if
+  // remoteFor() is sending the question to Gemini or another provider, what
+  // the user is listening to stays here. A web answer will not know which song
+  // "this" is; that is the price, and it is the right way round.
+  const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContext() : null;
+  const extras = [memories, music, attachmentContext].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();
