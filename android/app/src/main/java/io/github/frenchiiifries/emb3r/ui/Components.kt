@@ -46,14 +46,14 @@ fun BracketButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     color: Color = LocalAccent.current,
-    size: TextUnit = Emb3rTokens.bodySize,
+    size: TextUnit = Ink.bodySize,
 ) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     Box(
         modifier
             .alpha(if (enabled) 1f else 0.5f)
-            .background(if (pressed) Emb3rTokens.hover else Emb3rTokens.bg)
+            .background(if (pressed) Ink.hover else Ink.bg)
             .border(1.dp, color)
             .clickable(interactionSource = source, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -80,7 +80,7 @@ fun HoldButton(
     Box(
         modifier
             .alpha(if (enabled) 1f else 0.5f)
-            .background(if (down) color else Emb3rTokens.bg)
+            .background(if (down) color else Ink.bg)
             .border(1.dp, color)
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
@@ -94,7 +94,7 @@ fun HoldButton(
         contentAlignment = Alignment.Center,
     ) {
         // #app.listening #micButton { background: var(--text-color); color: var(--bg-color) }
-        Lit(label, if (down) Emb3rTokens.bg else color, glows = if (down) NO_GLOW else BUTTON_GLOW, softWrap = false)
+        Lit(label, if (down) Ink.bg else color, glows = if (down) NO_GLOW else BUTTON_GLOW, softWrap = false)
     }
 }
 
@@ -104,7 +104,7 @@ fun StopButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val amber = Color(0xFFFFB020)
     Box(
         modifier
-            .background(Emb3rTokens.bg)
+            .background(Ink.bg)
             .border(1.dp, amber)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -130,19 +130,30 @@ fun NetIndicator(modifier: Modifier = Modifier) {
     }
 }
 
-/** A line of the transcript, in the shape #chat .you and #chat .bot give it. */
+/** A line of the transcript, in the shape #chat .you and #chat .bot give it, with any reactions over it. */
 @Composable
 fun LineView(line: Line, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        LineBody(line)
+        if (line.bursts.isNotEmpty()) {
+            val color = if (line.who == Who.ERROR) Emb3rTokens.err else LocalAccent.current
+            BurstLayer(line.bursts, color, Modifier.matchParentSize())
+        }
+    }
+}
+
+@Composable
+private fun LineBody(line: Line, modifier: Modifier = Modifier) {
     val accent = LocalAccent.current
     when (line.who) {
         Who.DIM -> Lit(line.text, Emb3rTokens.dim, modifier, glows = NO_GLOW)
         Who.SYSTEM -> NoteLine("sys", line.text, Emb3rTokens.sys, modifier)
         Who.ERROR -> NoteLine("err", line.text, Emb3rTokens.err, modifier)
-        Who.YOU -> BarLine(Emb3rTokens.userText, modifier, prompt = {
+        Who.YOU -> BarLine(Ink.userText, modifier, prompt = {
             // #chat .prompt { opacity: .72 }
-            Lit("you >", Emb3rTokens.userText, Modifier.alpha(0.72f), softWrap = false)
+            Lit("you >", Ink.userText, Modifier.alpha(0.72f), softWrap = false)
         }) {
-            Lit(line.text, Emb3rTokens.userText)
+            Lit(line.text, Ink.userText)
         }
         Who.EMBER -> BarLine(accent, modifier, prompt = {
             // the coil stands in for "ember:", at full strength (#chat .coilWrap { opacity: 1 })

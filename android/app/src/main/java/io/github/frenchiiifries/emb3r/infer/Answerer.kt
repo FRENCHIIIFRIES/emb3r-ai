@@ -15,7 +15,9 @@ interface Answers {
 }
 
 /**
- * The model on the phone, through MediaPipe's LLM Inference.
+ * A .task model on the phone, through MediaPipe's LLM Inference - kept for the
+ * one listed model LiteRT-LM cannot answer with. Everything newer goes through
+ * LiteRtAnswerer.
  *
  * Each question gets a fresh session holding the conversation so far, built by
  * ChatFormat. A session could be kept and fed only the new turn, but a fresh one
@@ -25,7 +27,8 @@ interface Answers {
 class Answerer(
     context: Context,
     modelPath: String,
-    private val system: String = EMBER_SYSTEM,
+    /** read at the moment of asking, so a change in Settings applies to the very next reply */
+    private val system: () -> String = { EMBER_SYSTEM },
 ) : Answers, AutoCloseable {
 
     private val llm: LlmInference = LlmInference.createFromOptions(
@@ -85,10 +88,11 @@ class Answerer(
      */
     private fun fit(history: List<Turn>, question: String): String {
         var kept = history
-        var prompt = ChatFormat.conversation(system, kept, question)
+        val instructions = system()
+        var prompt = ChatFormat.conversation(instructions, kept, question)
         while (kept.isNotEmpty() && llm.sizeInTokens(prompt) > PROMPT_BUDGET) {
             kept = kept.drop(1)
-            prompt = ChatFormat.conversation(system, kept, question)
+            prompt = ChatFormat.conversation(instructions, kept, question)
         }
         return prompt
     }

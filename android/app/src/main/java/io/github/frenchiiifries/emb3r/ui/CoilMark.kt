@@ -40,7 +40,8 @@ import androidx.compose.ui.semantics.semantics
 fun CoilMark(
     accent: Color,
     modifier: Modifier = Modifier,
-    dark: Boolean = true,
+    // the theme's, unless told otherwise - the outline only lifts on dark
+    dark: Boolean = LocalDark.current,
     animate: Boolean = true,
     description: String? = null,
 ) {
@@ -166,7 +167,7 @@ private fun androidx.compose.animation.core.InfiniteTransition.phase(ms: Int, he
     )
 
 /** Android's equivalent of prefers-reduced-motion: animations switched off in the system. */
-private fun animationsOff(context: android.content.Context): Boolean =
+internal fun animationsOff(context: android.content.Context): Boolean =
     runCatching {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }.getOrDefault(false)

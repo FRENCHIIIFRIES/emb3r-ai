@@ -8,6 +8,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -15,6 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -68,10 +70,16 @@ val Vt323 = FontFamily(Font(R.font.vt323_regular))
  */
 val Mono = FontFamily(Font(R.font.jetbrains_mono_regular))
 
-/** The body's text-shadow: 6px underneath, 2px on top. */
-val DOUBLE_GLOW = listOf(Emb3rTokens.glowBig, Emb3rTokens.glowSmall)
+/**
+ * The body's text-shadow: --glow-big underneath, --glow-small on top. Read
+ * from the palette, because the Phosphor Glow slider moves both; a glow of
+ * nothing is left out rather than drawn as a second copy of the text.
+ */
+val DOUBLE_GLOW: List<Float>
+    @Composable @ReadOnlyComposable get() = LocalPalette.current.let { p -> listOf(p.glowBig, p.glowSmall).filter { it > 0f } }
 /** A button's: button { text-shadow: 0 0 var(--glow-small) } */
-val BUTTON_GLOW = listOf(Emb3rTokens.glowSmall)
+val BUTTON_GLOW: List<Float>
+    @Composable @ReadOnlyComposable get() = LocalPalette.current.let { p -> listOf(p.glowSmall).filter { it > 0f } }
 /** #chat .sys and .err: 0 0 4px in their own colour */
 val NOTE_GLOW = listOf(4f)
 /** .dim { text-shadow: none } */
@@ -88,7 +96,7 @@ fun Lit(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
-    size: TextUnit = Emb3rTokens.bodySize,
+    size: TextUnit = Ink.bodySize,
     family: FontFamily = Vt323,
     letterSpacing: TextUnit = TextUnit.Unspecified,
     align: TextAlign? = null,
@@ -106,13 +114,53 @@ fun Lit(
         textAlign = align ?: TextAlign.Unspecified,
         fontWeight = if (bold) androidx.compose.ui.text.font.FontWeight.Bold else null,
     )
+    val shaped = (if (family == Vt323) withFallback(text) else null) ?: androidx.compose.ui.text.AnnotatedString(text)
     if (glows.isEmpty()) {
-        Text(text, modifier, style = base, softWrap = softWrap)
+        Text(shaped, modifier, style = base, softWrap = softWrap)
         return
     }
     Box(modifier) {
         for (radius in glows) {
-            Text(text, style = base.copy(shadow = Shadow(color, Offset.Zero, radius)), softWrap = softWrap)
+            Text(shaped, style = base.copy(shadow = Shadow(color, Offset.Zero, radius)), softWrap = softWrap)
+        }
+    }
+}
+
+/**
+ * The code points VT323 can draw - all 224 of them, read from the font's own
+ * character map rather than guessed.
+ */
+private fun vt323Draws(c: Int): Boolean =
+    c in 0x20..0x7E || c in 0xA0..0xFF || c == 0x131 || c in 0x152..0x153 || c == 0x2BC || c == 0x2C6 ||
+        c == 0x2DA || c == 0x2DC || c in 0x300..0x301 || c in 0x303..0x304 || c in 0x308..0x309 || c == 0x323 ||
+        c in 0x2013..0x2014 || c in 0x2018..0x201A || c in 0x201C..0x201E || c == 0x2022 || c == 0x2026 ||
+        c in 0x2039..0x203A || c == 0x2044 || c == 0x20AC || c == 0x2122 || c == 0x2212 || c == 0x2215 ||
+        c == '\n'.code || c == '\r'.code || c == '\t'.code
+
+/**
+ * The desktop's font stack is "VT323", "JetBrains Mono", monospace: whatever
+ * VT323 cannot draw - the ● beside a loaded model, the ✕ that deletes one -
+ * comes from JetBrains Mono, and only what neither has from the system. Compose
+ * has no fallback between two families, so the characters VT323 lacks are
+ * handed to JetBrains Mono here, span by span. Null when nothing needs it.
+ */
+fun withFallback(text: String): androidx.compose.ui.text.AnnotatedString? {
+    var i = 0
+    var any = false
+    while (i < text.length) {
+        val c = text.codePointAt(i)
+        if (!vt323Draws(c)) { any = true; break }
+        i += Character.charCount(c)
+    }
+    if (!any) return null
+    return androidx.compose.ui.text.buildAnnotatedString {
+        var j = 0
+        while (j < text.length) {
+            val c = text.codePointAt(j)
+            val n = Character.charCount(c)
+            if (vt323Draws(c)) append(text, j, j + n)
+            else withStyle(androidx.compose.ui.text.SpanStyle(fontFamily = Mono)) { append(text, j, j + n) }
+            j += n
         }
     }
 }
@@ -131,14 +179,29 @@ fun faceGradient(accent: Color) = Brush.verticalGradient(
 val LocalAccent = compositionLocalOf { Emb3rTokens.text }
 val LocalDark = compositionLocalOf { true }
 
+/** The theme with the desktop's defaults - emb3r's own colour, dark unless asked otherwise. */
 @Composable
 fun Emb3rTheme(
     dark: Boolean = isSystemInDarkTheme(),
     accent: Color = if (dark) Emb3rTokens.text else Emb3rTokens.lightText,
     content: @Composable () -> Unit,
 ) {
-    val background = if (dark) Emb3rTokens.bg else Emb3rTokens.lightBg
-    val surface = if (dark) Emb3rTokens.hover else Emb3rTokens.lightHover
+    val palette = Palettes.of(
+        io.github.frenchiiifries.emb3r.settings.Config(
+            theme = if (dark) io.github.frenchiiifries.emb3r.settings.ThemeName.DARK
+                else io.github.frenchiiifries.emb3r.settings.ThemeName.LIGHT,
+        ),
+    ).copy(text = accent)
+    Emb3rTheme(palette, content)
+}
+
+/** The theme as Settings has it: every colour, glow and size from the palette. */
+@Composable
+fun Emb3rTheme(palette: Palette, content: @Composable () -> Unit) {
+    val dark = palette.dark
+    val accent = palette.text
+    val background = palette.bg
+    val surface = palette.hover
     val scheme = if (dark) {
         darkColorScheme(
             primary = accent, onPrimary = background,
@@ -154,7 +217,7 @@ fun Emb3rTheme(
             surfaceVariant = surface, secondaryContainer = surface,
         )
     }
-    CompositionLocalProvider(LocalAccent provides accent, LocalDark provides dark) {
+    CompositionLocalProvider(LocalAccent provides accent, LocalDark provides dark, LocalPalette provides palette) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

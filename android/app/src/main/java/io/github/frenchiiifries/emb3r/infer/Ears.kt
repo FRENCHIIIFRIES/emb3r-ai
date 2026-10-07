@@ -5,6 +5,8 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Anything that can turn a recording into words. The view models only see this. */
@@ -45,13 +47,15 @@ class Ears(whisperDir: File) : Hears, AutoCloseable {
         ),
     )
 
-    override suspend fun hear(samples: FloatArray): String {
-        if (samples.isEmpty()) return ""
+    // Decoding is seconds of work. It runs on a background thread, whoever
+    // asks: called from the screen's own thread, it would freeze the screen.
+    override suspend fun hear(samples: FloatArray): String = withContext(Dispatchers.Default) {
+        if (samples.isEmpty()) return@withContext ""
         val stream = recognizer.createStream()
         try {
             stream.acceptWaveform(samples, SAMPLE_RATE)
             recognizer.decode(stream)
-            return recognizer.getResult(stream).text.trim()
+            recognizer.getResult(stream).text.trim()
         } finally {
             stream.release()
         }

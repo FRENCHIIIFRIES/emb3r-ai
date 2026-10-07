@@ -21,15 +21,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.frenchiiifries.emb3r.Engine
+import io.github.frenchiiifries.emb3r.settings.SettingsModel
+import io.github.frenchiiifries.emb3r.ui.settings.SettingsScreen
+import io.github.frenchiiifries.emb3r.ui.settings.SpeechControls
 
 /**
- * The four places, in the bracketed-key style of the desktop's own menu,
- * where talk is already [o].
+ * The four places, in the bracketed-key style of the desktop's own menu, where
+ * talk is [o] and settings is [=]. The models live inside Settings, where the
+ * desktop keeps them.
  */
 enum class Tab(val key: String, val label: String) {
     CHAT("[>]", "chat"),
     TALK("[o]", "talk"),
-    MODEL("[=]", "model"),
+    SETTINGS("[=]", "settings"),
     ABOUT("[?]", "about"),
 }
 
@@ -41,11 +45,14 @@ enum class Tab(val key: String, val label: String) {
 @Composable
 fun App(
     engine: Engine,
+    settings: SettingsModel,
     chat: ChatModel,
     talk: TalkModel,
     dictation: Dictation,
     importState: ImportState,
     onImport: () -> Unit,
+    speech: SpeechControls,
+    onType: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.CHAT) }
 
@@ -63,14 +70,14 @@ fun App(
     BackHandler(enabled = tab != Tab.CHAT) { tab = Tab.CHAT }
 
     Scaffold(
-        containerColor = Emb3rTokens.bg,
+        containerColor = Ink.bg,
         bottomBar = { BottomBar(tab) { tab = it } },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).background(Emb3rTokens.bg)) {
+        Box(Modifier.fillMaxSize().padding(padding).background(Ink.bg)) {
             when (tab) {
-                Tab.CHAT -> ChatScreen(chat, dictation, onNewChat = { chat.newChat() })
+                Tab.CHAT -> ChatScreen(chat, dictation, onNewChat = { chat.newChat() }, onType = onType)
                 Tab.TALK -> TalkScreen(talk, onBack = { tab = Tab.CHAT })
-                Tab.MODEL -> ModelScreen(engine, importState, onImport)
+                Tab.SETTINGS -> SettingsScreen(settings, engine, importState, onImport, onNote = chat::note, speech = speech)
                 Tab.ABOUT -> AboutScreen()
             }
         }
@@ -81,7 +88,7 @@ fun App(
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
     val accent = LocalAccent.current
     NavigationBar(
-        containerColor = Emb3rTokens.bg,
+        containerColor = Ink.bg,
         tonalElevation = 0.dp,
         modifier = Modifier.drawBehind {
             drawLine(accent.copy(alpha = 0.35f), Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
@@ -96,7 +103,7 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
                 onClick = { onSelect(t) },
                 icon = { Lit(t.key, colour, glows = if (selected) DOUBLE_GLOW else NO_GLOW, softWrap = false) },
                 label = { Lit(t.label, colour, size = 14.sp, glows = if (selected) BUTTON_GLOW else NO_GLOW, softWrap = false) },
-                colors = NavigationBarItemDefaults.colors(indicatorColor = Emb3rTokens.hover),
+                colors = NavigationBarItemDefaults.colors(indicatorColor = Ink.hover),
             )
         }
     }

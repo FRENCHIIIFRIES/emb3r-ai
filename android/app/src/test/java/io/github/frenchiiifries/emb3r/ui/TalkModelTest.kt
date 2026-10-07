@@ -28,11 +28,11 @@ class TalkModelTest {
     }
     private class FakeVoice : Speaks {
         val spoken = mutableListOf<String>()
-        override suspend fun say(text: String) { spoken += text }
+        override suspend fun say(text: String, speed: Float) { spoken += text }
         override fun silence() = Unit
     }
     private class FailingVoice : Speaks {
-        override suspend fun say(text: String) = throw IllegalStateException("there was not enough memory free to load her voice")
+        override suspend fun say(text: String, speed: Float) = throw IllegalStateException("there was not enough memory free to load her voice")
         override fun silence() = Unit
     }
     /** Hands back a recording of the given length in seconds. */

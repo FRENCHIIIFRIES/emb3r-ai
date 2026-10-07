@@ -1,5 +1,6 @@
 package io.github.frenchiiifries.emb3r.ui
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +35,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -54,7 +56,14 @@ interface Dictation {
  * transcript; and the input row - a ">" prompt, the box, [o] and [ send ].
  */
 @Composable
-fun ChatScreen(chat: ChatModel, dictation: Dictation, onNewChat: () -> Unit, modifier: Modifier = Modifier) {
+fun ChatScreen(
+    chat: ChatModel,
+    dictation: Dictation,
+    onNewChat: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** a key went down in the box - the desktop clicks for every one but Enter */
+    onType: () -> Unit = {},
+) {
     val accent = LocalAccent.current
     val lines by chat.lines.collectAsState()
     val face by chat.face.collectAsState()
@@ -79,7 +88,7 @@ fun ChatScreen(chat: ChatModel, dictation: Dictation, onNewChat: () -> Unit, mod
     Column(
         modifier
             .fillMaxSize()
-            .background(Emb3rTokens.bg)
+            .background(Ink.bg)
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .imePadding(),
     ) {
@@ -104,7 +113,7 @@ fun ChatScreen(chat: ChatModel, dictation: Dictation, onNewChat: () -> Unit, mod
             }
             // #stats { display: flex; align-items: baseline; gap: 18px; font-size: 13px }
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Bottom) {
-                Lit(Faces.forState(face), accent, size = if (focused) 18.sp else 26.sp, bold = true, lineHeight = 1f, softWrap = false)
+                PetFace(face, accent, if (focused) 18.sp else 26.sp)
                 Lit("mood " + ChatModel.bar(mood), accent, size = 13.sp, softWrap = false)
             }
         }
@@ -128,16 +137,16 @@ fun ChatScreen(chat: ChatModel, dictation: Dictation, onNewChat: () -> Unit, mod
             Lit(">", accent, softWrap = false)
             BasicTextField(
                 value = input,
-                onValueChange = { input = it },
+                onValueChange = { if (it.length > input.length) onType(); input = it },
                 modifier = Modifier
                     .weight(1f)
                     .border(1.dp, accent)
-                    .background(Emb3rTokens.bg)
+                    .background(Ink.bg)
                     .padding(horizontal = 10.dp, vertical = 8.dp)
                     .onFocusChanged { focused = it.isFocused },
                 textStyle = TextStyle(
-                    fontFamily = Vt323, fontSize = Emb3rTokens.bodySize, color = accent,
-                    shadow = Shadow(accent, Offset.Zero, Emb3rTokens.glowSmall),
+                    fontFamily = Vt323, fontSize = Ink.bodySize, color = accent,
+                    shadow = Shadow(accent, Offset.Zero, Ink.glowSmall),
                 ),
                 cursorBrush = SolidColor(accent),
                 singleLine = true,
@@ -192,4 +201,40 @@ private fun LogoRow() {
             }
         }
     }
+}
+
+/**
+ * The face in the header. While she thinks it does what startThinking() does:
+ * think1 and think2 in turn every 400 ms, with #face.thinking's small bob -
+ * 3px up and back over 1.2 s - on top, so it reads as working rather than just
+ * blinking. The bob is motion, so it stops when the system asks for none, as
+ * the desktop's stops under prefers-reduced-motion.
+ */
+@Composable
+private fun PetFace(face: FaceState, accent: androidx.compose.ui.graphics.Color, size: androidx.compose.ui.unit.TextUnit) {
+    val thinking = face == FaceState.THINK
+    var flip by remember { mutableStateOf(false) }
+    LaunchedEffect(thinking) {
+        flip = false
+        while (thinking) { kotlinx.coroutines.delay(400); flip = !flip }
+    }
+    val still = animationsOff(androidx.compose.ui.platform.LocalContext.current)
+    val bob = if (thinking && !still) {
+        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "faceBob")
+        t.animateFloat(
+            0f, -3f,
+            androidx.compose.animation.core.infiniteRepeatable(
+                // ease-in-out, each half: CSS applies the timing function per keyframe interval
+                androidx.compose.animation.core.tween(600, easing = androidx.compose.animation.core.CubicBezierEasing(0.42f, 0f, 0.58f, 1f)),
+                androidx.compose.animation.core.RepeatMode.Reverse,
+            ),
+            label = "bob",
+        ).value
+    } else 0f
+    val shown = if (thinking && flip) FaceState.THINK_ALT else face
+    Lit(
+        Faces.forState(shown), accent,
+        Modifier.graphicsLayer { translationY = bob.dp.toPx() },
+        size = size, bold = true, lineHeight = 1f, softWrap = false,
+    )
 }

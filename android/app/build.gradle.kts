@@ -35,16 +35,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -67,6 +69,10 @@ dependencies {
 
     // Answers on the phone. Prebuilt native code, so no NDK is needed here.
     implementation("com.google.mediapipe:tasks-genai:0.10.27")
+    // Google's successor to the library above, which its own model cards now
+    // describe as in maintenance mode. The newest models - Gemma 4, Qwen3.5,
+    // LFM2.5 - are published only in this library's .litertlm format.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.1")
 
     // Both directions of speech, in one library: Kokoro for her voice,
     // Whisper for her hearing, with espeak-ng data carried in the model bundle.
@@ -75,7 +81,9 @@ dependencies {
     implementation(fileTree("libs") { include("*.aar") })
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    // Android's own org.json is stubbed out on the JVM; the settings store is tested against the real one
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }

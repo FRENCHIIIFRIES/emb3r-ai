@@ -2,6 +2,8 @@ package io.github.frenchiiifries.emb3r.ui
 
 import io.github.frenchiiifries.emb3r.infer.Answers
 import io.github.frenchiiifries.emb3r.infer.Turn
+import io.github.frenchiiifries.emb3r.settings.Shaping
+import io.github.frenchiiifries.emb3r.settings.Unshaped
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -13,7 +15,25 @@ import kotlinx.coroutines.launch
 /** Who a line in the transcript belongs to - the desktop's .you, .bot, .sys, .err and .dim. */
 enum class Who { YOU, EMBER, SYSTEM, ERROR, DIM }
 
-data class Line(val who: Who, val text: String, val model: String? = null)
+data class Line(
+    val who: Who,
+    val text: String,
+    val model: String? = null,
+    /** the reactions on this line - drawn only if Settings and the system allow */
+    val bursts: List<Burst> = emptyList(),
+)
+
+/**
+ * What happened in the terminal, for whatever makes sound: the beeps and her
+ * voice. Kept out of the model so the tests hear nothing.
+ */
+interface ChatEvents {
+    fun sent() {}
+    /** A reply finished whole - not one that was stopped. */
+    fun replied(text: String) {}
+    fun failed() {}
+    fun stopped() {}
+}
 
 /**
  * The terminal's state, kept out of Compose so it can be tested without a phone.
@@ -26,6 +46,8 @@ class ChatModel(
     private val scope: CoroutineScope,
     private val answers: () -> Answers?,
     private val modelName: () -> String?,
+    private val shaping: Shaping = Unshaped,
+    private val events: ChatEvents = object : ChatEvents {},
 ) {
     private val _lines = MutableStateFlow(listOf(NEW_CHAT))
     val lines: StateFlow<List<Line>> = _lines.asStateFlow()
@@ -37,6 +59,7 @@ class ChatModel(
     val generating: StateFlow<Boolean> = _generating.asStateFlow()
 
     private var job: Job? = null
+    @Volatile private var stopRequested = false
 
     /**
      * The desktop's pet stat, with the desktop's mechanics: it starts full, drops
@@ -86,22 +109,35 @@ class ChatModel(
         append(Line(Who.YOU, text))
         _mood.value = minOf(MOOD_MAX, _mood.value + 1)
         resetIdle()
+        events.sent()
+
+        // Student mode's fixed replies come first - ahead of the model, so they
+        // are given even while it is still loading. Kept in the transcript like
+        // any other exchange: a record that disagrees with the screen is worse.
+        shaping.guard(text)?.let { fixed ->
+            append(Line(Who.EMBER, fixed, "student mode"))
+            _face.value = restingFace()
+            return
+        }
 
         val answerer = answers()
         if (answerer == null) {
-            append(Line(Who.SYSTEM, "no model imported yet - bring one in on the model screen"))
+            append(Line(Who.SYSTEM, "no model imported yet - bring one in under settings, models"))
             _face.value = FaceState.PUZZLED
             return
         }
 
         _generating.value = true
         _face.value = FaceState.THINK
+        stopRequested = false
         val name = modelName()
+        // what the model is given: the question, with anything remembered that bears on it
+        val prompt = shaping.prompt(text)
         job = scope.launch {
             var reply = ""
             var started = false
             try {
-                answerer.ask(history, text).collect { chunk ->
+                answerer.ask(history, prompt).collect { chunk ->
                     if (!started) {
                         started = true
                         // the first token is the moment she starts talking, as on the desktop
@@ -111,17 +147,36 @@ class ChatModel(
                     reply += chunk
                     replaceLast(Line(Who.EMBER, reply, name))
                 }
-                if (!started) {
-                    append(Line(Who.SYSTEM, "she had nothing to say to that - try asking another way"))
-                    _face.value = FaceState.PUZZLED
-                } else {
-                    _face.value = restingFace()
+                when {
+                    stopRequested -> {
+                        // the answer went out, not up: a puff on the sentence that
+                        // was cut off, and the desktop's word for it underneath
+                        if (started) burstOnLast(Who.EMBER, BurstKind.PUFF)
+                        append(Line(Who.SYSTEM, "stopped"))
+                        _face.value = restingFace()
+                        events.stopped()
+                    }
+                    !started -> {
+                        append(Line(Who.SYSTEM, "she had nothing to say to that - try asking another way"))
+                        _face.value = FaceState.PUZZLED
+                    }
+                    else -> {
+                        val kinds = listOf(BurstKind.SPARKLE) +
+                            if (Warmth.deservesHeart(text, reply)) listOf(BurstKind.HEART) else emptyList()
+                        burstOnLast(Who.EMBER, *kinds.toTypedArray())
+                        // the desktop shows "delighted" at full mood; its heart is in neither
+                        // bundled font (see Faces), so she is happy here either way
+                        _face.value = FaceState.HAPPY
+                        events.replied(reply)
+                        settleFace()
+                    }
                 }
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 // keep whatever she had already said; the error goes underneath it
-                append(Line(Who.ERROR, "the reply stopped: ${e.message ?: e::class.simpleName}"))
+                append(Line(Who.ERROR, "the reply stopped: ${e.message ?: e::class.simpleName}", bursts = listOf(Burst(BurstKind.GLITCH))))
                 _face.value = FaceState.ERROR
+                events.failed()
             } finally {
                 _generating.value = false
                 resetIdle()
@@ -129,9 +184,27 @@ class ChatModel(
         }
     }
 
+    /** After a reply the face stays pleased for a moment and then rests, as the desktop's does after 1.5 s. */
+    private fun settleFace() {
+        scope.launch {
+            delay(1500)
+            if (!_generating.value && _face.value == FaceState.HAPPY) _face.value = restingFace()
+        }
+    }
+
+    private fun burstOnLast(who: Who, vararg kinds: BurstKind) {
+        val i = _lines.value.indexOfLast { it.who == who }
+        if (i < 0) return
+        val now = System.currentTimeMillis()
+        _lines.value = _lines.value.toMutableList().also { l ->
+            l[i] = l[i].copy(bursts = l[i].bursts + kinds.map { Burst(it, now) })
+        }
+    }
+
     /** Stops the model, not just the display of it. What was said stays. */
     fun stop() {
         if (!_generating.value) return
+        stopRequested = true
         answers()?.stop()
     }
 

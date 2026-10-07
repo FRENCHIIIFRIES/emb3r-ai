@@ -31,7 +31,7 @@ class ModelStore(private val tree: TreeReader) {
     fun scan(): ModelSet {
         val entries = tree.list()
         return ModelSet(
-            llm = entries.firstOrNull { !it.isDirectory && it.name.endsWith(".task", ignoreCase = true) },
+            llm = entries.firstOrNull { !it.isDirectory && Catalogue.isAnsweringModel(it.name.lowercase()) },
             kokoroDir = entries.firstOrNull { it.name.contains("kokoro", ignoreCase = true) },
             whisperDir = entries.firstOrNull { it.name.contains("whisper", ignoreCase = true) },
         )

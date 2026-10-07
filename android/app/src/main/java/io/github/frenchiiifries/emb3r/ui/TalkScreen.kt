@@ -58,7 +58,7 @@ fun TalkScreen(talk: TalkModel, onBack: () -> Unit, modifier: Modifier = Modifie
     val listening by talk.listening.collectAsState()
 
     Column(
-        modifier.fillMaxSize().background(Emb3rTokens.bg).padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier.fillMaxSize().background(Ink.bg).padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             NetIndicator()
@@ -142,7 +142,7 @@ private fun BigFace(face: String) {
                 lineHeight = (size.value * 1.1f).sp,
                 letterSpacing = (-0.02).em,
                 brush = faceGradient(accent),
-                shadow = Shadow(accent, Offset.Zero, Emb3rTokens.glowBig * 1.5f),
+                shadow = Shadow(accent, Offset.Zero, Ink.glowBig * 1.5f),
             ),
         )
     }
@@ -155,10 +155,10 @@ private fun BigFace(face: String) {
 @Composable
 private fun MicPill(listening: Boolean, onDown: () -> Unit, onUp: () -> Unit) {
     val accent = LocalAccent.current
-    val fg = if (listening) Emb3rTokens.bg else accent
+    val fg = if (listening) Ink.bg else accent
     Row(
         Modifier
-            .background(if (listening) accent else Emb3rTokens.bg, RoundedCornerShape(50))
+            .background(if (listening) accent else Ink.bg, RoundedCornerShape(50))
             .border(1.dp, accent, RoundedCornerShape(50))
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {

@@ -7,12 +7,17 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Anything that can say a sentence aloud. The view models only see this. */
 interface Speaks {
-    /** Speaks [text] and returns once it has finished, or throws saying why it could not. */
-    suspend fun say(text: String)
+    /**
+     * Speaks [text] and returns once it has finished, or throws saying why it
+     * could not. [speed] is the Settings slider: 1 is her natural pace.
+     */
+    suspend fun say(text: String, speed: Float = 1f)
 
     /** Stops whatever is being said, now. */
     fun silence()
@@ -53,14 +58,22 @@ class Voice(kokoroDir: File) : Speaks, AutoCloseable {
 
     @Volatile private var track: AudioTrack? = null
 
-    /** Just the synthesis, so it can be measured on its own. */
-    fun synthesize(text: String): Pair<FloatArray, Int> {
-        val audio = tts.generate(text, EMBER_SPEAKER, GENERATE_SPEED)
+    /**
+     * Just the synthesis, so it can be measured on its own. The slider's speed
+     * multiplies the generation speed, as main.js multiplies it, and the
+     * playback lift stays where it is - so she speeds up without changing voice.
+     */
+    fun synthesize(text: String, speed: Float = 1f): Pair<FloatArray, Int> {
+        val audio = tts.generate(text, EMBER_SPEAKER, GENERATE_SPEED * speed.coerceIn(0.6f, 1.5f))
         return audio.samples to audio.sampleRate
     }
 
-    override suspend fun say(text: String) {
-        val (samples, rate) = synthesize(text)
+    // Synthesis is seconds of work and playback waits for the sound to finish,
+    // so both run on a background thread, whoever asks. From the screen's own
+    // thread either would freeze it - long enough, in Talk, for Android to
+    // offer to close the app.
+    override suspend fun say(text: String, speed: Float) = withContext(Dispatchers.Default) {
+        val (samples, rate) = synthesize(text, speed)
         if (samples.isEmpty()) throw IllegalStateException("the voice produced no sound for that sentence")
         play(samples, rate)
     }
@@ -88,9 +101,11 @@ class Voice(kokoroDir: File) : Speaks, AutoCloseable {
             t.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
             t.playbackRate = (sampleRate * PLAYBACK_RATE).toInt()
             t.play()
-            // played length, not recorded length: the lift makes it shorter
+            // played length, not recorded length: the lift makes it shorter. Waited
+            // out in short steps, so being silenced ends the wait as well as the sound.
             val millis = (samples.size / (sampleRate * PLAYBACK_RATE) * 1000).toLong()
-            Thread.sleep(millis + 60)
+            val end = System.currentTimeMillis() + millis + 60
+            while (track === t && System.currentTimeMillis() < end) Thread.sleep(20)
         } finally {
             t.release()
             if (track === t) track = null
@@ -98,7 +113,9 @@ class Voice(kokoroDir: File) : Speaks, AutoCloseable {
     }
 
     override fun silence() {
-        track?.let { runCatching { it.pause(); it.flush() } }
+        val t = track ?: return
+        track = null
+        runCatching { t.pause(); t.flush() }
     }
 
     override fun close() {

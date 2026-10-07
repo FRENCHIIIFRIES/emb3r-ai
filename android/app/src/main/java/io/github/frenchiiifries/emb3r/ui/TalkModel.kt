@@ -4,6 +4,8 @@ import io.github.frenchiiifries.emb3r.infer.Answers
 import io.github.frenchiiifries.emb3r.infer.Hears
 import io.github.frenchiiifries.emb3r.infer.Speaks
 import io.github.frenchiiifries.emb3r.infer.Turn
+import io.github.frenchiiifries.emb3r.settings.Shaping
+import io.github.frenchiiifries.emb3r.settings.Unshaped
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -41,6 +43,9 @@ class TalkModel(
     private val ears: () -> Hears?,
     private val recorder: Recorder,
     private val micAccess: () -> MicAccess,
+    private val shaping: Shaping = Unshaped,
+    /** the Settings voice speed - Talk always speaks, but at the pace chosen there */
+    private val speed: () -> Float = { 1f },
 ) {
     private val _face = MutableStateFlow(FaceState.IDLE)
     val face: StateFlow<FaceState> = _face.asStateFlow()
@@ -138,9 +143,21 @@ class TalkModel(
         }
         _heard.value = heardText
 
+        // the same fixed replies the terminal gives, ahead of the model
+        shaping.guard(heardText)?.let { fixed ->
+            _said.value = fixed
+            _face.value = FaceState.TALKING
+            val speaking = Channel<String>(Channel.UNLIMITED)
+            val speaker = scope.launch { speakAll(speaking) }
+            speaking.send(fixed); speaking.close(); speaker.join()
+            history += Turn(heardText, fixed)
+            _face.value = FaceState.IDLE
+            return
+        }
+
         val answerer = answers()
         if (answerer == null) {
-            _said.value = "no model imported yet - bring one in on the model screen"
+            _said.value = "no model imported yet - bring one in under settings, models"
             _face.value = FaceState.PUZZLED
             return
         }
@@ -151,7 +168,7 @@ class TalkModel(
         var reply = ""
         var pending = ""
         try {
-            answerer.ask(history.toList(), heardText).collect { chunk ->
+            answerer.ask(history.toList(), shaping.prompt(heardText)).collect { chunk ->
                 if (reply.isEmpty()) _face.value = FaceState.TALKING
                 reply += chunk
                 pending += chunk
@@ -181,7 +198,7 @@ class TalkModel(
                 continue
             }
             try {
-                v.say(sentence)
+                v.say(sentence, speed())
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 // underneath the answer, never in place of it
@@ -199,7 +216,7 @@ class TalkModel(
         const val ASKING_MIC = "Allow the microphone, then hold the button again."
         const val TOO_SHORT = "That was too short to make out - hold the button while you talk."
         const val NOT_CAUGHT = "I did not catch that."
-        const val NO_EARS = "Her hearing isn't imported yet - bring it in on the model screen."
+        const val NO_EARS = "Her hearing isn't imported yet - bring it in under settings, models."
     }
 }
 

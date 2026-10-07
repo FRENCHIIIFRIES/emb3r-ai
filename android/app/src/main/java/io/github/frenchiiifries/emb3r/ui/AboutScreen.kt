@@ -39,7 +39,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
     }
 
     Column(
-        modifier.fillMaxSize().background(Emb3rTokens.bg).padding(horizontal = 16.dp, vertical = 12.dp)
+        modifier.fillMaxSize().background(Ink.bg).padding(horizontal = 16.dp, vertical = 12.dp)
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -75,16 +75,17 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(4.dp))
         Lit("What it deliberately cannot do", accent, size = 20.sp, bold = true)
         Lit(
-            "Search the web, use Gemini or any other provider, download models, or update itself. " +
-                "The desktop can do all of these when asked; this one cannot be asked.",
+            "Search the web, use Gemini or any other provider, connect to Spotify, download models, or update " +
+                "itself. The desktop can do all of these when asked; this one cannot be asked.",
             accent, size = 15.sp, glows = BUTTON_GLOW, lineHeight = 1.5f,
         )
 
         Spacer(Modifier.height(4.dp))
         Lit("Made from", accent, size = 20.sp, bold = true)
         Lit(
-            "VT323 and JetBrains Mono (SIL Open Font License) · Qwen2.5 (Apache-2.0) · " +
-                "Kokoro (Apache-2.0) · Whisper (MIT) · sherpa-onnx (Apache-2.0) · MediaPipe (Apache-2.0)",
+            "VT323 and JetBrains Mono (SIL Open Font License) · Gemma 4 (Apache-2.0) · " +
+                "LFM2.5 (LFM Open License 1.0) · Qwen2.5 (Apache-2.0) · Kokoro (Apache-2.0) · Whisper (MIT) · " +
+                "sherpa-onnx (Apache-2.0) · LiteRT-LM (Apache-2.0) · MediaPipe (Apache-2.0)",
             accent.copy(alpha = 0.75f), size = 13.sp, glows = BUTTON_GLOW, lineHeight = 1.5f,
         )
     }
