@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, dialog, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Menu, dialog, nativeImage, globalShortcut, clipboard } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -13,6 +13,8 @@ import {
   isMusicQuestion, parseMusicCommand, commandReply, musicContext,
   describeSpotifyError, dominantColour, reactionLine,
 } from "./music.js";
+// the keys that work from anywhere, and the clipboard made ready to explain
+import { DEFAULT_GLOBALS, prepareClipboard, isUsableAccelerator } from "./access.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
 // assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
@@ -105,6 +107,10 @@ function defaultConfig() {
     // a written line from Ember when a new song starts. Off until asked for:
     // something that talks unprompted every three minutes should be a choice.
     spotifyReactions: false,
+    // Three keys that work from anywhere on the computer. On by default because
+    // they were asked for; each can be changed, and all switched off, in
+    // Settings > Accessibility.
+    globalShortcuts: { enabled: true, ...DEFAULT_GLOBALS },
     // remembered result of the GPU probe, which is slow enough (~17s) that
     // repeating it every launch would be felt. null until first probed.
     gpuInfo: null,
@@ -1674,6 +1680,94 @@ ipcMain.handle("emb3r:open-releases-page", () => {
   shell.openExternal(RELEASES_URL);
 });
 
+// ---- Keys that work from anywhere ----
+//
+// A global shortcut takes its keys from every other app on the computer, so
+// only three are registered, they can be changed or switched off, and when
+// another app already owns one, Settings says so rather than it silently doing
+// nothing.
+
+let registeredAccelerators = [];
+let globalsSuspended = false;        // while Settings is recording a new key
+const globalShortcutStatus = {};     // id -> "ok" | "taken" | "invalid" | "off"
+
+const GLOBAL_ACTIONS = {
+  summon: () => summonWindow({ action: "focus-input" }),
+  talk: () => summonWindow({ action: "talk" }),
+  explain: () => summonWindow({ action: "explain", ...prepareClipboard(clipboard.readText()) }),
+};
+
+// Brings emb3r to the front and tells the page what was asked of it. Talking
+// always happens with the window in front, so the microphone is never open
+// behind something else.
+function summonWindow(message) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send("emb3r:shortcut", message);
+}
+
+function registerGlobalShortcuts() {
+  // only ours - unregisterAll would take any other registration with them
+  for (const acc of registeredAccelerators) {
+    try { globalShortcut.unregister(acc); } catch { /* already gone */ }
+  }
+  registeredAccelerators = [];
+  const gs = config.globalShortcuts || { enabled: true, ...DEFAULT_GLOBALS };
+  for (const id of Object.keys(DEFAULT_GLOBALS)) {
+    const acc = gs[id];
+    if (!gs.enabled || globalsSuspended) { globalShortcutStatus[id] = "off"; continue; }
+    if (!isUsableAccelerator(acc)) { globalShortcutStatus[id] = "invalid"; continue; }
+    let ok = false;
+    try { ok = globalShortcut.register(acc, GLOBAL_ACTIONS[id]); } catch { ok = false; }
+    globalShortcutStatus[id] = ok ? "ok" : "taken";
+    if (ok) registeredAccelerators.push(acc);
+  }
+}
+
+function globalShortcutsReport() {
+  return { ...(config.globalShortcuts || {}), defaults: DEFAULT_GLOBALS, status: { ...globalShortcutStatus } };
+}
+
+ipcMain.handle("emb3r:global-shortcuts", () => globalShortcutsReport());
+
+ipcMain.handle("emb3r:set-global-shortcut", (_e, id, accelerator) => {
+  if (!Object.hasOwn(DEFAULT_GLOBALS, id)) return { success: false, error: "There is no such shortcut." };
+  // null puts the key back to the one it shipped with
+  const acc = accelerator === null ? DEFAULT_GLOBALS[id] : String(accelerator || "");
+  if (!isUsableAccelerator(acc)) {
+    return { success: false, error: "A shortcut that works from anywhere needs Ctrl, Alt or Cmd as well as a key." };
+  }
+  const gs = { enabled: true, ...DEFAULT_GLOBALS, ...(config.globalShortcuts || {}) };
+  if (Object.keys(DEFAULT_GLOBALS).some((other) => other !== id && gs[other] === acc)) {
+    return { success: false, error: "That key already does something else in emb3r." };
+  }
+  config.globalShortcuts = { ...gs, [id]: acc };
+  saveConfig(config);
+  registerGlobalShortcuts();
+  return { success: true, ...globalShortcutsReport() };
+});
+
+ipcMain.handle("emb3r:set-global-shortcuts-enabled", (_e, on) => {
+  config.globalShortcuts = { enabled: true, ...DEFAULT_GLOBALS, ...(config.globalShortcuts || {}), enabled: Boolean(on) };
+  saveConfig(config);
+  registerGlobalShortcuts();
+  return { success: true, ...globalShortcutsReport() };
+});
+
+// While a new key is being recorded, the old ones stand down, or pressing the
+// current key to change it would fire it instead.
+ipcMain.handle("emb3r:suspend-global-shortcuts", (_e, on) => {
+  globalsSuspended = Boolean(on);
+  registerGlobalShortcuts();
+  return globalShortcutsReport();
+});
+
+app.on("will-quit", () => {
+  try { globalShortcut.unregisterAll(); } catch { /* quitting anyway */ }
+});
+
 app.whenReady().then(async () => {
   if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
   clearPartialDownloads();
@@ -1681,6 +1775,7 @@ app.whenReady().then(async () => {
   // loses it a frame later
   installAppMenu();
   mainWindow = createWindow();
+  registerGlobalShortcuts();
 
   try {
     await loadLocalModel();
