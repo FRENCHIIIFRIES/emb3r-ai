@@ -27,6 +27,9 @@ const micButton  = document.getElementById("micButton");
 const faceMicLabel = document.getElementById("faceMicLabel");
 const micIndicator = document.getElementById("micIndicator");
 
+// filled in below FACES, for paintFace to describe a face from its text
+let FACE_BY_TEXT = {};
+
 const FACES = {
   idle:     "( ^_^ )",
   think1:   "( o_o )",
@@ -64,6 +67,12 @@ const FACES = {
   deaf:      "( ×_· )",          // the microphone was refused or is missing
   offline:   "( ·_· )",          // offline lock engaged: calm, deliberately shut
 };
+// first name wins: happy and talking are the same characters, and a face painted
+// from its text alone is more often happy than mid-sentence. setFace, which knows
+// the name, says exactly which.
+for (const [name, text] of Object.entries(FACES)) {
+  if (!(text in FACE_BY_TEXT)) FACE_BY_TEXT[text] = name;
+}
 
 let mood   = 5;
 // mirrors the main process's offline lock, so the resting face can reflect it
@@ -138,6 +147,10 @@ function setStatus(s) {
 function paintFace(text) {
   faceEl.textContent = text;
   if (faceBigEl) faceBigEl.textContent = text;
+  // read out, an ASCII face is punctuation; the label says what it means.
+  // Frames of the talking mouth are not faces of their own and leave it alone.
+  const key = FACE_BY_TEXT[text];
+  if (key && window.emb3rKeys) faceBox.setAttribute("aria-label", window.emb3rKeys.FACE_WORDS[key] || "Ember");
 }
 
 // kept so the mouth animation knows what to settle back to when Ember stops
@@ -147,6 +160,8 @@ let currentFace = "idle";
 function setFace(state) {
   currentFace = FACES[state] ? state : "idle";
   paintFace(FACES[currentFace]);
+  // by name, which the text alone cannot always tell apart
+  if (window.emb3rKeys) faceBox.setAttribute("aria-label", window.emb3rKeys.FACE_WORDS[currentFace] || "Ember");
 }
 
 function stopThinking() {
@@ -373,6 +388,7 @@ function makeCopyButton(copyText) {
   btn.className = "copyBtn";
   btn.type = "button";
   btn.title = "Copy";
+  btn.setAttribute("aria-label", "Copy this reply");
   btn.textContent = "⧉";
   btn.addEventListener("click", async () => {
     try {
@@ -913,11 +929,9 @@ faceButton.addEventListener("click", () => {
 faceExit.addEventListener("click", () => setFaceMode(false));
 
 // Anything that fills the window has to be trivially reversible, and Escape is
-// where everyone's hand already goes. Registered on the document rather than on
-// a control so it works whatever happens to have focus.
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && faceModeOn) setFaceMode(false);
-});
+// where everyone's hand already goes. It is handled with every other key now -
+// see escapeOne() under "Accessibility and shortcuts" - so that one press closes
+// the innermost thing that is open, not several at once.
 
 // =============================
 // The microphone
@@ -1010,6 +1024,12 @@ async function toSixteenKilohertz(blob) {
 }
 
 async function handleRecording() {
+  // Esc while listening: the recording is thrown away, never transcribed
+  if (talkCancelled) {
+    talkCancelled = false;
+    micChunks = [];
+    return;
+  }
   if (!micChunks.length) return;
   const blob = new Blob(micChunks, { type: micRecorder ? micRecorder.mimeType : "audio/webm" });
   micChunks = [];
@@ -1056,6 +1076,7 @@ async function handleRecording() {
     } else {
       input.focus();
       setStatus("idle");
+      announce(`Heard: ${heard}. It is in the message box - press Enter to send it.`);
     }
   } catch (err) {
     faceHeardEl.textContent = "";
@@ -1222,6 +1243,7 @@ async function submitToModel(messageToSend, opts, ui = {}) {
     if (!result.success) {
       if (streamLine && !streamText) streamLine.remove();
       append("err", "err", result.error);
+      announce(result.error);
       playErrorBeep();
       setFace("error");
       setStatus("error");
@@ -1235,7 +1257,12 @@ async function submitToModel(messageToSend, opts, ui = {}) {
       // spoken once the reply is complete rather than token by token: the
       // stream arrives in fragments that are not words, and a synthesiser fed
       // fragments reads them as fragments
-      speak(streamText || result.text);
+      // Stop means stop: a reply cut off by the stop button used to be read
+      // aloud here anyway, once it came back - the speech had been stopped, and
+      // then this started it again with what was left.
+      if (!result.stopped) speak(streamText || result.text);
+      // said to a screen reader once, whole, rather than as the stream arrived
+      announce(`${result.stopped ? "Ember, stopped" : "Ember"}: ${streamText || result.text || ""}`);
       // a fuller face at full mood, so the bar above it means something visible
       setFace(mood >= 5 ? "delighted" : "happy");
       setStatus("happy");
@@ -1250,6 +1277,7 @@ async function submitToModel(messageToSend, opts, ui = {}) {
     stopThinking();
     if (streamLine && !streamText) streamLine.remove();
     const errLine = append("err", "err", String(err?.message || err));
+    announce(String(err?.message || err));
     playErrorBeep();
     // a model that failed to load is a different kind of wrong from a reply
     // that went badly, and the face says which
@@ -2187,6 +2215,9 @@ settingsTabs.forEach((tab) => {
 // sound toggle types "display". These are the words people actually reach for,
 // mapped to the section that holds the setting.
 const SETTINGS_KEYWORDS = {
+  access:      "accessibility keyboard shortcut shortcuts keys hotkey hotkeys screen reader blind " +
+               "low vision dyslexia dyslexic easy read font contrast high zoom bigger larger magnify " +
+               "motor clipboard explain copied",
   account:     "profile profiles name user rename switch identity who",
   privacy:     "offline lock network connections log outbound internet security airplane",
   student:     "safe mode school child kid age restriction pin lock filter parent teacher " +
@@ -2347,9 +2378,19 @@ async function refreshHistoryList() {
     title.textContent = c.title || "New chat";
     row.appendChild(title);
 
+    // a row of the menu: focusable, and opened with Enter as it is with a click
+    row.tabIndex = -1;
+    row.setAttribute("role", "menuitem");
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); }
+      else if (e.key === "Delete") { e.preventDefault(); delBtn.click(); }
+    });
+
     const delBtn = document.createElement("button");
     delBtn.textContent = "✕";
     delBtn.title = "Delete this chat";
+    delBtn.tabIndex = -1;
+    delBtn.setAttribute("aria-label", `Delete the chat "${c.title || "New chat"}"`);
     delBtn.addEventListener("click", async (e) => {
       e.stopPropagation(); // don't also trigger the row's own load-on-click
       await window.emb3r.deleteConversation(c.id);
@@ -4339,22 +4380,8 @@ function endMusicMood() {
 
 // ---- from the keyboard -----------------------------------------------------
 
-// Ctrl+Alt+P plays or pauses, Ctrl+Alt+→ skips, Ctrl+Alt+← goes back. Matched
-// on the physical key, so the layout does not move them. On many Windows
-// layouts Ctrl+Alt is AltGr, and AltGr+P types a letter (ö, on
-// US-International) - so a press with AltGraph held is a character being
-// typed, and is left alone.
-const MUSIC_KEYS = { KeyP: "toggle", ArrowRight: "next", ArrowLeft: "previous" };
-
-document.addEventListener("keydown", (e) => {
-  if (!e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey) return;
-  if (e.getModifierState && e.getModifierState("AltGraph")) return;
-  const action = MUSIC_KEYS[e.code];
-  if (!action || !spotifyConnected) return;
-  e.preventDefault();
-  musicKey(action);
-});
-
+// Ctrl+Alt+P plays or pauses, Ctrl+Alt+→ skips, Ctrl+Alt+← goes back. The keys
+// live in src/keys.js with every other one, AltGr guard included.
 async function musicKey(action) {
   const result = await window.emb3r.spotifyControl(action);
   // said where the terminal says things; the line under her face follows
@@ -4369,7 +4396,7 @@ async function musicKey(action) {
 const themeSelect = document.getElementById("themeSelect");
 
 function applyTheme(theme) {
-    if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+    if (theme === "light" || theme === "contrast") document.documentElement.setAttribute("data-theme", theme);
     else document.documentElement.removeAttribute("data-theme");
     localStorage.setItem("emb3rTheme", theme);
 }
@@ -4704,3 +4731,525 @@ if (savedColor) {
         localStorage.removeItem("emb3rAccentColor");
     }
 }
+
+// =============================
+// Accessibility and shortcuts
+// =============================
+//
+// Every key emb3r answers to is in src/keys.js, one table read by the handler
+// here, the shortcut sheet and the list in Settings - so the three cannot
+// disagree. Three keys also work from anywhere on the computer; those belong to
+// the main process, which tells this page what was asked for.
+
+const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent);
+const { SHORTCUTS, matchShortcut, keyEventToAccelerator, acceleratorLabel, shortcutLabel } = window.emb3rKeys;
+
+micButton.title = `Hold to speak, or press ${IS_MAC ? "Cmd" : "Ctrl"}+T`;
+
+// ---- telling a screen reader -----------------------------------------------
+
+const srAnnounce = document.getElementById("srAnnounce");
+let announceTimer = null;
+
+// One polite live region for everything worth hearing once: a finished reply,
+// an error, what a key just did. Emptied first, so the same words twice are
+// still read twice.
+function announce(text) {
+  if (!srAnnounce || !text) return;
+  srAnnounce.textContent = "";
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => { srAnnounce.textContent = String(text); }, 60);
+}
+
+// A short note for sighted keyboard users too, in the line under the message
+// box - unless a reply is using it.
+let flashTimer = null;
+function flashNote(text) {
+  announce(text);
+  if (!stopButton.hidden) return;
+  statsEl.textContent = text;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    if (stopButton.hidden && statsEl.textContent === text) statsEl.textContent = "";
+  }, 2500);
+}
+
+// ---- dialogs -----------------------------------------------------------------
+
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function focusablesIn(el) {
+  return [...el.querySelectorAll(FOCUSABLE)].filter((n) => !n.hidden && n.offsetParent !== null);
+}
+
+const shortcutSheet = document.getElementById("shortcutSheet");
+const DIALOGS = ["consentModal", "introModal", "whatsNewModal", "setupModal", "shortcutSheet"]
+  .map((id) => document.getElementById(id))
+  .filter(Boolean);
+
+// When a dialog opens, focus goes into it; Tab stays inside; when it closes,
+// focus goes back where it was. Watched rather than wired into each place that
+// opens one, so none of those had to change.
+for (const dialog of DIALOGS) {
+  let returnTo = null;
+  new MutationObserver(() => {
+    const open = dialog.classList.contains("open");
+    if (open && !dialog.dataset.wasOpen) {
+      dialog.dataset.wasOpen = "1";
+      returnTo = document.activeElement;
+      // a timer rather than a frame: frames pause while the window is covered,
+      // and a key that brought emb3r forward may arrive before it is uncovered
+      setTimeout(() => {
+        if (!dialog.contains(document.activeElement)) {
+          const first = focusablesIn(dialog)[0];
+          if (first) first.focus();
+        }
+      }, 0);
+    } else if (!open && dialog.dataset.wasOpen) {
+      delete dialog.dataset.wasOpen;
+      if (returnTo && document.contains(returnTo) && !returnTo.disabled) returnTo.focus();
+      returnTo = null;
+    }
+  }).observe(dialog, { attributes: true, attributeFilter: ["class"] });
+
+  dialog.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const items = focusablesIn(dialog);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
+
+function openDialog() {
+  return DIALOGS.find((d) => d.classList.contains("open")) || null;
+}
+
+// ---- the menu ----------------------------------------------------------------
+
+const historyPanelEl = document.getElementById("historyPanel");
+
+function menuItems() {
+  return [...historyPanelEl.querySelectorAll('[role="menuitem"]')].filter((n) => n.offsetParent !== null);
+}
+
+new MutationObserver(() => {
+  historyButton.setAttribute("aria-expanded", String(historyWrap.classList.contains("open")));
+}).observe(historyWrap, { attributes: true, attributeFilter: ["class"] });
+
+historyPanelEl.addEventListener("keydown", (e) => {
+  const items = menuItems();
+  if (!items.length) return;
+  const i = items.indexOf(document.activeElement);
+  let next = null;
+  if (e.key === "ArrowDown") next = items[(i + 1) % items.length];
+  else if (e.key === "ArrowUp") next = items[(i - 1 + items.length) % items.length];
+  else if (e.key === "Home") next = items[0];
+  else if (e.key === "End") next = items[items.length - 1];
+  if (next) { e.preventDefault(); next.focus(); }
+});
+
+async function toggleMenu() {
+  const opening = !historyWrap.classList.contains("open");
+  historyButton.click();
+  if (!opening) { historyButton.focus(); return; }
+  // the history arrives a moment later; the first item is there at once
+  setTimeout(() => { const first = menuItems()[0]; if (first) first.focus(); }, 0);
+}
+
+// ---- the Settings tabs -------------------------------------------------------
+
+const settingsTabList = document.getElementById("settingsTabs");
+
+function syncSettingsTabs() {
+  for (const tab of settingsTabs) {
+    const selected = tab.classList.contains("active");
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    if (!tab.id) tab.id = `settingsTab-${tab.dataset.tab}`;
+    const panel = document.querySelector(`.settingsSection[data-tab="${tab.dataset.tab}"]`);
+    if (panel) {
+      if (!panel.id) panel.id = `settingsPanel-${tab.dataset.tab}`;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", tab.id);
+      tab.setAttribute("aria-controls", panel.id);
+    }
+  }
+}
+syncSettingsTabs();
+new MutationObserver(syncSettingsTabs).observe(settingsTabList, { attributes: true, attributeFilter: ["class"], subtree: true });
+
+settingsTabList.addEventListener("keydown", (e) => {
+  const tabs = [...settingsTabs].filter((t) => !t.hidden);
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  let next = null;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") next = tabs[(i + 1) % tabs.length];
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") next = tabs[(i - 1 + tabs.length) % tabs.length];
+  else if (e.key === "Home") next = tabs[0];
+  else if (e.key === "End") next = tabs[tabs.length - 1];
+  if (next) { e.preventDefault(); next.click(); next.focus(); }
+});
+
+// ---- talking without holding -------------------------------------------------
+
+// Holding a key down is hard for some people, so from the keyboard talking is
+// press to start and press again to finish. The microphone is still never
+// open unnoticed: emb3r is in front, the indicator shows, and it stops by
+// itself after a minute.
+let talkCancelled = false;
+let talkAutoStop = null;
+
+async function toggleTalk() {
+  if (listening) { stopTalk(false); return; }
+  if (transcribing) return;
+  await startListening();
+  if (!listening) return;
+  const key = `${IS_MAC ? "Cmd" : "Ctrl"}+T`;
+  announce(faceModeOn ? `Listening. Press ${key} again to send, or Escape to cancel.`
+    : `Listening. Press ${key} again to stop, or Escape to cancel.`);
+  clearTimeout(talkAutoStop);
+  talkAutoStop = setTimeout(() => {
+    if (listening) { stopTalk(false); flashNote("Stopped listening after a minute."); }
+  }, 60_000);
+}
+
+function stopTalk(cancel) {
+  clearTimeout(talkAutoStop);
+  talkAutoStop = null;
+  talkCancelled = Boolean(cancel);
+  stopListening();
+}
+
+// ---- her last reply ----------------------------------------------------------
+
+function lastReplyText() {
+  const replies = chat.querySelectorAll(":scope > .bot .msgText");
+  return replies.length ? replies[replies.length - 1].textContent.trim() : "";
+}
+
+async function copyLastReply() {
+  const text = lastReplyText();
+  if (!text) { flashNote("There is no reply to copy yet."); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    flashNote("Copied her last reply.");
+  } catch (e) {
+    flashNote("That could not be copied.");
+  }
+}
+
+// Read aloud whatever the terminal's setting says, the way "Hear it" does -
+// asking for it is the permission.
+async function readLastReply() {
+  const text = lastReplyText();
+  if (!text) { flashNote("There is no reply to read yet."); return; }
+  const wasOff = !voiceEnabled;
+  if (wasOff) voiceEnabled = true;
+  try { await speak(text); } finally { if (wasOff) voiceEnabled = false; }
+}
+
+// ---- zoom --------------------------------------------------------------------
+
+let zoom = Number(localStorage.getItem("emb3rZoom")) || 1;
+
+function renderZoom() {
+  const el = document.getElementById("zoomValue");
+  if (el) el.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function setZoom(z, { quiet = false } = {}) {
+  zoom = Math.round(Math.min(3, Math.max(0.5, z)) * 10) / 10;
+  window.emb3r.setZoom(zoom);
+  localStorage.setItem("emb3rZoom", String(zoom));
+  renderZoom();
+  if (!quiet) flashNote(`Zoom ${Math.round(zoom * 100)}%`);
+}
+
+setZoom(zoom, { quiet: true });
+
+// ---- the shortcut sheet ------------------------------------------------------
+
+const GLOBAL_NAMES = { summon: "Bring emb3r up", explain: "Explain what I copied", talk: "Talk, from any app" };
+
+// The sheet and the list in Settings are the same thing in two places, built
+// from the table and from the keys the main process actually holds.
+async function renderShortcutList(container) {
+  let g = null;
+  try { g = await window.emb3r.globalShortcuts(); } catch (e) { g = null; }
+  const groups = new Map();
+  if (g) {
+    groups.set("From anywhere on the computer", Object.keys(GLOBAL_NAMES).map((id) => [
+      GLOBAL_NAMES[id],
+      acceleratorLabel(g[id], IS_MAC) + (g.enabled ? "" : " (switched off)"),
+    ]));
+  }
+  for (const s of SHORTCUTS) {
+    if (s.id === "sheetF1") continue;
+    if (!groups.has(s.group)) groups.set(s.group, []);
+    groups.get(s.group).push([s.label, s.id === "sheet" ? `${shortcutLabel(s, IS_MAC)} or F1` : shortcutLabel(s, IS_MAC)]);
+  }
+  container.replaceChildren();
+  for (const [group, rows] of groups) {
+    const heading = document.createElement("div");
+    heading.className = "shortcutGroup";
+    heading.textContent = group;
+    container.appendChild(heading);
+    for (const [label, keys] of rows) {
+      const row = document.createElement("div");
+      row.className = "shortcutRow";
+      const what = document.createElement("span");
+      what.textContent = label;
+      const kbd = document.createElement("kbd");
+      kbd.className = "shortcutKeys";
+      kbd.textContent = keys;
+      row.append(what, kbd);
+      container.appendChild(row);
+    }
+  }
+}
+
+async function openShortcutSheet() {
+  await renderShortcutList(document.getElementById("shortcutSheetBody"));
+  shortcutSheet.classList.add("open");
+}
+
+function closeShortcutSheet() {
+  shortcutSheet.classList.remove("open");
+}
+
+document.getElementById("shortcutSheetClose").addEventListener("click", closeShortcutSheet);
+
+// ---- Esc, the innermost thing first ------------------------------------------
+
+function escapeOne() {
+  if (shortcutSheet.classList.contains("open")) { closeShortcutSheet(); return; }
+  const dialog = openDialog();
+  if (dialog) {
+    // what's new is something to read; "not now" is the safe answer to the
+    // consent question. The welcome and the model picker are steps, not
+    // interruptions, and Esc leaves them where they are.
+    if (dialog.id === "whatsNewModal") document.getElementById("whatsNewClose").click();
+    else if (dialog.id === "consentModal") consentDeny.click();
+    return;
+  }
+  if (historyWrap.classList.contains("open")) { historyWrap.classList.remove("open"); historyButton.focus(); return; }
+  if (listening) { stopTalk(true); flashNote("Stopped listening. Nothing was sent."); return; }
+  if (!stopButton.hidden) { stopButton.click(); return; }
+  if (voiceSources.length) { stopSpeaking(); return; }
+  if (appEl.classList.contains("settingsOpen")) { closeSettings.click(); input.focus(); return; }
+  if (faceModeOn) { setFaceMode(false); }
+}
+
+// ---- the keys ----------------------------------------------------------------
+
+let recordingGlobal = null;
+
+function closeOverlays() {
+  historyWrap.classList.remove("open");
+  appEl.classList.remove("settingsOpen");
+}
+
+const SHORTCUT_ACTIONS = {
+  talk: () => toggleTalk(),
+  talkView: () => setFaceMode(!faceModeOn),
+  readLast: () => readLastReply(),
+  newChat: () => { closeOverlays(); newChatButton.click(); flashNote("New chat."); },
+  menu: () => toggleMenu(),
+  settings: () => {
+    if (appEl.classList.contains("settingsOpen")) { closeSettings.click(); input.focus(); }
+    else { historyWrap.classList.remove("open"); settingsButton.click(); }
+  },
+  focusInput: () => { if (faceModeOn) setFaceMode(false); closeOverlays(); input.focus(); },
+  attach: () => uploadButton.click(),
+  copyLast: () => copyLastReply(),
+  zoomIn: () => setZoom(zoom + 0.1),
+  zoomOut: () => setZoom(zoom - 0.1),
+  zoomReset: () => setZoom(1),
+  sheet: () => openShortcutSheet(),
+  musicToggle: () => { if (spotifyConnected) musicKey("toggle"); },
+  musicNext: () => { if (spotifyConnected) musicKey("next"); },
+  musicPrev: () => { if (spotifyConnected) musicKey("previous"); },
+  escape: () => escapeOne(),
+};
+
+document.addEventListener("keydown", (e) => {
+  if (recordingGlobal) return;
+  const id = matchShortcut(e, IS_MAC);
+  if (!id || !SHORTCUT_ACTIONS[id]) return;
+  // a dialog other than the sheet has the keyboard, apart from Esc
+  const dialog = openDialog();
+  if (dialog && dialog !== shortcutSheet && id !== "escape") return;
+  e.preventDefault();
+  SHORTCUT_ACTIONS[id](e);
+});
+
+// ---- the keys that work from anywhere ----------------------------------------
+
+window.emb3r.onShortcut((msg) => {
+  if (!msg) return;
+  if (msg.action === "focus-input") {
+    if (faceModeOn) { faceMic.focus(); return; }
+    closeOverlays();
+    input.focus();
+  } else if (msg.action === "talk") {
+    toggleTalk();
+  } else if (msg.action === "explain") {
+    explainCopied(msg);
+  }
+});
+
+// What was copied, explained - always by the model on this computer, whatever
+// web access is set to, because a clipboard can hold anything, a password
+// included. The line shows what was taken, so nothing is explained unseen.
+async function explainCopied(data) {
+  if (faceModeOn) setFaceMode(false);
+  closeOverlays();
+  if (!data.ok) { append("sys", "sys", data.reason); announce(data.reason); return; }
+  if (!stopButton.hidden) {
+    const busy = "She is still replying - press Esc to stop her first.";
+    append("sys", "sys", busy);
+    announce(busy);
+    return;
+  }
+  append("you", "you", `explain what I copied:\n${data.preview}`, { copyable: true });
+  lastUserMessage = "explain what I copied";
+  petEl.classList.add("compact");
+  playSendBeep();
+  const note = data.cut ? " (this is only the first 4,000 characters of what I copied)" : "";
+  await submitToModel(`Explain this to me${note}:\n\n${data.text}`, { forceLocal: true });
+  input.focus();
+}
+
+// ---- Settings > Accessibility ------------------------------------------------
+
+const globalKeysToggle = document.getElementById("globalKeysToggle");
+const globalKeyList = document.getElementById("globalKeyList");
+const STATUS_WORDS = {
+  ok: "working",
+  taken: "another app already uses this key - change it",
+  invalid: "not a usable key - change it",
+  off: "switched off",
+};
+
+async function renderGlobalKeys(report) {
+  const g = report || await window.emb3r.globalShortcuts();
+  globalKeysToggle.checked = Boolean(g.enabled);
+  globalKeyList.replaceChildren();
+  for (const id of Object.keys(GLOBAL_NAMES)) {
+    const row = document.createElement("div");
+    row.className = "globalKeyRow";
+    const name = document.createElement("span");
+    name.className = "globalKeyName";
+    name.textContent = GLOBAL_NAMES[id];
+    const keys = document.createElement("kbd");
+    keys.className = "shortcutKeys";
+    keys.textContent = acceleratorLabel(g[id], IS_MAC);
+    const change = document.createElement("button");
+    change.textContent = "Change";
+    change.setAttribute("aria-label", `Change the key for ${GLOBAL_NAMES[id]}`);
+    const reset = document.createElement("button");
+    reset.textContent = "Reset";
+    reset.setAttribute("aria-label", `Put back the original key for ${GLOBAL_NAMES[id]}`);
+    reset.disabled = g[id] === (g.defaults || {})[id];
+    const status = document.createElement("span");
+    status.className = "globalKeyStatus";
+    const st = (g.status || {})[id] || (g.enabled ? "ok" : "off");
+    status.textContent = STATUS_WORDS[st] || st;
+    status.classList.toggle("bad", st === "taken" || st === "invalid");
+    change.addEventListener("click", () => recordGlobalKey(id, keys, status));
+    reset.addEventListener("click", async () => {
+      const r = await window.emb3r.setGlobalShortcut(id, null);
+      await renderGlobalKeys(r.success ? r : null);
+    });
+    row.append(name, keys, change, reset, status);
+    globalKeyList.appendChild(row);
+  }
+}
+
+// Press the keys you want. The current ones stand down while you do, or
+// pressing them to change them would set them off instead.
+async function recordGlobalKey(id, keysEl, statusEl) {
+  if (recordingGlobal) return;
+  recordingGlobal = id;
+  await window.emb3r.suspendGlobalShortcuts(true);
+  keysEl.textContent = "press the new keys…";
+  statusEl.textContent = "Esc to cancel";
+  statusEl.classList.remove("bad");
+  announce(`Press the new keys for ${GLOBAL_NAMES[id]}, or Escape to cancel.`);
+
+  const onKey = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "Escape") { finish(null); return; }
+    const acc = keyEventToAccelerator(e, IS_MAC);
+    if (!acc) {
+      if (!["Control", "Shift", "Alt", "Meta", "AltGraph"].includes(e.key)) {
+        statusEl.textContent = "add Ctrl, Alt or Cmd - Shift alone would take capital letters from every app";
+        statusEl.classList.add("bad");
+      }
+      return;
+    }
+    const inApp = matchShortcut(e, IS_MAC);
+    if (inApp) {
+      const what = SHORTCUTS.find((s) => s.id === inApp);
+      statusEl.textContent = `that is emb3r's key for "${what ? what.label : inApp}" - choose another`;
+      statusEl.classList.add("bad");
+      return;
+    }
+    finish(acc);
+  };
+
+  async function finish(acc) {
+    document.removeEventListener("keydown", onKey, true);
+    let error = null;
+    if (acc) {
+      const r = await window.emb3r.setGlobalShortcut(id, acc);
+      if (!r.success) error = r.error;
+    }
+    const report = await window.emb3r.suspendGlobalShortcuts(false);
+    recordingGlobal = null;
+    await renderGlobalKeys(report);
+    if (error) flashNote(error);
+    else if (acc) announce(`${GLOBAL_NAMES[id]}: ${acceleratorLabel(acc, IS_MAC)}, ${STATUS_WORDS[report.status[id]] || ""}`);
+    else announce("Cancelled.");
+  }
+
+  document.addEventListener("keydown", onKey, true);
+}
+
+globalKeysToggle.addEventListener("change", async () => {
+  const r = await window.emb3r.setGlobalShortcutsEnabled(globalKeysToggle.checked);
+  await renderGlobalKeys(r);
+});
+
+const easyReadToggle = document.getElementById("easyReadToggle");
+easyReadToggle.checked = document.documentElement.classList.contains("easyRead");
+easyReadToggle.addEventListener("change", () => {
+  document.documentElement.classList.toggle("easyRead", easyReadToggle.checked);
+  try { localStorage.setItem("emb3rEasyRead", String(easyReadToggle.checked)); } catch (e) { /* the switch still works */ }
+});
+
+// the same choice as Theme > High contrast, kept in step both ways
+const contrastToggle = document.getElementById("contrastToggle");
+contrastToggle.checked = themeSelect.value === "contrast";
+contrastToggle.addEventListener("change", () => {
+  themeSelect.value = contrastToggle.checked ? "contrast" : "dark";
+  themeSelect.dispatchEvent(new Event("change"));
+});
+themeSelect.addEventListener("change", () => { contrastToggle.checked = themeSelect.value === "contrast"; });
+
+document.getElementById("zoomInButton").addEventListener("click", () => setZoom(zoom + 0.1));
+document.getElementById("zoomOutButton").addEventListener("click", () => setZoom(zoom - 0.1));
+document.getElementById("zoomResetButton").addEventListener("click", () => setZoom(1));
+renderZoom();
+
+// filled when the tab is opened, so the keys and their status are current
+document.querySelector('.settingsTab[data-tab="access"]').addEventListener("click", () => {
+  renderGlobalKeys();
+  renderShortcutList(document.getElementById("shortcutList"));
+});
+renderGlobalKeys().catch(() => {});

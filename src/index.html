@@ -2541,6 +2541,200 @@ canvas:focus-visible,
 #app.visible{
     display:flex;
 }
+/* ============================= */
+/* Accessibility                 */
+/* ============================= */
+
+/* The Font Size slider sets <html>'s size. body declared its own 20px, so
+   nothing followed the slider; now the conversation, the message box and the
+   buttons do. Fixed small print stays as it is - zoom is for everything. */
+html{ font-size:20px; }
+body{ font-size:1rem; }
+
+/* High contrast: black, white, gold for your own lines, no glow. The accent
+   you chose - or one borrowed from an album cover - gives way, which is what
+   choosing high contrast asks for, so these beat the inline values the colour
+   wheel and music moods write. */
+[data-theme="contrast"]{
+    --bg-color:#000000 !important;
+    --text-color:#ffffff !important;
+    --user-text-color:#ffd700 !important;
+    --hover-color:#333333 !important;
+    --glow-small:0px !important;
+    --glow-big:0px !important;
+}
+
+[data-theme="contrast"] .settingsNote,
+[data-theme="contrast"] #moodWrap,
+[data-theme="contrast"] #nowPlaying,
+[data-theme="contrast"] .settingsTab{
+    opacity:1;
+    color:#ffffff;
+}
+
+[data-theme="contrast"] .dim{
+    color:#d0d0d0;
+}
+
+/* Windows' own high-contrast mode chooses the colours itself; what matters is
+   that edges and the focus ring do not disappear in it. */
+@media (forced-colors: active){
+    button, input, select, textarea, #chat, #pet{
+        border-color:ButtonText;
+    }
+    :focus-visible{
+        outline:2px solid Highlight !important;
+    }
+}
+
+/* Atkinson Hyperlegible Next, from the Braille Institute: letters that are
+   hard to mistake for one another. Bundled, both subsets, one variable file
+   each, so it works with the network off like everything else. */
+@font-face{
+    font-family:"Atkinson Hyperlegible Next";
+    src:url("./fonts/atkinson-hyperlegible-next-latin.woff2") format("woff2");
+    font-weight:200 800;
+    font-display:swap;
+    unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face{
+    font-family:"Atkinson Hyperlegible Next";
+    src:url("./fonts/atkinson-hyperlegible-next-latin-ext.woff2") format("woff2");
+    font-weight:200 800;
+    font-display:swap;
+    unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+html.easyRead body{
+    font-family:"Atkinson Hyperlegible Next", "JetBrains Mono", sans-serif;
+}
+
+/* the wordmark and her faces are drawings made of characters, and only hold
+   together in the faces they were drawn in */
+html.easyRead #logo{
+    font-family:"JetBrains Mono", monospace;
+}
+
+html.easyRead #face,
+html.easyRead #faceBig{
+    font-family:"VT323", "JetBrains Mono", monospace;
+}
+
+/* the shortcut sheet: the same frame as "what's new" */
+#shortcutSheet{
+    position:fixed;
+    top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.85);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:3100;
+}
+
+#shortcutSheet.open{
+    display:flex;
+}
+
+#shortcutSheetBox{
+    background:var(--bg-color);
+    border:1px solid var(--text-color);
+    padding:24px;
+    width:580px;
+    max-width:calc(100% - 48px);
+    max-height:calc(100% - 48px);
+    overflow-y:auto;
+    text-shadow:0 0 4px var(--text-color);
+}
+
+#shortcutSheetBox h3{
+    margin-top:0;
+}
+
+#shortcutSheetButtons{
+    margin-top:16px;
+    text-align:right;
+}
+
+.shortcutGroup{
+    margin:14px 0 4px;
+    font-size:13px;
+    letter-spacing:.06em;
+    color:color-mix(in srgb, var(--text-color) 70%, transparent);
+}
+
+.shortcutRow{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:16px;
+    padding:3px 0;
+    font-size:16px;
+    border-bottom:1px solid color-mix(in srgb, var(--text-color) 14%, transparent);
+}
+
+kbd.shortcutKeys{
+    font-family:"JetBrains Mono", monospace;
+    font-size:13px;
+    white-space:nowrap;
+}
+
+/* Settings > Accessibility */
+.globalKeyRow{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+    padding:5px 0;
+    font-size:15px;
+}
+
+.globalKeyName{
+    flex:1 1 180px;
+}
+
+.globalKeyStatus{
+    flex:1 1 100%;
+    font-size:13px;
+    opacity:.75;
+}
+
+.globalKeyStatus.bad{
+    color:#ff8c66;
+    opacity:1;
+}
+
+.globalKeyRow button,
+#zoomButtons button{
+    width:auto;
+    padding:2px 10px;
+    font-size:13px;
+}
+
+#zoomButtons{
+    display:flex;
+    gap:8px;
+    margin-top:6px;
+}
+
+#globalKeysRow,
+#easyReadRow,
+#contrastRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+#globalKeysRow input,
+#easyReadRow input,
+#contrastRow input{
+    padding:0;
+    width:auto;
+}
+
+#shortcutList .shortcutRow{
+    font-size:14px;
+}
 </style>
 </head>
 
@@ -2602,9 +2796,9 @@ canvas:focus-visible,
   </div>
 </div>
 
-<div id="consentModal">
+<div id="consentModal" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
     <div id="consentBox">
-        <h3>Allow internet access?</h3>
+        <h3 id="consentTitle">Allow internet access?</h3>
         <p>Downloading a model pulls a file from Hugging Face over the internet. Your local model still runs fully offline once downloaded — this permission only covers fetching new model files.</p>
         <div id="consentButtons">
             <button id="consentDeny">Not Now</button>
@@ -2615,7 +2809,7 @@ canvas:focus-visible,
 
 <!-- Shown once on a fresh install, before the model picker, so the two read as
      one flow rather than two screens that happen to follow each other. -->
-<div id="introModal">
+<div id="introModal" role="dialog" aria-modal="true" aria-label="Welcome to emb3r">
     <div id="introBox">
         <div id="introSlides">
             <section class="introSlide active" data-slide="0">
@@ -2650,7 +2844,7 @@ canvas:focus-visible,
 </div>
 
 <!-- Shown after an update, never on a fresh install - see emb3r:intro-state. -->
-<div id="whatsNewModal">
+<div id="whatsNewModal" role="dialog" aria-modal="true" aria-labelledby="whatsNewTitle">
     <div id="whatsNewBox">
         <h3 id="whatsNewTitle">What's new</h3>
         <div id="whatsNewBody"></div>
@@ -2660,9 +2854,9 @@ canvas:focus-visible,
     </div>
 </div>
 
-<div id="setupModal">
+<div id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
     <div id="setupBox">
-        <h3>Let's pick a brain</h3>
+        <h3 id="setupTitle">Let's pick a brain</h3>
         <p>emb3r runs a language model on your own machine — nothing is sent to a server. It needs to download one first.</p>
         <div id="setupHardware"></div>
         <div id="setupPick"></div>
@@ -2695,16 +2889,16 @@ canvas:focus-visible,
          is the one thing up here that is a promise rather than a control. They
          are now behind a single menu, and the indicator has the room. -->
     <div id="historyWrap">
-        <button id="historyButton" title="Menu" aria-haspopup="true">[ &equiv; ]</button>
-        <div id="historyPanel">
+        <button id="historyButton" title="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="historyPanel" aria-label="Menu, with history">[ &equiv; ]</button>
+        <div id="historyPanel" role="menu" aria-label="Menu">
             <!-- The microphone, drawn rather than borrowed from an emoji font:
                  a round head on a stem, in the same characters the rest of the
                  interface is built from. An emoji here would be the one glyph
                  on screen rendered by somebody else's typeface. -->
-            <button id="faceButton" title="Talk to Ember"><span class="menuKey">[o]</span> talk</button>
-            <button id="settingsButton"><span class="menuKey">[=]</span> settings</button>
+            <button id="faceButton" role="menuitem" title="Talk to Ember"><span class="menuKey">[o]</span> talk</button>
+            <button id="settingsButton" role="menuitem"><span class="menuKey">[=]</span> settings</button>
             <div class="menuRule"></div>
-            <button id="newChatButton"><span class="menuKey">[+]</span> new chat</button>
+            <button id="newChatButton" role="menuitem"><span class="menuKey">[+]</span> new chat</button>
             <div id="historyList"></div>
         </div>
     </div>
@@ -2722,7 +2916,7 @@ canvas:focus-visible,
     <div id="settingsNav">
         <input type="text" id="settingsSearch" placeholder="Search settings..."
                autocomplete="off" spellcheck="false">
-        <div id="settingsTabs">
+        <div id="settingsTabs" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
             <button class="settingsTab active" data-tab="account">Account</button>
             <button class="settingsTab" data-tab="privacy">Privacy</button>
             <!-- data-tucked: kept out of the sidebar until searched for, so the
@@ -2737,6 +2931,7 @@ canvas:focus-visible,
             <button class="settingsTab" data-tab="hardware">Hardware</button>
             <button class="settingsTab" data-tab="updates">Updates</button>
             <button class="settingsTab" data-tab="display">Display</button>
+            <button class="settingsTab" data-tab="access">Accessibility</button>
         </div>
         <div id="settingsNoMatch" hidden>no setting matches that</div>
     </div>
@@ -2971,6 +3166,7 @@ canvas:focus-visible,
         <select id="themeSelect">
             <option value="dark">Dark</option>
             <option value="light">Light</option>
+            <option value="contrast">High contrast</option>
         </select>
 
         <label>Font Size</label>
@@ -3032,6 +3228,39 @@ canvas:focus-visible,
         </div>
     </div>
 
+    <div class="settingsSection" data-tab="access">
+        <h3>Accessibility</h3>
+
+        <label>Keys that work from anywhere</label>
+        <div id="globalKeysRow">
+            <input type="checkbox" id="globalKeysToggle" checked>
+            <label for="globalKeysToggle">Let these three work even when emb3r is in the background</label>
+        </div>
+        <div id="globalKeyList"></div>
+        <p class="settingsNote">A key that works from anywhere takes those keys from every other app on this computer, so there are only three, and each can be changed. If another app already uses one, it says so here. <b>Explain what I copied</b> is always answered on this computer, never sent to Gemini or another provider, because a clipboard can hold anything - a password included. Talking from a key is press-to-start and press-to-send, emb3r comes to the front so you can see the microphone is open, and it stops listening by itself after a minute.</p>
+
+        <label>Reading</label>
+        <div id="easyReadRow">
+            <input type="checkbox" id="easyReadToggle">
+            <label for="easyReadToggle">Easy-read font — Atkinson Hyperlegible, designed for low vision</label>
+        </div>
+        <div id="contrastRow">
+            <input type="checkbox" id="contrastToggle">
+            <label for="contrastToggle">High contrast — black and white, no glow</label>
+        </div>
+
+        <label>Zoom — <span id="zoomValue">100%</span></label>
+        <div id="zoomButtons">
+            <button id="zoomOutButton">Smaller</button>
+            <button id="zoomResetButton">Normal</button>
+            <button id="zoomInButton">Bigger</button>
+        </div>
+        <p class="settingsNote">Zoom makes everything bigger. To change only the size of the conversation, use Font Size under Display. Reading replies aloud, sounds and reactions are under Display too, and a screen reader is told each reply once, when it has finished.</p>
+
+        <label>Every shortcut</label>
+        <div id="shortcutList"></div>
+    </div>
+
     </div><!-- /settingsContent -->
     </div><!-- /settingsBody -->
 </div>
@@ -3085,7 +3314,7 @@ canvas:focus-visible,
      how Ember is feeling, the fire on the salamander's back is what the
      machine is doing. -->
 <div id="stats">
-<div id="face"><span id="face-text">( ^_^ )</span></div>
+<div id="face" role="img" aria-label="Ember is relaxed"><span id="face-text">( ^_^ )</span></div>
 <span id="moodWrap">mood <span id="mood">#####</span></span>
 <!-- Not drawn any more - the fire carries the machine's state. It stays in the
      document because a burning coil says nothing to a screen reader, and
@@ -3130,11 +3359,11 @@ canvas:focus-visible,
     <button id="faceMic" type="button">
         <span id="faceMicDot"></span><span id="faceMicLabel">hold to talk</span>
     </button>
-    <div id="faceHint">hold the button or the spacebar · Esc to go back</div>
+    <div id="faceHint">hold the button or the spacebar, or press Ctrl+T to start and stop · Esc to go back</div>
     <button id="faceExit">[ back to the terminal ]</button>
 </div>
 
-<div id="chat">
+<div id="chat" role="log" aria-live="off" aria-label="Conversation">
 <span class="dim">// ember terminal ready. type below and hit enter.</span>
 </div>
 
@@ -3153,8 +3382,8 @@ canvas:focus-visible,
      ending: there the transcript is sent, here it is put in the box so it can
      be read and corrected first. Speech recognition is wrong often enough that
      sending unseen text is worse than one extra keypress. -->
-<button id="micButton" title="Hold to speak">[o]</button>
-<button id="uploadButton" title="Attach a file">📎</button>
+<button id="micButton" title="Hold to speak" aria-label="Talk">[o]</button>
+<button id="uploadButton" title="Attach a file" aria-label="Attach a file">📎</button>
 <input type="file" id="fileInput"
     accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.odt,.ods,.odp,.rtf,.epub,.txt,.md,.markdown,.rst,.csv,.tsv,.json,.jsonl,.yaml,.yml,.xml,.log,.ini,.cfg,.conf,.toml,.js,.mjs,.cjs,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cc,.cs,.php,.sh,.bash,.zsh,.ps1,.sql,.html,.htm,.css,.scss,.less,.vue,.svelte,.r,.lua,.dart,.tex,.srt,.vtt,text/*">
 <button id="send">[ send ]</button>
@@ -3164,6 +3393,24 @@ canvas:focus-visible,
 
 </div>
 
+<!-- What a screen reader is told, once: a finished reply, an error, what a
+     shortcut did. The transcript itself is not live, or every streamed word
+     would be read out as it arrived. -->
+<div id="srAnnounce" class="srOnly" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Every key, built from src/keys.js when it opens, so the list cannot fall
+     out of step with what the keys actually do. -->
+<div id="shortcutSheet" role="dialog" aria-modal="true" aria-labelledby="shortcutSheetTitle">
+    <div id="shortcutSheetBox">
+        <h3 id="shortcutSheetTitle">Shortcuts</h3>
+        <div id="shortcutSheetBody"></div>
+        <div id="shortcutSheetButtons">
+            <button id="shortcutSheetClose">Close</button>
+        </div>
+    </div>
+</div>
+
+<script src="./keys.js"></script>
 <script src="./renderer.js"></script>
 
 </body>
