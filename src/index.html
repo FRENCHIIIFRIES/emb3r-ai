@@ -358,6 +358,31 @@ pre{
     line-height:1.4;
 }
 
+/* One line under the face, at 70% of the accent: it says what is playing, it
+   does not compete with her. Long titles end in an ellipsis rather than wrap. */
+#nowPlaying{
+    margin-top:6px;
+    font-size:13px;
+    line-height:1.4;
+    color:color-mix(in srgb, var(--text-color) 70%, transparent);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+#nowPlaying[hidden]{
+    display:none;
+}
+
+#pet.compact #nowPlaying{
+    margin-top:2px;
+    font-size:12px;
+}
+
+#spotifyReactRow{
+    margin-top:12px;
+}
+
 #moodWrap{
     color:color-mix(in srgb, var(--text-color) 62%, transparent);
     letter-spacing:.08em;
@@ -1356,6 +1381,8 @@ pre{
 
 #soundToggleRow,
 #animToggleRow,
+#musicMoodToggleRow,
+#spotifyReactRow,
 #voiceToggleRow{
     display:flex;
     align-items:center;
@@ -1763,6 +1790,8 @@ pre{
 #safeModeRow input,
 #memoryRow input,
 #animToggleRow input,
+#musicMoodToggleRow input,
+#spotifyReactRow input,
 #voiceToggleRow input{
     padding:0;
     width:auto;
@@ -2807,6 +2836,17 @@ canvas:focus-visible,
         <input type="text" id="spotifyClientIdInput" placeholder="from developer.spotify.com">
         <button id="spotifyConnectButton">Connect Spotify</button>
         <div id="spotifyStatusText" style="font-size:15px; margin-top:4px;"></div>
+
+        <!-- Off until asked for: something that speaks up every three minutes
+             should be a choice. Her lines are written, not generated. -->
+        <div id="spotifyReactRow">
+            <input type="checkbox" id="spotifyReactToggle">
+            <label for="spotifyReactToggle">React when a new song starts</label>
+        </div>
+
+        <p class="settingsNote">While Spotify is connected, emb3r asks it what is playing every 10 seconds while this window is open, and every 30 seconds while it is hidden. The song goes into Ember's prompt only when your question is about music, and only when this computer is answering - never to Gemini or another provider.</p>
+        <p class="settingsNote">Say "pause", "play", "skip", "next song" or "go back" and she does it, without the model. So do <b>Ctrl+Alt+P</b>, <b>Ctrl+Alt+&rarr;</b> and <b>Ctrl+Alt+&larr;</b>. Spotify only allows this with Premium, and it needs the control permission: if you connected before this version, disconnect and connect once more.</p>
+        <p class="settingsNote">Since March 2026 Spotify requires the account that owns the Client ID to have Premium. Without it Spotify refuses every request, and this page says so rather than showing nothing.</p>
     </div>
 
     <div class="settingsSection" data-tab="web">
@@ -2944,6 +2984,13 @@ canvas:focus-visible,
             <label for="soundToggle">Sound effects</label>
         </div>
 
+        <!-- On unless turned off, and only ever temporary: the colour you chose
+             is never overwritten, and it comes back when the music stops. -->
+        <div id="musicMoodToggleRow">
+            <input type="checkbox" id="musicMoodToggle" checked>
+            <label for="musicMoodToggle">Music moods — Ember takes her colour from the album cover while a song plays</label>
+        </div>
+
         <div id="animToggleRow">
             <input type="checkbox" id="animToggle" checked>
             <label for="animToggle">Reactions — sparkles, hearts and transitions</label>
@@ -3045,6 +3092,10 @@ canvas:focus-visible,
      because setStatus() writes here from a dozen places. -->
 <span id="statusWrap">status: <span id="status">idle</span></span>
 </div>
+<!-- What is playing, where it can be seen. It used to be written into the
+     transcript's tooltip, which nobody ever found. aria-live so a screen reader
+     hears a new song; the text only changes when the song or its state does. -->
+<div id="nowPlaying" aria-live="polite" hidden></div>
 
 </div>
 

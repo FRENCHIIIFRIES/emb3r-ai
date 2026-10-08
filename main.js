@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Menu, dialog, nativeImage } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -8,6 +8,11 @@ import crypto from "crypto";
 import { execFileSync, spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession } from "node-llama-cpp";
+// the parts of the Spotify features that need neither Electron nor the network
+import {
+  isMusicQuestion, parseMusicCommand, commandReply, musicContext,
+  describeSpotifyError, dominantColour, reactionLine,
+} from "./music.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
 // assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
@@ -94,6 +99,12 @@ function defaultConfig() {
     spotifyAccessToken: null,
     spotifyRefreshToken: null,
     spotifyTokenExpiry: 0,
+    // what Spotify actually granted at sign-in, so control can be refused in
+    // words - "reconnect to let me pause and skip" - rather than by failing
+    spotifyScopes: "",
+    // a written line from Ember when a new song starts. Off until asked for:
+    // something that talks unprompted every three minutes should be a choice.
+    spotifyReactions: false,
     // remembered result of the GPU probe, which is slow enough (~17s) that
     // repeating it every launch would be felt. null until first probed.
     gpuInfo: null,
@@ -405,6 +416,7 @@ function describeHost(host) {
   // message actually went rather than a generic "network activity"
   const custom = customApiHost();
   if (custom && h.includes(custom.toLowerCase())) return `asking ${custom}`;
+  if (h.includes("scdn.co")) return "Spotify cover art";
   if (h.includes("spotify.com")) return "Spotify now-playing";
   return h || "unknown";
 }
@@ -3303,7 +3315,9 @@ ipcMain.handle("emb3r:connect-spotify", async () => {
       client_id: config.spotifyClientId,
       response_type: "code",
       redirect_uri: SPOTIFY_REDIRECT_URI,
-      scope: "user-read-currently-playing user-read-playback-state",
+      // control is asked for here so that "skip" can work; Spotify only allows
+      // it for Premium, and says so if not
+      scope: "user-read-currently-playing user-read-playback-state user-modify-playback-state",
       code_challenge_method: "S256",
       code_challenge: challenge,
     });
@@ -3329,8 +3343,11 @@ ipcMain.handle("emb3r:connect-spotify", async () => {
     config.spotifyAccessToken = tokenData.access_token;
     config.spotifyRefreshToken = tokenData.refresh_token;
     config.spotifyTokenExpiry = Date.now() + tokenData.expires_in * 1000;
+    // what was actually granted, which can be less than what was asked for
+    config.spotifyScopes = String(tokenData.scope || "");
+    spotifyLastError = null;
     saveConfig(config);
-    return { success: true };
+    return { success: true, canControl: spotifyCanControl() };
   } catch (err) {
     return { success: false, error: err.message || String(err) };
   }
@@ -3340,11 +3357,30 @@ ipcMain.handle("emb3r:disconnect-spotify", () => {
   config.spotifyAccessToken = null;
   config.spotifyRefreshToken = null;
   config.spotifyTokenExpiry = 0;
+  config.spotifyScopes = "";
+  spotifyLast = null;
+  spotifyLastError = null;
+  spotifyLastTrackId = null;
   saveConfig(config);
   return true;
 });
 
-ipcMain.handle("emb3r:spotify-status", () => ({ connected: !!config.spotifyAccessToken }));
+function spotifyCanControl() {
+  return /\buser-modify-playback-state\b/.test(config.spotifyScopes || "");
+}
+
+ipcMain.handle("emb3r:spotify-status", () => ({
+  connected: !!config.spotifyAccessToken,
+  canControl: spotifyCanControl(),
+  lastError: spotifyLastError ? spotifyLastError.text : null,
+  reactions: Boolean(config.spotifyReactions),
+}));
+
+ipcMain.handle("emb3r:set-spotify-reactions", (_e, on) => {
+  config.spotifyReactions = Boolean(on);
+  saveConfig(config);
+  return { success: true, reactions: config.spotifyReactions };
+});
 
 async function ensureSpotifyToken() {
   if (!config.spotifyAccessToken) return false;
@@ -3372,25 +3408,139 @@ async function ensureSpotifyToken() {
   }
 }
 
-ipcMain.handle("emb3r:get-now-playing", async () => {
-  const ok = await ensureSpotifyToken();
-  if (!ok) return { connected: false, playing: false };
+// The last answer and the last refusal, kept so a question about the song can
+// reuse an answer that is seconds old, and Settings can say what went wrong.
+let spotifyLast = null;        // { at, data }
+let spotifyLastError = null;   // { kind, text, at }
+let spotifyLastTrackId = null;
+
+// One way to ask Spotify anything, so every refusal comes back in words. The
+// previous code turned all of them into "nothing is playing" - which, since
+// Spotify began requiring Premium of the account that owns a Client ID in March
+// 2026, is exactly what a refused app looked like.
+async function spotifyApi(method, apiPath, during = "read") {
+  // asked before anything else: under the lock the token refresh would be
+  // refused too, and "sign-in expired" would be the wrong thing to say
+  if (config.offlineLock) return { ok: false, error: describeSpotifyError({ error: { isOfflineLock: true } }) };
+  if (!(await ensureSpotifyToken())) {
+    return { ok: false, error: { kind: "auth", text: "the Spotify sign-in has expired - reconnect it" } };
+  }
+  let res;
   try {
-    const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+    res = await fetch(`https://api.spotify.com/v1${apiPath}`, {
+      method,
       headers: { Authorization: `Bearer ${config.spotifyAccessToken}` },
     });
-    if (res.status === 204) return { connected: true, playing: false };
-    if (!res.ok) return { connected: true, playing: false };
-    const data = await res.json();
-    if (!data || !data.item) return { connected: true, playing: false };
-    return {
-      connected: true,
-      playing: !!data.is_playing,
-      track: data.item.name,
-      artist: data.item.artists.map((a) => a.name).join(", "),
-    };
-  } catch (err) {
-    return { connected: true, playing: false, error: err.message };
+  } catch (error) {
+    return { ok: false, error: describeSpotifyError({ error, during }) };
+  }
+  if (res.status === 204) return { ok: true, status: 204, body: null };
+  let body = null;
+  try { body = await res.json(); } catch { body = null; }
+  if (!res.ok) {
+    const error = describeSpotifyError({ status: res.status, body, during });
+    const retryAfter = Number(res.headers.get("retry-after"));
+    error.retryAfterMs = retryAfter > 0 ? retryAfter * 1000
+      : error.kind === "quota" ? 300_000 : error.kind === "rate" ? 30_000 : 0;
+    return { ok: false, status: res.status, error };
+  }
+  return { ok: true, status: res.status, body };
+}
+
+// What is playing, with everything the features built on it need: the song
+// for the line and the prompt, the album and its smallest cover for the
+// colour, and a reaction when the song has just changed and reactions are on.
+async function readNowPlaying() {
+  if (!config.spotifyAccessToken) return { connected: false, playing: false };
+  const r = await spotifyApi("GET", "/me/player/currently-playing");
+  if (!r.ok) {
+    spotifyLastError = { ...r.error, at: Date.now() };
+    return { connected: true, playing: false, error: r.error.text, errorKind: r.error.kind, retryAfterMs: r.error.retryAfterMs || 0 };
+  }
+  spotifyLastError = null;
+  const d = r.body;
+  if (!d || !d.item) {
+    const data = { connected: true, playing: false };
+    spotifyLast = { at: Date.now(), data };
+    return data;
+  }
+  const item = d.item;
+  const images = item.album && Array.isArray(item.album.images) ? item.album.images : [];
+  const smallest = images.slice().sort((a, b) => (a.width || 0) - (b.width || 0))[0];
+  const data = {
+    connected: true,
+    playing: Boolean(d.is_playing),
+    id: item.id,
+    track: item.name,
+    artist: (item.artists || []).map((a) => a.name).join(", "),
+    album: item.album ? item.album.name : "",
+    albumId: item.album ? item.album.id : "",
+    artUrl: smallest ? smallest.url : "",
+    progressMs: d.progress_ms || 0,
+    durationMs: item.duration_ms || 0,
+  };
+  // a reaction belongs to a change of song - never to the one already playing
+  // when emb3r opened, and only when asked for
+  if (data.id && data.id !== spotifyLastTrackId) {
+    if (spotifyLastTrackId !== null && config.spotifyReactions && data.playing) data.reaction = reactionLine(data);
+    spotifyLastTrackId = data.id;
+  }
+  spotifyLast = { at: Date.now(), data };
+  return data;
+}
+
+ipcMain.handle("emb3r:get-now-playing", () => readNowPlaying());
+
+const SPOTIFY_CONTROLS = {
+  pause: ["PUT", "/me/player/pause"],
+  play: ["PUT", "/me/player/play"],
+  next: ["POST", "/me/player/next"],
+  previous: ["POST", "/me/player/previous"],
+};
+
+// "pause", "skip", "go back" - from a message or a shortcut. Answers in Ember's
+// words either way, because both end up in the transcript.
+async function spotifyControl(action) {
+  if (!config.spotifyAccessToken) {
+    return { success: false, error: "Spotify isn't connected - connect it in Settings, Spotify." };
+  }
+  if (!spotifyCanControl()) {
+    return { success: false, error: "I can't control Spotify yet - reconnect it in Settings, Spotify, to let me pause and skip." };
+  }
+  let act = action;
+  if (act === "toggle") act = (await readNowPlaying()).playing ? "pause" : "play";
+  const call = SPOTIFY_CONTROLS[act];
+  if (!call) return { success: false, error: "That isn't something I can do to Spotify." };
+  const r = await spotifyApi(call[0], call[1], "control");
+  if (!r.ok) {
+    const t = r.error.text;
+    return { success: false, error: `${t.charAt(0).toUpperCase()}${t.slice(1)}.` };
+  }
+  // the next question about the song should see the new one, not this answer
+  spotifyLast = null;
+  return { success: true, action: act, reply: commandReply(act) };
+}
+
+ipcMain.handle("emb3r:spotify-control", (_e, action) => spotifyControl(String(action || "")));
+
+// The colour of a cover, for music moods. Only Spotify's own image host is
+// fetched: the renderer names the URL, and it must not be able to make the
+// main process fetch anything else. One fetch per album per session.
+const coverColours = new Map();
+
+ipcMain.handle("emb3r:spotify-cover-colour", async (_e, albumId, url) => {
+  if (typeof albumId !== "string" || !albumId || typeof url !== "string" || !/^https:\/\/i\.scdn\.co\//.test(url)) return null;
+  if (coverColours.has(albumId)) return coverColours.get(albumId);
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const image = nativeImage.createFromBuffer(Buffer.from(await res.arrayBuffer()));
+    if (image.isEmpty()) return null;
+    const colour = dominantColour(image.resize({ width: 32, height: 32, quality: "good" }).toBitmap());
+    coverColours.set(albumId, colour);
+    return colour;
+  } catch {
+    return null;
   }
 });
 
@@ -3928,6 +4078,29 @@ function forgetAttachmentContext(userMessage) {
   }
 }
 
+// A reply that did not come from a model - student mode's fixed answers and
+// Spotify commands - saved like any other exchange, so the history agrees with
+// what was on screen.
+function persistFixedExchange(userMessage, reply, source) {
+  if (!activeConversation) return;
+  const now = Date.now();
+  const isFirstExchange = activeConversation.messages.length === 0;
+  activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source });
+  activeConversation.messages.push({ role: "model", text: reply, ts: now, source });
+  activeConversation.updatedAt = now;
+  if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
+  saveConversationFile(activeConversation.profileId, activeConversation);
+}
+
+// What she is told about the music for this question: the last answer if it
+// is seconds old, otherwise a fresh one, so "what is this?" means the song
+// playing now. Nothing at all without Spotify, or under the offline lock.
+async function currentMusicContext() {
+  if (!config.spotifyAccessToken || config.offlineLock) return null;
+  const fresh = spotifyLast && Date.now() - spotifyLast.at < 15_000;
+  return musicContext(fresh ? spotifyLast.data : await readNowPlaying());
+}
+
 ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // Checked first, ahead of the model-ready check and ahead of the Gemini
   // decision below. Ahead of the model because these answers are worth giving
@@ -3942,16 +4115,25 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     // Persisted like any other exchange. Hiding it would make the history
     // disagree with what was on screen, and a teacher reviewing the log is a
     // reason to keep it, not to lose it.
-    if (activeConversation) {
-      const now = Date.now();
-      const isFirstExchange = activeConversation.messages.length === 0;
-      activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source: "safe-mode" });
-      activeConversation.messages.push({ role: "model", text: guarded, ts: now, source: "safe-mode" });
-      activeConversation.updatedAt = now;
-      if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
-      saveConversationFile(activeConversation.profileId, activeConversation);
-    }
+    persistFixedExchange(userMessage, guarded, "safe-mode");
     return { success: true, text: guarded, source: "safe-mode", stopped: false };
+  }
+
+  // "pause", "skip", "go back": done, not discussed. After student mode's
+  // guard, and ahead of the model-ready check so they work while the model is
+  // still loading - and only with Spotify connected, because without it the
+  // word is just something said to her.
+  const command = config.spotifyAccessToken ? parseMusicCommand(userMessage) : null;
+  if (command) {
+    const result = await spotifyControl(command);
+    const reply = result.success ? result.reply : result.error;
+    if (mainWindow) {
+      // named under the reply, so it is plain the model did not write it
+      mainWindow.webContents.send("emb3r:answer-source", { source: "spotify", model: "Spotify" });
+      mainWindow.webContents.send("emb3r:token", { text: reply });
+    }
+    persistFixedExchange(userMessage, reply, "spotify");
+    return { success: true, text: reply, source: "spotify", stopped: false };
   }
 
   if (!chatSession) {
@@ -4000,7 +4182,13 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // this question touches, alongside it rather than inside it, and trimmed back
   // out of the history afterwards by the same call that trims the extracts.
   const memories = memoryContext(userMessage);
-  const extras = [memories, attachmentContext].filter(Boolean).join("\n\n");
+
+  // The song travels the same way, and only to the model on this machine: if
+  // remoteFor() is sending the question to Gemini or another provider, what
+  // the user is listening to stays here. A web answer will not know which song
+  // "this" is; that is the price, and it is the right way round.
+  const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContext() : null;
+  const extras = [memories, music, attachmentContext].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();

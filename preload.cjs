@@ -131,4 +131,10 @@ contextBridge.exposeInMainWorld("emb3r", {
   disconnectSpotify: () => ipcRenderer.invoke("emb3r:disconnect-spotify"),
   spotifyStatus: () => ipcRenderer.invoke("emb3r:spotify-status"),
   getNowPlaying: () => ipcRenderer.invoke("emb3r:get-now-playing"),
+  // "pause", "play", "next", "previous" or "toggle" - answered in Ember's words
+  spotifyControl: (action) => ipcRenderer.invoke("emb3r:spotify-control", action),
+  // the colour of an album's cover, for music moods; main only fetches from
+  // Spotify's own image host, whatever URL is passed
+  spotifyCoverColour: (albumId, url) => ipcRenderer.invoke("emb3r:spotify-cover-colour", albumId, url),
+  setSpotifyReactions: (on) => ipcRenderer.invoke("emb3r:set-spotify-reactions", on),
 });

@@ -4118,6 +4118,8 @@ const spotifyConnectButton = document.getElementById("spotifyConnectButton");
 const spotifyStatusText = document.getElementById("spotifyStatusText");
 
 let spotifyConnected = false;
+// whether Spotify granted control at sign-in - Settings asks for a reconnect when not
+let spotifyCanControl = false;
 let spotifyPollTimer = null;
 
 spotifyClientIdInput.addEventListener("change", async (e) => {
@@ -4128,6 +4130,7 @@ spotifyConnectButton.addEventListener("click", async () => {
   if (spotifyConnected) {
     await window.emb3r.disconnectSpotify();
     spotifyConnected = false;
+    spotifyCanControl = false;
     stopSpotifyPolling();
     spotifyStatusText.textContent = "disconnected";
     spotifyConnectButton.textContent = "Connect Spotify";
@@ -4149,53 +4152,214 @@ async function doSpotifyConnect() {
   spotifyStatusText.textContent = "opening Spotify login in your browser...";
   const result = await window.emb3r.connectSpotify();
   if (result.success) {
-    spotifyConnected = true;
-    spotifyConnectButton.textContent = "Disconnect Spotify";
-    spotifyStatusText.textContent = "connected";
-    startSpotifyPolling();
+    // read back rather than assumed, so a connection that was granted less
+    // than it asked for says so straight away
+    await refreshSpotifyStatus();
   } else {
     spotifyStatusText.textContent = `failed: ${result.error}`;
   }
 }
 
+// Looked up and declared first, so nothing below can reach them before they exist.
+const nowPlayingEl = document.getElementById("nowPlaying");
+let nowPlayingTrackId = null;
+const spotifyReactToggle = document.getElementById("spotifyReactToggle");
+const musicMoodToggle = document.getElementById("musicMoodToggle");
+let musicMoodsOn = localStorage.getItem("emb3rMusicMoods") !== "false";
+let moodAlbumId = null;
+let moodColour = null;
+let moodRestoreTimer = null;
+
 async function refreshSpotifyStatus() {
   const status = await window.emb3r.spotifyStatus();
   spotifyConnected = status.connected;
+  spotifyCanControl = Boolean(status.canControl);
+  spotifyReactToggle.checked = Boolean(status.reactions);
   spotifyConnectButton.textContent = spotifyConnected ? "Disconnect Spotify" : "Connect Spotify";
-  spotifyStatusText.textContent = spotifyConnected ? "connected" : "not connected";
+  renderSpotifyHealth(status.lastError);
   if (spotifyConnected) startSpotifyPolling();
+}
+
+// What Settings says about the connection: connected, and if not entirely,
+// why - Spotify's own refusal, put into words by main.js.
+function renderSpotifyHealth(error) {
+  if (!spotifyConnected) { spotifyStatusText.textContent = "not connected"; return; }
+  const parts = ["connected"];
+  if (error) parts.push(error);
+  else if (!spotifyCanControl) parts.push("disconnect and connect once more to let Ember pause and skip");
+  spotifyStatusText.textContent = parts.join(" — ");
 }
 
 function startSpotifyPolling() {
   stopSpotifyPolling();
   pollNowPlaying();
-  spotifyPollTimer = setInterval(pollNowPlaying, 10000);
 }
 
 function stopSpotifyPolling() {
-  if (spotifyPollTimer) { clearInterval(spotifyPollTimer); spotifyPollTimer = null; }
+  if (spotifyPollTimer) { clearTimeout(spotifyPollTimer); spotifyPollTimer = null; }
+  renderNowPlaying(null);
+  endMusicMood();
 }
+
+// Every 10 seconds while emb3r is on screen, every 30 while it is hidden, and
+// as long as Spotify asked for when it said the quota was used up.
+function scheduleNowPlaying(ms) {
+  if (spotifyPollTimer) clearTimeout(spotifyPollTimer);
+  spotifyPollTimer = setTimeout(pollNowPlaying, ms);
+}
+
+document.addEventListener("visibilitychange", () => {
+  // coming back should not show a song that ended while the window was hidden
+  if (document.visibilityState === "visible" && spotifyConnected) scheduleNowPlaying(300);
+});
 
 let musicFlip = false;
 
 async function pollNowPlaying() {
   if (!spotifyConnected) return;
+  let info;
   try {
-    const info = await window.emb3r.getNowPlaying();
-    if (!thinkTimer) {
-      if (info.playing) {
-        musicFlip = !musicFlip;
-        setFace(musicFlip ? "music1" : "music2");
-        setStatus("vibing");
-        chat.title = `♪ ${info.track} — ${info.artist}`;
-      } else {
-        setFace(restingFace());
-        setStatus("idle");
-      }
-    }
+    info = await window.emb3r.getNowPlaying();
   } catch (e) {
-    // silent fail, no need to spam errors for background polling
+    scheduleNowPlaying(30_000);
+    return;
   }
+  renderNowPlaying(info);
+  renderSpotifyHealth(info.error || null);
+  if (!thinkTimer) {
+    if (info.playing) {
+      musicFlip = !musicFlip;
+      setFace(musicFlip ? "music1" : "music2");
+      setStatus("vibing");
+    } else if (currentFace === "music1" || currentFace === "music2") {
+      // only her music faces are put away. The old version reset the face to
+      // resting on every quiet poll, so sleeping and sad were overwritten every
+      // ten seconds while Spotify was connected and nothing played.
+      setFace(restingFace());
+      setStatus("idle");
+    }
+  }
+  if (info.reaction) reactToSong(info.reaction);
+  updateMusicMood(info);
+  const visible = document.visibilityState === "visible";
+  scheduleNowPlaying(info.retryAfterMs || (visible ? 10_000 : 30_000));
+}
+
+
+// The line under her face. Rewritten only when what it says changes, because
+// it is a live region: a screen reader reads it out every time it changes.
+function renderNowPlaying(info) {
+  if (!info || !info.track) {
+    nowPlayingEl.hidden = true;
+    nowPlayingEl.replaceChildren();
+    delete nowPlayingEl.dataset.shown;
+    nowPlayingTrackId = null;
+    return;
+  }
+  const shown = `${info.playing ? "♪" : "‖ paused ·"} ${info.track} — ${info.artist}`;
+  if (nowPlayingEl.dataset.shown === shown) return;
+  const newSong = info.id !== nowPlayingTrackId;
+  nowPlayingTrackId = info.id;
+  nowPlayingEl.dataset.shown = shown;
+  // what is seen and what is heard are written separately: "♪" and "—" read
+  // aloud as "eighth note" and "em dash", which is not what anybody wants to hear
+  const seen = document.createElement("span");
+  seen.setAttribute("aria-hidden", "true");
+  seen.textContent = shown;
+  const heard = document.createElement("span");
+  heard.className = "srOnly";
+  heard.textContent = newSong
+    ? `Now playing: ${info.track} by ${info.artist}`
+    : `${info.playing ? "Playing" : "Paused"}: ${info.track}`;
+  nowPlayingEl.replaceChildren(seen, heard);
+  nowPlayingEl.title = `${info.track} — ${info.artist}${info.album ? ` · ${info.album}` : ""}`;
+  nowPlayingEl.hidden = false;
+}
+
+// ---- reactions -------------------------------------------------------------
+
+
+spotifyReactToggle.addEventListener("change", async () => {
+  await window.emb3r.setSpotifyReactions(spotifyReactToggle.checked);
+});
+
+// A line of hers when a new song starts: written, not generated, and not saved
+// into the conversation - it is a reaction, not something said to her. Never
+// over a reply that is still arriving.
+function reactToSong(text) {
+  if (thinkTimer || !stopButton.hidden) return;
+  const { line, span } = messageLine("bot", "ember");
+  span.textContent = text;
+  chat.appendChild(line);
+  chat.scrollTop = chat.scrollHeight;
+  sparkleOn(line);
+}
+
+// ---- music moods -----------------------------------------------------------
+
+musicMoodToggle.checked = musicMoodsOn;
+
+musicMoodToggle.addEventListener("change", () => {
+  musicMoodsOn = musicMoodToggle.checked;
+  localStorage.setItem("emb3rMusicMoods", String(musicMoodsOn));
+  if (!musicMoodsOn) endMusicMood();
+});
+
+
+// Her colour from the album cover while a song plays. Temporary by design:
+// paintAccent never saves, and ten seconds after the music stops - or the
+// moment the switch is turned off - the colour you chose comes back.
+async function updateMusicMood(info) {
+  if (!musicMoodsOn || !info || !info.playing || !info.albumId) {
+    if (moodColour && !moodRestoreTimer) moodRestoreTimer = setTimeout(endMusicMood, 10_000);
+    return;
+  }
+  if (moodRestoreTimer) { clearTimeout(moodRestoreTimer); moodRestoreTimer = null; }
+  if (info.albumId === moodAlbumId) return;
+  moodAlbumId = info.albumId;
+  const colour = await window.emb3r.spotifyCoverColour(info.albumId, info.artUrl);
+  // the song may have changed while the cover was being read
+  if (moodAlbumId !== info.albumId) return;
+  if (!colour) {
+    // a grey cover, or one that could not be fetched, means your own colour
+    if (moodColour) { moodColour = null; reapplySavedAccent(); }
+    return;
+  }
+  moodColour = colour;
+  paintAccent(colour.h, colour.s, colour.l);
+}
+
+function endMusicMood() {
+  if (moodRestoreTimer) { clearTimeout(moodRestoreTimer); moodRestoreTimer = null; }
+  const had = moodColour;
+  moodAlbumId = null;
+  moodColour = null;
+  if (had) reapplySavedAccent();
+}
+
+// ---- from the keyboard -----------------------------------------------------
+
+// Ctrl+Alt+P plays or pauses, Ctrl+Alt+→ skips, Ctrl+Alt+← goes back. Matched
+// on the physical key, so the layout does not move them. On many Windows
+// layouts Ctrl+Alt is AltGr, and AltGr+P types a letter (ö, on
+// US-International) - so a press with AltGraph held is a character being
+// typed, and is left alone.
+const MUSIC_KEYS = { KeyP: "toggle", ArrowRight: "next", ArrowLeft: "previous" };
+
+document.addEventListener("keydown", (e) => {
+  if (!e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey) return;
+  if (e.getModifierState && e.getModifierState("AltGraph")) return;
+  const action = MUSIC_KEYS[e.code];
+  if (!action || !spotifyConnected) return;
+  e.preventDefault();
+  musicKey(action);
+});
+
+async function musicKey(action) {
+  const result = await window.emb3r.spotifyControl(action);
+  // said where the terminal says things; the line under her face follows
+  append("sys", "sys", result.success ? `♪ ${result.reply}` : result.error);
+  scheduleNowPlaying(800);
 }
 
 // =============================
@@ -4219,6 +4383,8 @@ themeSelect.addEventListener("change", (e) => {
     // not be against the new one - recheck it, but leave the theme's own
     // default text color alone if the user never customized it
     if (localStorage.getItem("emb3rAccentColor")) applyColor();
+    // a colour borrowed from an album cover is re-clamped against the new background too
+    if (moodColour) paintAccent(moodColour.h, moodColour.s, moodColour.l);
 });
 
 // =============================
@@ -4401,20 +4567,41 @@ function legibleLightness(h, s, l, bgLuminance) {
     return lightness;
 }
 
-function applyColor() {
-    const requestedLightness = Number(lightnessInput.value);
+// Paints an accent without saving it. applyColor is this plus the save, so a
+// colour from the wheel and a colour from an album cover go through the same
+// readability clamp - and a cover can never become the colour you chose.
+function paintAccent(h, s, requestedLightness) {
     const bgHex = getComputedStyle(document.documentElement).getPropertyValue("--bg-color").trim();
     const bgLuminance = relativeLuminance(hexToRgb(bgHex));
     const towardsWhite = bgLuminance < 0.5;
-    const safeLightness = legibleLightness(currentHue, currentSat, requestedLightness, bgLuminance);
+    const safeLightness = legibleLightness(h, s, requestedLightness, bgLuminance);
     const userLightness = Math.max(0, Math.min(100,
         towardsWhite ? safeLightness + USER_LIGHTNESS_OFFSET : safeLightness - USER_LIGHTNESS_OFFSET));
-    const color = `hsl(${currentHue.toFixed(0)}, ${currentSat.toFixed(0)}%, ${safeLightness}%)`;
-    const userColor = `hsl(${currentHue.toFixed(0)}, ${currentSat.toFixed(0)}%, ${userLightness}%)`;
-    document.documentElement.style.setProperty("--text-color", color);
-    document.documentElement.style.setProperty("--user-text-color", userColor);
-    document.documentElement.style.setProperty("--hover-color", color + "33");
+    const hue = Number(h).toFixed(0);
+    const sat = Number(s).toFixed(0);
+    document.documentElement.style.setProperty("--text-color", `hsl(${hue}, ${sat}%, ${safeLightness}%)`);
+    document.documentElement.style.setProperty("--user-text-color", `hsl(${hue}, ${sat}%, ${userLightness}%)`);
+    // The accent at 20%. This used to be color + "33", which made
+    // "hsl(140, 80%, 55%)33" - not a colour - so CSS threw the declaration away
+    // and every hover and active background vanished once an accent was picked.
+    document.documentElement.style.setProperty("--hover-color", `hsla(${hue}, ${sat}%, ${safeLightness}%, 0.2)`);
+}
+
+function applyColor() {
+    const requestedLightness = Number(lightnessInput.value);
+    paintAccent(currentHue, currentSat, requestedLightness);
     localStorage.setItem("emb3rAccentColor", JSON.stringify({ h: currentHue, s: currentSat, l: requestedLightness }));
+}
+
+// Back to the accent you chose - or to the theme's own, if you never chose one.
+function reapplySavedAccent() {
+    try {
+        const saved = JSON.parse(localStorage.getItem("emb3rAccentColor") || "null");
+        if (saved) { paintAccent(saved.h, saved.s, saved.l); return; }
+    } catch (e) { /* a damaged value is treated as none */ }
+    for (const prop of ["--text-color", "--user-text-color", "--hover-color"]) {
+        document.documentElement.style.removeProperty(prop);
+    }
 }
 
 function pickAt(clientX, clientY) {
