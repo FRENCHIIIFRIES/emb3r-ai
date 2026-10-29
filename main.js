@@ -1243,6 +1243,26 @@ async function releaseLocalModel() {
   await disposeQuietly(model);
 }
 
+// A second try at the graphics, on a machine where they have worked before -
+// the probe that runs after the first load records which backend it found.
+// getLlama() tests the graphics in a child process before using them, and on a
+// busy machine that process can fail to start at all ("Binding binary test
+// failed to run a test process"), which is a bad moment rather than a missing
+// driver. node-llama-cpp then settles quietly for the processor, and on the
+// 8 GB Iris Xe laptop this was measured on that is not a fallback worth
+// settling for: with Chrome open, the graphics wrote 5.4-6.5 tokens a second
+// with the first word in about 2 s, the processor 0.9-1.0 a second with the
+// first word after a minute. Windows paged the processor's copy of the weights
+// out between words; the graphics driver keeps its own resident. (Locking the
+// processor's copy in memory was tried as well, and Windows refused the lock.)
+async function getLlamaPreferringGraphics() {
+  const llama = await getLlama();
+  if (llama.gpu || !(config.gpuInfo && config.gpuInfo.backend)) return llama;
+  console.log(`The graphics (${config.gpuInfo.backend}) did not start - trying them once more`);
+  const again = await getLlama();
+  return again.gpu ? again : llama;
+}
+
 async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   // not a plain join any more: a model the user pointed at lives outside
@@ -1264,7 +1284,7 @@ async function loadLocalModel(filename, { conversationId } = {}) {
   let model = null;
   let context = null;
   try {
-    const llama = await getLlama();
+    const llama = await getLlamaPreferringGraphics();
     // a machine with no usable graphics runs on the processor from the start
     const onProcessor = !llama.gpu;
     model = await llama.loadModel({
