@@ -12,8 +12,14 @@
 // convenience is not worth punching a hole in it.
 (function () {
   try {
-    if (localStorage.getItem("emb3rTheme") === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
+    const theme = localStorage.getItem("emb3rTheme");
+    if (theme === "light" || theme === "contrast") {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
+    // the easy-read font too, for the same reason: chosen, it should be the
+    // first thing painted, not swapped in a frame later
+    if (localStorage.getItem("emb3rEasyRead") === "true") {
+      document.documentElement.classList.add("easyRead");
     }
   } catch (e) {
     // localStorage can throw if storage is unavailable. Dark is the default

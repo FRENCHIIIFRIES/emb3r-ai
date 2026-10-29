@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require("electron");
 contextBridge.exposeInMainWorld("emb3r", {
   getAppVersion: () => ipcRenderer.invoke("emb3r:get-app-version"),
   checkForUpdates: () => ipcRenderer.invoke("emb3r:check-for-updates"),
@@ -137,4 +137,20 @@ contextBridge.exposeInMainWorld("emb3r", {
   // Spotify's own image host, whatever URL is passed
   spotifyCoverColour: (albumId, url) => ipcRenderer.invoke("emb3r:spotify-cover-colour", albumId, url),
   setSpotifyReactions: (on) => ipcRenderer.invoke("emb3r:set-spotify-reactions", on),
+
+  // The three keys that work from anywhere: what they are, whether each one is
+  // working or owned by another app, and changing them.
+  globalShortcuts: () => ipcRenderer.invoke("emb3r:global-shortcuts"),
+  setGlobalShortcut: (id, accelerator) => ipcRenderer.invoke("emb3r:set-global-shortcut", id, accelerator),
+  setGlobalShortcutsEnabled: (on) => ipcRenderer.invoke("emb3r:set-global-shortcuts-enabled", on),
+  suspendGlobalShortcuts: (on) => ipcRenderer.invoke("emb3r:suspend-global-shortcuts", on),
+  // what one of them asked for: { action: "focus-input" | "talk" | "explain", ... }
+  onShortcut: (callback) => {
+    ipcRenderer.on("emb3r:shortcut", (_event, data) => callback(data));
+  },
+
+  // Zoom for the whole interface. Electron wires no zoom keys when there is no
+  // menu, and Windows has none, so the page asks for it here.
+  getZoom: () => webFrame.getZoomFactor(),
+  setZoom: (factor) => webFrame.setZoomFactor(Math.min(3, Math.max(0.5, Number(factor) || 1))),
 });

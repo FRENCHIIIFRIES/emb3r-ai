@@ -58,6 +58,7 @@
     "files": [
       "main.js",
       "music.js",
+      "access.js",
       "preload.cjs",
       "src/**/*",
       "build/icon.png",
