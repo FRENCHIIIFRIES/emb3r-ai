@@ -7,7 +7,7 @@ import http from "http";
 import crypto from "crypto";
 import { execFileSync, spawn } from "child_process";
 import { fileURLToPath } from "url";
-import { getLlama, LlamaChatSession } from "node-llama-cpp";
+import { getLlama, LlamaChatSession, GgmlType } from "node-llama-cpp";
 // the parts of the Spotify features that need neither Electron nor the network
 import {
   isMusicQuestion, parseMusicCommand, commandReply, musicContext,
@@ -387,6 +387,9 @@ if (config.geminiModel && /^(AQ\.|AIza|ya29\.|sk-)/.test(config.geminiModel)) {
 
 let chatSession = null;
 let chatSequence = null;
+// what is actually holding memory, kept so it can be let go of - see releaseLocalModel
+let loadedModel = null;
+let loadedContext = null;
 let modelLoadError = null;
 let mainWindow = null;
 
@@ -1127,6 +1130,20 @@ function notifyModelReady() {
 // So there are two ceilings now and the lower one wins: what the machine could
 // spare if it were idle, and what is genuinely free at this moment. On an idle
 // machine the second is never the binding one and nothing changes.
+// Ember's working memory - the conversation the model is holding, its KV cache
+// - kept at 8 bits a value instead of 16 when she runs on the processor.
+// Measured on the 8 GB laptop this was written for: 190 MB less for the 3B
+// model at a 4096-token window, twice that at 8192, and no difference in speed
+// (first word 9.68 s against 9.77 s, 1.5 against 1.4 tokens a second, three
+// alternating runs each). It needs flash attention, which the processor always
+// has; graphics do not always, so there the cache stays as it was rather than
+// risk sending somebody to the slower processor.
+const COMPACT_CONTEXT = {
+  flashAttention: true,
+  experimentalKvCacheKeyType: "Q8_0",
+  experimentalKvCacheValueType: "Q8_0",
+};
+
 const CONTEXT_CANDIDATES = [16384, 8192, 4096];
 const CONTEXT_FLOOR = 4096;          // never worse than it was
 const HOST_RESERVE_BYTES = 2.5 * 1024 ** 3;
@@ -1134,7 +1151,7 @@ const HOST_RESERVE_BYTES = 2.5 * 1024 ** 3;
 // not itself push the machine into swapping
 const LIVE_RESERVE_BYTES = 0.75 * 1024 ** 3;
 
-function chooseContextSize(model, modelPath) {
+function chooseContextSize(model, modelPath, compact = false) {
   const trained = model.trainContextSize || CONTEXT_FLOOR;
   let weights = 0;
   try {
@@ -1154,8 +1171,11 @@ function chooseContextSize(model, modelPath) {
     if (size > trained) continue;
     let cost = null;
     try {
+      // costed as it will be built: a compact cache is half the size, so the
+      // same memory affords a longer conversation
       const est = model.fileInsights.estimateContextResourceRequirements({
         contextSize: size, modelGpuLayers: 0,
+        ...(compact ? { flashAttention: true, kvCacheKeyType: GgmlType.Q8_0, kvCacheValueType: GgmlType.Q8_0 } : {}),
       });
       cost = Number(est.cpuRam);
     } catch {
@@ -1195,6 +1215,34 @@ function sendLoadProgress(phase, phaseProgress, status) {
   mainWindow.webContents.send("emb3r:model-load-progress", { phase, phaseProgress, overall, status });
 }
 
+// Lets go of the model and its context. Nothing did before. Every reload - a
+// new profile, a profile switch, a model switch, a failed attempt on the
+// graphics - loaded another copy beside the old one, and the old one stayed in
+// memory until emb3r was closed. Measured on an 8 GB laptop with the 3B model:
+// the load that falls back from the graphics to the processor did not finish in
+// ten minutes holding both copies, and took 77 seconds having let go of the first.
+async function disposeQuietly(thing) {
+  if (!thing || thing.disposed) return;
+  try {
+    await thing.dispose();
+  } catch (err) {
+    console.error("Could not let go of the model:", err.message);
+  }
+}
+
+async function releaseLocalModel() {
+  // a reply in progress belongs to the model being let go of
+  if (activeGeneration) activeGeneration.abort();
+  const context = loadedContext;
+  const model = loadedModel;
+  loadedContext = null;
+  loadedModel = null;
+  chatSession = null;
+  chatSequence = null;
+  await disposeQuietly(context);
+  await disposeQuietly(model);
+}
+
 async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   // not a plain join any more: a model the user pointed at lives outside
@@ -1208,46 +1256,71 @@ async function loadLocalModel(filename, { conversationId } = {}) {
     return;
   }
 
+  // the old model goes before the new one arrives, so there are never two
+  await releaseLocalModel();
+
   console.log("Loading local model from:", modelPath);
   sendLoadProgress("warmup", 0, "warming up");
+  let model = null;
+  let context = null;
   try {
     const llama = await getLlama();
-    const model = await llama.loadModel({
+    // a machine with no usable graphics runs on the processor from the start
+    const onProcessor = !llama.gpu;
+    model = await llama.loadModel({
       modelPath: modelPath,
       onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
     });
-    const context = await model.createContext({
-      contextSize: chooseContextSize(model, modelPath),
+    context = await model.createContext({
+      contextSize: chooseContextSize(model, modelPath, onProcessor),
+      ...(onProcessor ? COMPACT_CONTEXT : {}),
       onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
     });
     // keep the sequence: it is the only way to read how full the context is
     chatSequence = context.getSequence();
     chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
+    loadedModel = model;
+    loadedContext = context;
     modelLoadError = null;
     console.log("Local model loaded:", target);
   } catch (err) {
     console.error("GPU load failed, retrying on CPU only:", err.message);
+    // What the failed attempt had already loaded is let go before loading
+    // again. On integrated graphics that is ordinary memory, borrowed: the
+    // attempt that failed because the context would not fit had the whole model
+    // on the graphics already, and kept it there while the processor loaded a
+    // second copy.
+    await disposeQuietly(context);
+    await disposeQuietly(model);
     // a genuinely fresh attempt, not a continuation - the bar resetting here
     // is honest, not a bug, because loading really is starting over
     sendLoadProgress("warmup", 0, "retrying on CPU");
+    let cpuModel = null;
+    let cpuContext = null;
     try {
       const llama = await getLlama({ gpu: false });
-      const model = await llama.loadModel({
+      cpuModel = await llama.loadModel({
         modelPath: modelPath,
         onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
       });
-      const context = await model.createContext({
-        contextSize: chooseContextSize(model, modelPath),
+      cpuContext = await cpuModel.createContext({
+        contextSize: chooseContextSize(cpuModel, modelPath, true),
+        ...COMPACT_CONTEXT,
         onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
       });
-      chatSequence = context.getSequence();
+      chatSequence = cpuContext.getSequence();
       chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
+      loadedModel = cpuModel;
+      loadedContext = cpuContext;
       modelLoadError = null;
       console.log("Local model loaded on CPU fallback:", target);
     } catch (err2) {
       console.error("Local model failed to load entirely:", err2);
       modelLoadError = err2.message || String(err2);
       chatSession = null;
+      chatSequence = null;
+      await disposeQuietly(cpuContext);
+      await disposeQuietly(cpuModel);
     }
   }
 
@@ -1956,6 +2029,20 @@ ipcMain.handle("emb3r:reset-personality", () => {
 
 // ---- Account / profile system ----
 
+// The profile changed: the same model, with the new name in its instructions
+// and the profile's own conversation. This used to reload the model - another
+// whole copy, and minutes on a busy machine - to change one line of text.
+// attachConversation writes the history with systemPrompt() at its head, which
+// is where the name lives. While the model is still loading there is nothing
+// to rewrite yet: the load attaches the active profile's conversation when it
+// finishes.
+function useActiveProfile() {
+  if (activeGeneration) activeGeneration.abort();
+  const profile = activeProfile();
+  attachConversation(profile.id, profile.lastConversationId);
+  if (chatSession) notifyModelReady();
+}
+
 ipcMain.handle("emb3r:list-profiles", () => ({
   profiles: config.profiles,
   activeProfileId: config.activeProfileId,
@@ -2034,8 +2121,7 @@ ipcMain.handle("emb3r:create-profile", (_e, name) => {
   config.profiles.push({ id, name: trimmed });
   config.activeProfileId = id;
   saveConfig(config);
-  if (chatSession) chatSession = null; // force system prompt refresh with new name next message
-  loadLocalModel(); // reload session so system prompt picks up new profile name
+  useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
@@ -2044,20 +2130,17 @@ ipcMain.handle("emb3r:switch-profile", (_e, id) => {
   if (!exists) return { success: false, error: "Profile not found." };
   config.activeProfileId = id;
   saveConfig(config);
-  chatSession = null;
-  loadLocalModel();
+  useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
 ipcMain.handle("emb3r:delete-profile", (_e, id) => {
   if (config.profiles.length <= 1) return { success: false, error: "Can't delete the only profile." };
   config.profiles = config.profiles.filter((p) => p.id !== id);
-  if (config.activeProfileId === id) {
-    config.activeProfileId = config.profiles[0].id;
-    chatSession = null;
-    loadLocalModel();
-  }
+  const wasActive = config.activeProfileId === id;
+  if (wasActive) config.activeProfileId = config.profiles[0].id;
   saveConfig(config);
+  if (wasActive) useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
