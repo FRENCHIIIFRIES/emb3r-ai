@@ -15,6 +15,7 @@ import {
 } from "./music.js";
 // the keys that work from anywhere, and the clipboard made ready to explain
 import { DEFAULT_GLOBALS, prepareClipboard, isUsableAccelerator } from "./access.js";
+import { DOWNLOAD_ATTEMPTS, RETRY_DELAYS_MS, describeDownloadError, isRetryableConnectionError } from "./downloads.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
 // assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
@@ -2398,6 +2399,10 @@ function downloadFile(url, destPath, onProgress, signal) {
     let settled = false;
     let stallTimer = null;
     let currentReq = null;
+    // which start this is, and whether any of the file has arrived - only a
+    // download that never got going is started again
+    let attempt = 1;
+    let receivedAny = false;
 
     // every failure path has to drop the partial file, otherwise a cancelled or
     // broken download leaves gigabytes of .part behind
@@ -2468,6 +2473,7 @@ function downloadFile(url, destPath, onProgress, signal) {
         let lastEmit = 0;
         res.on("data", (chunk) => {
           downloaded += chunk.length;
+          receivedAny = true;
           resetStall();
           if (!onProgress || total <= 0) return;
           const now = Date.now();
@@ -2479,7 +2485,7 @@ function downloadFile(url, destPath, onProgress, signal) {
             total,
           });
         });
-        res.on("error", fail);
+        res.on("error", (err) => fail(new Error(describeDownloadError(err, parsed.host, { partway: receivedAny }))));
         res.pipe(file);
 
         file.on("finish", () => {
@@ -2496,7 +2502,20 @@ function downloadFile(url, destPath, onProgress, signal) {
         });
       });
 
-      currentReq.on("error", fail);
+      currentReq.on("error", (err) => {
+        if (settled) return;
+        // A connection that never got going is usually a network that dropped
+        // for a moment: wait for it and start again from the original link,
+        // which also fetches a fresh signed address for the file.
+        if (!receivedAny && attempt < DOWNLOAD_ATTEMPTS && isRetryableConnectionError(err)) {
+          const wait = RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+          attempt++;
+          currentReq = null;
+          setTimeout(() => { if (!settled) request(url, 5); }, wait);
+          return;
+        }
+        fail(new Error(describeDownloadError(err, parsed.host, { partway: receivedAny })));
+      });
     }
 
     request(url, 5);

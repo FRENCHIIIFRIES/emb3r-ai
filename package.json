@@ -59,6 +59,7 @@
       "main.js",
       "music.js",
       "access.js",
+      "downloads.js",
       "preload.cjs",
       "src/**/*",
       "build/icon.png",
