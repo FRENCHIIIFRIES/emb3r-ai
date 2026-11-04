@@ -1,5 +1,23 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.39.0 — she knows the song, a key for everything, and room to share the machine
+
+**Ember knows what you are listening to.** Connect Spotify in Settings and she can see what is playing: ask her about it and she knows the title, the artist and how far in you are. Only the model on this computer is ever told — if a question goes to Gemini or another provider, the song stays here. It shows under her face, and she can pause, skip and go back when you ask, or with Ctrl+Alt+P and Ctrl+Alt with the arrow keys. Turn on **music moods** and her colour takes the album cover's, then gives yours back when the music stops.
+
+Spotify changed its rules in February: the account that owns a Client ID now has to have Premium. If yours does not, emb3r says so, rather than claiming nothing is playing.
+
+**A key for everything.** Three work from anywhere, even when emb3r is behind other windows: **Ctrl+Alt+Space** brings it up, **Ctrl+Alt+Shift+E** explains whatever you just copied, and **Ctrl+Alt+Shift+T** starts talking. Inside emb3r every button has a key — press **Ctrl+/** or **F1** to see them all (Cmd on a Mac). The first keys considered were checked against other programs and dropped: one reopens closed browser tabs, two belong to a code editor, and Ctrl+Alt with a letter types € on many European keyboards.
+
+**You can use her without a mouse.** Talking used to mean holding a button down with the pointer. Now a key starts it and the same key stops it, and it stops on its own after a minute. A screen reader hears each finished reply once, whole, and her face is described. Settings has a **high-contrast** theme, an **easy-read** font designed for people who find letters hard to tell apart, and a font size slider that now actually changes the size — it did nothing before.
+
+**Less memory, so other programs are not squeezed out.** Every time you switched profile or model, emb3r loaded another whole copy of the model and kept the old one until it closed. On an 8 GB laptop with a browser open, that is what made both of them crawl. There is only ever one copy now, switching profile is instant instead of twenty seconds, and on the processor the conversation takes half the memory. Measured: 2.7 GB down to 1.8 GB.
+
+**Faster on laptops with built-in graphics.** When memory got tight, emb3r gave up on the graphics and moved the model to the processor — where Windows kept pushing it out to the disk between words, so the first word took a minute and the rest came at less than one a second. It now stays on the graphics with a smaller conversation memory. On the laptop this was measured on, with a browser open, the first word comes in 2 to 5 seconds instead of 74, at about five words a second. When memory is that tight she keeps the last 2,048 tokens of a long chat in mind rather than 4,096.
+
+**Smaller fixes.** On a slow machine her voice could be let go of in the middle of a sentence, and opening Talk without saying anything held on to 284 MB until emb3r closed. When her voice failed in Talk the answer vanished with it; it stays on screen now, with the reason underneath. With speech switched off, a missing voice was complained about after every reply. With a custom colour, buttons lost their highlight when pressed. A reply you stopped was read aloud anyway. And with a provider half set up, a question about the news could be sent to it and reported as the provider failing — it is answered on this computer now.
+
+Two things were tried and left out. Running the model with no graphics at all — the way two people ran a 671-billion-parameter model on home computers — was measured, and on that laptop it was six times slower: the graphics keep the model in memory, and Windows does not. And Ember guessing ahead from your old chats, so she would get faster the more you talk about the same things: checking the guesses cost more than they saved, and a few replies came out different. Neither is in this version.
+
 ## v1.38.1 — she tells you when she cannot speak, and gives the memory back
 
 **When Ember could not speak, she said nothing at all.** No sound and no reason, which looks exactly like the feature not existing — and is why the only thing anyone could report was "I can't hear her". There were three separate ways for this to happen silently and all three now say what went wrong. On a machine short of memory the answer is usually that there was not enough free to load her voice.

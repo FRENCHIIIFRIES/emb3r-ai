@@ -137,6 +137,17 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.39.0",
+    added: [
+      "Ember knows what you are listening to on Spotify. Ask her about the song and she knows it - and only the model on this computer is ever told. It shows under her face, she can pause, skip and go back when you ask, and with music moods on her colour follows the album cover.",
+      "A key for everything. Ctrl+Alt+Space brings emb3r up from anywhere, Ctrl+Alt+Shift+E explains whatever you copied, Ctrl+Alt+Shift+T starts talking, and Ctrl+/ shows every key inside emb3r (Cmd on a Mac for those).",
+      "You can use her without a mouse: a key starts talking and the same key stops it. A screen reader hears each finished reply once, and Settings > Accessibility has a high-contrast theme and an easy-read font.",
+    ],
+    fixed: [
+      "Switching profile or model loaded another whole copy of the model and kept the old one until emb3r closed, which is what made a busy laptop crawl. There is only ever one now, switching profile is instant, and the conversation takes half the memory.",
+      "On laptops with built-in graphics, a tight moment for memory moved the model to the processor, and the first word took a minute. It stays on the graphics now: the first word in a few seconds, at about five words a second.",
+      "The font size slider did nothing; it works now. A reply you stopped is no longer read aloud anyway, her voice is no longer let go of in the middle of a sentence, and in Talk an answer stays on screen when her voice fails.",
+    ] },
   { version: "1.38.1",
     added: [],
     fixed: [
