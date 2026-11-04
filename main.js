@@ -1136,8 +1136,8 @@ function notifyModelReady() {
 // model at a 4096-token window, twice that at 8192, and no difference in speed
 // (first word 9.68 s against 9.77 s, 1.5 against 1.4 tokens a second, three
 // alternating runs each). It needs flash attention, which the processor always
-// has; graphics do not always, so there the cache stays as it was rather than
-// risk sending somebody to the slower processor.
+// has; graphics do not always, so there it is the fallback for when the full
+// cache does not fit - see createConversationContext.
 const COMPACT_CONTEXT = {
   flashAttention: true,
   experimentalKvCacheKeyType: "Q8_0",
@@ -1193,6 +1193,43 @@ function chooseContextSize(model, modelPath, compact = false) {
   return floor;
 }
 
+// the shortest conversation the graphics are kept for, rather than the processor
+const GRAPHICS_SHORTEST_CONTEXT = 2048;
+
+// The conversation's working memory, built where the model runs. On the
+// processor it is always the compact cache. On the graphics it is the full one,
+// as it always was - and when that does not fit, the compact one, in half the
+// room, before the graphics are given up on; at the same length if that fits,
+// and as short as 2048 tokens if only that does. Measured on the 8 GB Iris Xe
+// laptop with Chrome open: twice in a row the full cache did not fit ("A
+// context size of 4096 is too large for the available VRAM") and emb3r fell
+// back to the processor - 0.3-0.6 tokens a second, the first word after about a
+// minute. The compact cache fitted on the graphics both times: 4.8-6.1 tokens a
+// second, the first word in 2.6-7.2 s. A shorter conversation on the graphics
+// is the better trade than that wait on the processor. It is the fallback
+// there, not the default, because where the full cache fits it reached the
+// first word sooner (1.8-2.3 s), and a graphics card nobody has measured is not
+// asked to change. Flash attention is asked for outright: "auto" is costed as
+// if it were off, and on that laptop then did not fit either.
+async function createConversationContext(model, modelPath, onProcessor) {
+  const contextSize = chooseContextSize(model, modelPath, onProcessor);
+  const build = (size, compact) => model.createContext({
+    contextSize: size,
+    ...(compact ? COMPACT_CONTEXT : {}),
+    onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
+  });
+  if (onProcessor) return build(contextSize, true);
+  try {
+    return await build(contextSize, false);
+  } catch (err) {
+    console.error("The conversation did not fit on the graphics; trying the compact cache there:", err.message);
+    // node-llama-cpp takes the longest that fits between the two
+    const context = await build({ min: Math.min(GRAPHICS_SHORTEST_CONTEXT, contextSize), max: contextSize }, true);
+    console.log(`Context window: ${context.contextSize} tokens, compact, on the graphics`);
+    return context;
+  }
+}
+
 // Real progress, not a fabricated one: node-llama-cpp's loadModel() and
 // createContext() both take an onLoadProgress(0..1) callback (confirmed in
 // node_modules/node-llama-cpp/dist/evaluator/LlamaModel/LlamaModel.d.ts and
@@ -1243,6 +1280,26 @@ async function releaseLocalModel() {
   await disposeQuietly(model);
 }
 
+// A second try at the graphics, on a machine where they have worked before -
+// the probe that runs after the first load records which backend it found.
+// getLlama() tests the graphics in a child process before using them, and on a
+// busy machine that process can fail to start at all ("Binding binary test
+// failed to run a test process"), which is a bad moment rather than a missing
+// driver. node-llama-cpp then settles quietly for the processor, and on the
+// 8 GB Iris Xe laptop this was measured on that is not a fallback worth
+// settling for: with Chrome open, the graphics wrote 5.4-6.5 tokens a second
+// with the first word in about 2 s, the processor 0.9-1.0 a second with the
+// first word after a minute. Windows paged the processor's copy of the weights
+// out between words; the graphics driver keeps its own resident. (Locking the
+// processor's copy in memory was tried as well, and Windows refused the lock.)
+async function getLlamaPreferringGraphics() {
+  const llama = await getLlama();
+  if (llama.gpu || !(config.gpuInfo && config.gpuInfo.backend)) return llama;
+  console.log(`The graphics (${config.gpuInfo.backend}) did not start - trying them once more`);
+  const again = await getLlama();
+  return again.gpu ? again : llama;
+}
+
 async function loadLocalModel(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   // not a plain join any more: a model the user pointed at lives outside
@@ -1264,18 +1321,14 @@ async function loadLocalModel(filename, { conversationId } = {}) {
   let model = null;
   let context = null;
   try {
-    const llama = await getLlama();
+    const llama = await getLlamaPreferringGraphics();
     // a machine with no usable graphics runs on the processor from the start
     const onProcessor = !llama.gpu;
     model = await llama.loadModel({
       modelPath: modelPath,
       onLoadProgress: (p) => sendLoadProgress("weights", p, "loading weights"),
     });
-    context = await model.createContext({
-      contextSize: chooseContextSize(model, modelPath, onProcessor),
-      ...(onProcessor ? COMPACT_CONTEXT : {}),
-      onLoadProgress: (p) => sendLoadProgress("context", p, "preparing context"),
-    });
+    context = await createConversationContext(model, modelPath, onProcessor);
     // keep the sequence: it is the only way to read how full the context is
     chatSequence = context.getSequence();
     chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
