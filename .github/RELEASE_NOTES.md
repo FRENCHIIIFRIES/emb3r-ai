@@ -4,7 +4,7 @@ A small terminal-dwelling AI companion that runs a language model entirely on yo
 
 **Ember knows what you are listening to.** Connect Spotify in Settings and she can see what is playing: ask her about it and she knows the title, the artist and how far in you are. Only the model on this computer is ever told — if a question goes to Gemini or another provider, the song stays here. It shows under her face, and she can pause, skip and go back when you ask, or with Ctrl+Alt+P and Ctrl+Alt with the arrow keys. Turn on **music moods** and her colour takes the album cover's, then gives yours back when the music stops.
 
-Spotify changed its rules in February: the account that owns a Client ID now has to have Premium. If yours does not, emb3r says so, rather than claiming nothing is playing.
+Spotify changed its rules this year: the account that owns a Client ID now has to have Premium. If yours does not, emb3r says so, rather than claiming nothing is playing.
 
 **A key for everything.** Three work from anywhere, even when emb3r is behind other windows: **Ctrl+Alt+Space** brings it up, **Ctrl+Alt+Shift+E** explains whatever you just copied, and **Ctrl+Alt+Shift+T** starts talking. Inside emb3r every button has a key — press **Ctrl+/** or **F1** to see them all (Cmd on a Mac). The first keys considered were checked against other programs and dropped: one reopens closed browser tabs, two belong to a code editor, and Ctrl+Alt with a letter types € on many European keyboards.
 
