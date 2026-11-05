@@ -4206,7 +4206,9 @@ const nowPlayingEl = document.getElementById("nowPlaying");
 let nowPlayingTrackId = null;
 const spotifyReactToggle = document.getElementById("spotifyReactToggle");
 const musicMoodToggle = document.getElementById("musicMoodToggle");
-let musicMoodsOn = localStorage.getItem("emb3rMusicMoods") !== "false";
+// off until turned on: a colour someone chose is not changed by a song they
+// never asked to be coloured by - v1.39.0 had it on, and it surprised people
+let musicMoodsOn = localStorage.getItem("emb3rMusicMoods") === "true";
 let moodAlbumId = null;
 let moodColour = null;
 let moodRestoreTimer = null;
