@@ -4829,9 +4829,11 @@ ipcMain.handle("emb3r:new-conversation", async (_e, opts) => {
     // has typed - not awaited, the load reports its own progress
     if (everLoaded || modelSwitch) ensureModelFor(conv).catch((err) => console.error("Tutor model:", err));
     model = modelDisplayName(modelWantedFor(conv));
-    // the one that would suit this subject best, when it is not on this computer
+    // the one that would suit this subject best, when it is not on this computer,
+    // with what the renderer needs to offer it: its catalogue id, name and size
     const best = bestModelFor(tutor);
-    if (best && !installedModelFiles().includes(best)) suggest = modelDisplayName(best);
+    const entry = best && !installedModelFiles().includes(best) ? MODEL_CATALOG.find((m) => m.file === best) : null;
+    if (entry) suggest = { id: entry.id, name: entry.name, sizeGB: entry.sizeGB };
   }
   return { success: true, id: conv.id, tutor, model, suggest };
 });

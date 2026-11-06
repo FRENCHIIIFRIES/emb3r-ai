@@ -2469,7 +2469,19 @@ async function renderActiveConversationHistory() {
       if (note) {
         const hint = document.createElement("div");
         hint.className = "dim tutorHint";
-        hint.textContent = `// ${tutor.name.toLowerCase()} answers best on ${note.suggest}, which is not on this computer yet - Settings > Models can download it. until then it uses ${note.model}.`;
+        hint.textContent = `// ${tutor.name.toLowerCase()} answers best on ${note.suggest.name}, which is not on this computer yet. until then it uses ${note.model}. `;
+        // one press to fetch it - through the same permission question as any
+        // download - and Settings opens on Models so the progress can be seen
+        const get = document.createElement("button");
+        get.className = "tutorGet";
+        get.textContent = `[ get it - ${note.suggest.sizeGB} GB ]`;
+        get.addEventListener("click", () => {
+          requestDownload(note.suggest.id);
+          settingsButton.click();
+          const tab = document.querySelector('.settingsTab[data-tab="models"]');
+          if (tab) showSettingsTab(tab);
+        });
+        hint.appendChild(get);
         chat.appendChild(hint);
       }
       return;
