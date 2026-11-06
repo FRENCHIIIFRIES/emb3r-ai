@@ -30,7 +30,8 @@ test("an AggregateError with no codes inside it is still a connection failure", 
 test("a name that cannot be looked up says the connection is down", () => {
   const err = Object.assign(new Error("getaddrinfo ENOTFOUND huggingface.co"), { code: "ENOTFOUND" });
   assert.equal(isRetryableConnectionError(err), true);
-  assert.match(describeDownloadError(err, "huggingface.co"), /^Couldn't look up huggingface\.co - the internet connection seems to be down \(ENOTFOUND\)/);
+  // a school network that blocks a site by name looks exactly like this too
+  assert.match(describeDownloadError(err, "huggingface.co"), /^Couldn't look up huggingface\.co - the internet connection seems to be down, or this network blocks it \(ENOTFOUND\)/);
 });
 
 test("a connection lost partway says the download starts again", () => {

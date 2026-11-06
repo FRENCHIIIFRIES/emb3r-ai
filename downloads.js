@@ -45,7 +45,7 @@ export function describeDownloadError(err, host, { partway = false } = {}) {
   if (!isRetryableConnectionError(err)) return (err && err.message) || String(err);
   if (partway) return `The connection to ${where} dropped partway through the download${tag}. Try again - it starts from the beginning.`;
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
-    return `Couldn't look up ${where} - the internet connection seems to be down${tag}. Try again in a moment.`;
+    return `Couldn't look up ${where} - the internet connection seems to be down, or this network blocks it${tag}. Try again in a moment.`;
   }
   return `Couldn't connect to ${where} - the internet connection dropped, or this network blocks it${tag}. Try again in a moment.`;
 }

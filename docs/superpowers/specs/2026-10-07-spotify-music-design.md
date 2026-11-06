@@ -72,8 +72,9 @@ quota is counted per developer account, and an exhausted quota answers 429 with
   existing network guard, is shown in the connection log as "Spotify cover
   art", and is refused by the offline lock like everything else.
 - **Settings → Display: "Music moods — Ember takes her colour from the album
-  cover while a song plays"**, on by default. It does nothing until Spotify is
-  connected and something plays.
+  cover while a song plays"**, off until turned on. (It shipped on by default in
+  v1.39.0, which surprised the person it was built for; v1.39.1 made it opt-in.)
+  It does nothing until Spotify is connected and something plays.
 
 ### 3. Ember knows the song
 

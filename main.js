@@ -141,8 +141,8 @@ const CHANGELOG = [
   { version: "1.39.1",
     added: [],
     fixed: [
-      "Installing a model could fail with nothing but the word 'AggregateError'. A download whose connection drops before it starts is now tried again by itself, and if it still can't connect it tells you why in plain words. The same goes for her voice and for models you add yourself.",
-      "Your colour stopped changing by itself: music moods are off until you turn them on in Settings > Spotify. If you had turned them on yourself, they stay on.",
+      "Installing a model could fail with nothing but the word 'AggregateError'. A download whose connection drops before it starts is now tried again by itself, and if it still can't connect it tells you why in plain words. The same goes for models you add yourself.",
+      "Your colour stopped changing by itself: music moods are off until you turn them on in Settings > Display. If you had turned them on yourself, they stay on.",
     ] },
   { version: "1.39.0",
     added: [
@@ -1667,21 +1667,30 @@ function fetchText(url) {
   return new Promise((resolve, reject) => {
     const get = (target, depth) => {
       if (depth > 5) return reject(new Error("too many redirects"));
-      https.get(target, { headers: { "user-agent": "emb3r" } }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          return get(new URL(res.headers.location, target).href, depth + 1);
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          return reject(new Error(`${target} returned ${res.statusCode}`));
-        }
-        let body = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => { body += c; });
-        res.on("end", () => resolve(body));
-        res.on("error", reject);
-      }).on("error", reject);
+      const host = new URL(target).host;
+      let req;
+      try {
+        // the network guard throws when the offline lock is on; on a redirect
+        // this runs from a callback, where nothing else would catch it
+        req = https.get(target, { headers: { "user-agent": "emb3r" } }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume();
+            return get(new URL(res.headers.location, target).href, depth + 1);
+          }
+          if (res.statusCode !== 200) {
+            res.resume();
+            return reject(new Error(`${target} returned ${res.statusCode}`));
+          }
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (c) => { body += c; });
+          res.on("end", () => resolve(body));
+          res.on("error", (e) => reject(new Error(describeDownloadError(e, host, { partway: true }))));
+        });
+      } catch (err) {
+        return reject(err);
+      }
+      req.on("error", (e) => reject(new Error(describeDownloadError(e, host))));
     };
     get(url, 0);
   });
@@ -2431,6 +2440,18 @@ function downloadFile(url, destPath, onProgress, signal) {
 
     file.on("error", fail);
 
+    // The network guard refuses by throwing, synchronously, when the offline
+    // lock is on - and a retry starts from a timer, where nothing else would
+    // catch the throw. A refusal ends the download like any other failure.
+    const startGet = (target, onResponse) => {
+      try {
+        return https.get(target, { headers: { "User-Agent": "emb3r-app" } }, onResponse);
+      } catch (err) {
+        fail(err);
+        return null;
+      }
+    };
+
     if (signal) {
       if (signal.aborted) return fail(new Error("Download cancelled."));
       signal.addEventListener("abort", () => fail(new Error("Download cancelled.")), { once: true });
@@ -2448,7 +2469,7 @@ function downloadFile(url, destPath, onProgress, signal) {
         return fail(new Error(`Refusing to download over ${parsed.protocol.replace(":", "")}.`));
       }
 
-      currentReq = https.get(currentUrl, { headers: { "User-Agent": "emb3r-app" } }, (res) => {
+      const req = startGet(currentUrl, (res) => {
         if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
           if (redirectsLeft <= 0) return fail(new Error("Too many redirects."));
           res.resume();
@@ -2491,7 +2512,9 @@ function downloadFile(url, destPath, onProgress, signal) {
             total,
           });
         });
-        res.on("error", (err) => fail(new Error(describeDownloadError(err, parsed.host, { partway: receivedAny }))));
+        // the server had answered, so whatever happens now is a connection
+        // lost partway, not one that never got going
+        res.on("error", (err) => fail(new Error(describeDownloadError(err, parsed.host, { partway: true }))));
         res.pipe(file);
 
         file.on("finish", () => {
@@ -2507,9 +2530,13 @@ function downloadFile(url, destPath, onProgress, signal) {
           });
         });
       });
+      if (!req) return;
+      currentReq = req;
 
-      currentReq.on("error", (err) => {
-        if (settled) return;
+      req.on("error", (err) => {
+        // an error from a request this download has already moved past - an
+        // earlier redirect hop, or a start that was given up on - is not this one's
+        if (settled || req !== currentReq) return;
         // A connection that never got going is usually a network that dropped
         // for a moment: wait for it and start again from the original link,
         // which also fetches a fresh signed address for the file.
@@ -2765,7 +2792,8 @@ function fetchJson(url) {
         }
       });
     });
-    req.on("error", (e) => reject(new Error(e.message || String(e))));
+    // said in words: a dropped connection here is an empty AggregateError
+    req.on("error", (e) => reject(new Error(describeDownloadError(e, new URL(url).host))));
     req.setTimeout(20000, () => {
       req.destroy();
       reject(new Error("Timed out reading the file list."));
