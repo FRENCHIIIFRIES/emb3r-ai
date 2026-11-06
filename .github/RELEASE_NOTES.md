@@ -1,5 +1,13 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.39.1 — a reason instead of "AggregateError", and your colour stays yours
+
+**Installing a model could end in a single word: "AggregateError".** That is what the part of emb3r that fetches files says when a connection fails on every address a server has — and on a laptop whose Wi-Fi had dropped for a moment, it was all you were told. Now a download that never got started is tried again by itself, after two seconds and then five, and if it still can't connect it says so in words: *couldn't connect to huggingface.co — the internet connection dropped, or this network blocks it*. Her voice and models you add yourself download the same way, so they get the same treatment.
+
+One suspicion was tested and dropped first: the quarter of a second the download code gives each address before trying the next. Even cut to a hundredth of a second, the download connected — the last address is never cut short — so the error only ever meant the connection really was gone.
+
+**Your colour stopped changing by itself.** Music moods — Ember taking her colour from the album cover of whatever Spotify is playing — were switched on for everyone in v1.39.0, though the release note said to turn them on. They are off until you switch them on in Settings → Spotify. If you had turned them on yourself, they stay on.
+
 ## v1.39.0 — she knows the song, a key for everything, and room to share the machine
 
 **Ember knows what you are listening to.** Connect Spotify in Settings and she can see what is playing: ask her about it and she knows the title, the artist and how far in you are. Only the model on this computer is ever told — if a question goes to Gemini or another provider, the song stays here. It shows under her face, and she can pause, skip and go back when you ask, or with Ctrl+Alt+P and Ctrl+Alt with the arrow keys. Turn on **music moods** and her colour takes the album cover's, then gives yours back when the music stops.

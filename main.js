@@ -138,6 +138,12 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.39.1",
+    added: [],
+    fixed: [
+      "Installing a model could fail with nothing but the word 'AggregateError'. A download whose connection drops before it starts is now tried again by itself, and if it still can't connect it tells you why in plain words. The same goes for her voice and for models you add yourself.",
+      "Your colour stopped changing by itself: music moods are off until you turn them on in Settings > Spotify. If you had turned them on yourself, they stay on.",
+    ] },
   { version: "1.39.0",
     added: [
       "Ember knows what you are listening to on Spotify. Ask her about the song and she knows it - and only the model on this computer is ever told. It shows under her face, she can pause, skip and go back when you ask, and with music moods on her colour follows the album cover.",
