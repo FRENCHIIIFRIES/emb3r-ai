@@ -976,9 +976,9 @@ async function startListening() {
     });
   } catch (err) {
     faceHeardEl.textContent = "";
-    faceSaidEl.textContent = err && err.name === "NotAllowedError"
+    talkTrouble(err && err.name === "NotAllowedError"
       ? "The microphone was refused. Windows asks once, under Privacy settings."
-      : "No microphone was found on this computer.";
+      : "No microphone was found on this computer.");
     setFace("deaf");
     return;
   }
@@ -1042,22 +1042,22 @@ async function handleRecording() {
     const pcm = await toSixteenKilohertz(blob);
     if (!pcm || pcm.length < 16000 * 0.3) {
       faceHeardEl.textContent = "";
-      faceSaidEl.textContent = "That was too short to make out - hold the button while you talk.";
+      talkTrouble("That was too short to make out - keep talking a little longer before you stop.");
       setFace("puzzled");
       return;
     }
     const result = await window.emb3r.transcribe({ pcm });
     if (!result || !result.success) {
       faceHeardEl.textContent = "";
-      faceSaidEl.textContent = result && result.needsInstall
+      talkTrouble(result && result.needsInstall
         ? "This build did not ship the listening model."
-        : (result && result.error) || "That could not be transcribed.";
+        : (result && result.error) || "That could not be transcribed.");
       return;
     }
     const heard = String(result.text || "").trim();
     if (!heard) {
       faceHeardEl.textContent = "";
-      faceSaidEl.textContent = "I did not catch that.";
+      talkTrouble("I did not catch that.");
       setFace("puzzled");
       return;
     }
@@ -1080,7 +1080,7 @@ async function handleRecording() {
     }
   } catch (err) {
     faceHeardEl.textContent = "";
-    faceSaidEl.textContent = String(err && err.message ? err.message : err);
+    talkTrouble(String(err && err.message ? err.message : err));
   } finally {
     transcribing = false;
     setFace(restingFace());
@@ -4330,8 +4330,11 @@ spotifyReactToggle.addEventListener("change", async () => {
 // into the conversation - it is a reaction, not something said to her. Never
 // over a reply that is still arriving.
 function reactToSong(text) {
-  if (thinkTimer || !stopButton.hidden) return;
+  // only while the window is seen - hidden, they piled up unread
+  if (document.hidden || thinkTimer || !stopButton.hidden) return;
   const { line, span } = messageLine("bot", "ember");
+  // marked, so "her last reply" (copy it, read it aloud) is never a reaction
+  line.classList.add("reaction");
   span.textContent = text;
   chat.appendChild(line);
   chat.scrollTop = chat.scrollHeight;
@@ -4905,6 +4908,16 @@ settingsTabList.addEventListener("keydown", (e) => {
 let talkCancelled = false;
 let talkAutoStop = null;
 
+// What went wrong with listening, said where it can be seen and heard: on her
+// face in Talk, and in the terminal - where keyboard talking starts too - as a
+// line a screen reader also hears. It used to go only to the face, which is
+// hidden outside Talk, so Ctrl+T there failed in silence (found by review).
+function talkTrouble(text) {
+  faceSaidEl.textContent = text;
+  if (!faceModeOn) systemNote(text);
+  announce(text);
+}
+
 async function toggleTalk() {
   if (listening) { stopTalk(false); return; }
   if (transcribing) return;
@@ -4929,7 +4942,7 @@ function stopTalk(cancel) {
 // ---- her last reply ----------------------------------------------------------
 
 function lastReplyText() {
-  const replies = chat.querySelectorAll(":scope > .bot .msgText");
+  const replies = chat.querySelectorAll(":scope > .bot:not(.reaction) .msgText");
   return replies.length ? replies[replies.length - 1].textContent.trim() : "";
 }
 
@@ -5184,6 +5197,10 @@ async function recordGlobalKey(id, keysEl, statusEl) {
   announce(`Press the new keys for ${GLOBAL_NAMES[id]}, or Escape to cancel.`);
 
   const onKey = (e) => {
+    // Tab moves on, and a recorder that is no longer on screen - Settings
+    // closed, another tab opened - stops, rather than turning the next keys
+    // pressed anywhere in emb3r into a key that works from every app
+    if (e.key === "Tab" || !keysEl.isConnected || keysEl.offsetParent === null) { finish(null); return; }
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") { finish(null); return; }
@@ -5193,6 +5210,12 @@ async function recordGlobalKey(id, keysEl, statusEl) {
         statusEl.textContent = "add Ctrl, Alt or Cmd - Shift alone would take capital letters from every app";
         statusEl.classList.add("bad");
       }
+      return;
+    }
+    // one modifier and a key is the shape of every app's own commands
+    if (acc.split("+").length < 3) {
+      statusEl.textContent = "use two of Ctrl, Alt, Shift or Cmd - one alone would take a key every app uses, like Ctrl+Z";
+      statusEl.classList.add("bad");
       return;
     }
     const inApp = matchShortcut(e, IS_MAC);
@@ -5205,8 +5228,12 @@ async function recordGlobalKey(id, keysEl, statusEl) {
     finish(acc);
   };
 
+  let finished = false;
   async function finish(acc) {
+    if (finished) return;
+    finished = true;
     document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("blur", onBlur);
     let error = null;
     if (acc) {
       const r = await window.emb3r.setGlobalShortcut(id, acc);
@@ -5220,7 +5247,10 @@ async function recordGlobalKey(id, keysEl, statusEl) {
     else announce("Cancelled.");
   }
 
+  // leaving the window for another app ends recording too
+  const onBlur = () => finish(null);
   document.addEventListener("keydown", onKey, true);
+  window.addEventListener("blur", onBlur);
 }
 
 globalKeysToggle.addEventListener("change", async () => {

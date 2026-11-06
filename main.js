@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession, GgmlType } from "node-llama-cpp";
 // the parts of the Spotify features that need neither Electron nor the network
 import {
-  isMusicQuestion, parseMusicCommand, commandReply, musicContext,
+  isMusicQuestion, parseMusicCommand, isBareMusicCommand, commandReply, musicContext,
   describeSpotifyError, dominantColour, reactionLine,
 } from "./music.js";
 // the keys that work from anywhere, and the clipboard made ready to explain
@@ -1286,8 +1286,9 @@ async function disposeQuietly(thing) {
 }
 
 async function releaseLocalModel() {
-  // a reply in progress belongs to the model being let go of
-  if (activeGeneration) activeGeneration.abort();
+  // a reply in progress belongs to the model being let go of: it is stopped
+  // and allowed to finish before the model goes from underneath it
+  await settleGeneration();
   const context = loadedContext;
   const model = loadedModel;
   loadedContext = null;
@@ -1318,7 +1319,21 @@ async function getLlamaPreferringGraphics() {
   return again.gpu ? again : llama;
 }
 
-async function loadLocalModel(filename, { conversationId } = {}) {
+// One load at a time, and only the newest one asked for. A second choice made
+// while a model was still loading - a double click, or another model picked
+// during a 20-77 s switch - ran beside the first: each released nothing, both
+// loaded, and the one overwritten was never let go of. Two copies again, the
+// very thing v1.39.0 said was gone (found by review, 6 November).
+let loadTicket = 0;
+let loadQueue = Promise.resolve();
+function loadLocalModel(filename, options) {
+  const ticket = ++loadTicket;
+  const run = loadQueue.then(() => (ticket === loadTicket ? loadLocalModelNow(filename, options) : undefined));
+  loadQueue = run.catch(() => {});
+  return run;
+}
+
+async function loadLocalModelNow(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   // not a plain join any more: a model the user pointed at lives outside
   // MODELS_DIR, and resolveModelPath is what maps either kind of key to a path
@@ -1854,7 +1869,17 @@ const GLOBAL_ACTIONS = {
 // always happens with the window in front, so the microphone is never open
 // behind something else.
 function summonWindow(message) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // On a Mac, closing the window leaves emb3r running with no window, and the
+  // keys from anywhere used to do nothing - while still taking those keys from
+  // every other app (found by review). They bring the window back instead;
+  // the shortcut is passed on once the new page has loaded and is listening.
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow();
+    mainWindow.webContents.once("did-finish-load", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("emb3r:shortcut", message);
+    });
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -1959,6 +1984,11 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// and on a Mac the Dock icon brings a closed window back, as Mac apps do
+app.on("activate", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow();
 });
 
 // ---- Config / consent IPC ----
@@ -2116,8 +2146,9 @@ ipcMain.handle("emb3r:reset-personality", () => {
 // is where the name lives. While the model is still loading there is nothing
 // to rewrite yet: the load attaches the active profile's conversation when it
 // finishes.
-function useActiveProfile() {
-  if (activeGeneration) activeGeneration.abort();
+async function useActiveProfile() {
+  // the reply in progress is the old profile's, and is saved there first
+  await settleGeneration();
   const profile = activeProfile();
   attachConversation(profile.id, profile.lastConversationId);
   if (chatSession) notifyModelReady();
@@ -2194,33 +2225,33 @@ ipcMain.handle("emb3r:delete-memory", (_e, id) => {
   return { success: true, memories: next };
 });
 
-ipcMain.handle("emb3r:create-profile", (_e, name) => {
+ipcMain.handle("emb3r:create-profile", async (_e, name) => {
   const trimmed = (name || "").trim();
   if (!trimmed) return { success: false, error: "Name can't be empty." };
   const id = `p_${Date.now()}`;
   config.profiles.push({ id, name: trimmed });
   config.activeProfileId = id;
   saveConfig(config);
-  useActiveProfile();
+  await useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
-ipcMain.handle("emb3r:switch-profile", (_e, id) => {
+ipcMain.handle("emb3r:switch-profile", async (_e, id) => {
   const exists = config.profiles.find((p) => p.id === id);
   if (!exists) return { success: false, error: "Profile not found." };
   config.activeProfileId = id;
   saveConfig(config);
-  useActiveProfile();
+  await useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
-ipcMain.handle("emb3r:delete-profile", (_e, id) => {
+ipcMain.handle("emb3r:delete-profile", async (_e, id) => {
   if (config.profiles.length <= 1) return { success: false, error: "Can't delete the only profile." };
   config.profiles = config.profiles.filter((p) => p.id !== id);
   const wasActive = config.activeProfileId === id;
   if (wasActive) config.activeProfileId = config.profiles[0].id;
   saveConfig(config);
-  if (wasActive) useActiveProfile();
+  if (wasActive) await useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
@@ -3804,7 +3835,8 @@ async function spotifyControl(action) {
   }
   let act = action;
   if (act === "toggle") act = (await readNowPlaying()).playing ? "pause" : "play";
-  const call = SPOTIFY_CONTROLS[act];
+  // own keys only: "constructor" and the like are not controls
+  const call = Object.hasOwn(SPOTIFY_CONTROLS, act) ? SPOTIFY_CONTROLS[act] : null;
   if (!call) return { success: false, error: "That isn't something I can do to Spotify." };
   const r = await spotifyApi(call[0], call[1], "control");
   if (!r.ok) {
@@ -3842,6 +3874,21 @@ ipcMain.handle("emb3r:spotify-cover-colour", async (_e, albumId, url) => {
 // ---- Message handling ----
 
 let activeGeneration = null;
+// settles when the reply in progress is over and saved
+let activeGenerationDone = null;
+
+// A reply in progress belongs to the conversation it was asked in. Anything
+// that changes the conversation - a profile, a new chat, an old one, deleting
+// one, another model - stops the reply and waits for it to be over first.
+// Stopping alone was not enough: node-llama-cpp writes the session's history
+// when a stopped prompt returns, a moment later, on top of whatever had been
+// loaded in the meantime; and the reply was then saved into the conversation
+// switched to. Found by review on 6 November - one profile's chat, and the
+// model's memory of it, ended up in another profile's.
+async function settleGeneration() {
+  if (activeGeneration) activeGeneration.abort();
+  if (activeGenerationDone) await activeGenerationDone;
+}
 
 // ---- Gemini web access ----
 //
@@ -4396,6 +4443,17 @@ async function currentMusicContext() {
   return musicContext(fresh ? spotifyLast.data : await readNowPlaying());
 }
 
+// The song is a nicety, and a reply waiting on a stalled network for it is
+// not: the lookup gets three seconds, then the question goes on without it.
+// It runs before the reply exists, so Stop could not reach it either.
+const MUSIC_LOOKUP_MS = 3000;
+function currentMusicContextWithin(ms) {
+  return Promise.race([
+    currentMusicContext().catch(() => null),
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // Checked first, ahead of the model-ready check and ahead of the Gemini
   // decision below. Ahead of the model because these answers are worth giving
@@ -4418,7 +4476,12 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // guard, and ahead of the model-ready check so they work while the model is
   // still loading - and only with Spotify connected, because without it the
   // word is just something said to her.
-  const command = config.spotifyAccessToken ? parseMusicCommand(userMessage) : null;
+  // a bare "next" or "play" is Spotify's only while it has a song to act on;
+  // otherwise it is said to her. "skip this song" goes to Spotify either way.
+  const parsed = config.spotifyAccessToken ? parseMusicCommand(userMessage) : null;
+  const songKnown = Boolean(spotifyLast && spotifyLast.data && spotifyLast.data.track
+    && Date.now() - spotifyLast.at < 120_000);
+  const command = parsed && (songKnown || !isBareMusicCommand(userMessage)) ? parsed : null;
   if (command) {
     const result = await spotifyControl(command);
     const reply = result.success ? result.reply : result.error;
@@ -4482,12 +4545,16 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // remoteFor() is sending the question to Gemini or another provider, what
   // the user is listening to stays here. A web answer will not know which song
   // "this" is; that is the price, and it is the right way round.
-  const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContext() : null;
+  const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContextWithin(MUSIC_LOOKUP_MS) : null;
   const extras = [memories, music, attachmentContext].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();
   activeGeneration = controller;
+  // the conversation this reply belongs to, whichever becomes active meanwhile
+  const conversation = activeConversation;
+  let generationOver;
+  activeGenerationDone = new Promise((resolve) => { generationOver = resolve; });
 
   const startedAt = Date.now();
   let chunks = 0;
@@ -4579,14 +4646,14 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
 
     // an empty reply means generation was stopped before anything came out -
     // nothing meaningful happened, so there is nothing worth persisting
-    if (text && activeConversation) {
+    if (text && conversation) {
       const now = Date.now();
-      const isFirstExchange = activeConversation.messages.length === 0;
-      activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source });
-      activeConversation.messages.push({ role: "model", text, ts: now, source, sources });
-      activeConversation.updatedAt = now;
-      if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
-      saveConversationFile(activeConversation.profileId, activeConversation);
+      const isFirstExchange = conversation.messages.length === 0;
+      conversation.messages.push({ role: "user", text: userMessage, ts: now, source });
+      conversation.messages.push({ role: "model", text, ts: now, source, sources });
+      conversation.updatedAt = now;
+      if (isFirstExchange) conversation.title = deriveTitle(userMessage);
+      saveConversationFile(conversation.profileId, conversation);
 
       // a Gemini exchange never went through chatSession.prompt(), so the
       // local model's own history has no idea it happened. Replaying the
@@ -4595,9 +4662,9 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // actual source, not the original remote intent - a fallback to
       // local after a Gemini failure did go through chatSession.prompt(),
       // so re-syncing here would be redundant.
-      if (source === "gemini") {
+      if (source === "gemini" && conversation === activeConversation) {
         try {
-          chatSession.setChatHistory(toChatHistory(activeConversation));
+          chatSession.setChatHistory(toChatHistory(conversation));
         } catch (err) {
           console.error("Could not sync Gemini turn into local history:", err);
         }
@@ -4622,6 +4689,8 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     return { success: false, error: err.message || String(err) };
   } finally {
     activeGeneration = null;
+    activeGenerationDone = null;
+    generationOver();
   }
 });
 
@@ -4647,23 +4716,29 @@ ipcMain.handle("emb3r:list-conversations", () => {
   return readConversationIndex(profile.id);
 });
 
-ipcMain.handle("emb3r:new-conversation", () => {
+ipcMain.handle("emb3r:new-conversation", async () => {
   const profile = activeProfile();
   if (!profile) return { success: false, error: "No active profile." };
+  // the reply in progress is finished, and saved where it belongs, first
+  await settleGeneration();
   const conv = attachConversation(profile.id, null);
   return { success: true, id: conv.id };
 });
 
-ipcMain.handle("emb3r:load-conversation", (_e, convId) => {
+ipcMain.handle("emb3r:load-conversation", async (_e, convId) => {
   const profile = activeProfile();
   if (!profile) return { success: false, error: "No active profile." };
+  // the reply in progress is finished, and saved where it belongs, first
+  await settleGeneration();
   const conv = attachConversation(profile.id, convId);
   return { success: true, id: conv.id, title: conv.title, messages: conv.messages };
 });
 
-ipcMain.handle("emb3r:delete-conversation", (_e, convId) => {
+ipcMain.handle("emb3r:delete-conversation", async (_e, convId) => {
   const profile = activeProfile();
   if (!profile) return { success: false, error: "No active profile." };
+  // a reply still being written to the chat being deleted would save it back
+  await settleGeneration();
   deleteConversationFile(profile.id, convId);
   // deleting the conversation you are currently in needs somewhere to land -
   // the next most recent one, or a fresh conversation if none are left

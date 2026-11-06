@@ -39,3 +39,12 @@ test("a shortcut needs a key and something more than Shift", () => {
   assert.equal(isUsableAccelerator("Hyper+E"), false);
   assert.equal(isUsableAccelerator(""), false);
 });
+
+test("a key from anywhere never takes one modifier and a key - every app's own commands", () => {
+  for (const taken of ["Control+Z", "Control+V", "Control+C", "Command+V", "Alt+F4", "Control+Home", "Control+Control+V"]) {
+    assert.equal(isUsableAccelerator(taken), false, taken);
+  }
+  for (const fine of ["Control+Alt+Z", "Control+Shift+K", "Alt+Shift+M", "Command+Shift+J", "Control+Alt+Shift+T"]) {
+    assert.equal(isUsableAccelerator(fine), true, fine);
+  }
+});
