@@ -90,6 +90,35 @@
     --boot-letter-glow-2: rgba(194, 65, 12, .35);
 }
 
+/* A quieter tier, drawn from the accent so it follows any colour chosen (and
+   any album's): lines that group without shouting, and secondary text that
+   steps back by losing colour rather than light, so it still reads. The full
+   accent is kept for what you act on and what Ember says. */
+:root{
+    --line: color-mix(in srgb, var(--text-color) 30%, var(--bg-color));
+    --line-strong: color-mix(in srgb, var(--text-color) 58%, var(--bg-color));
+    --quiet: color-mix(in srgb, var(--text-color) 70%, #a7aea9);
+    --ease: cubic-bezier(.2, .7, .2, 1);
+    /* the browser's own sliders, checkboxes and scrollbars take the accent
+       instead of Chromium's blue on white */
+    accent-color: var(--text-color);
+    color-scheme: dark;
+}
+
+[data-theme="light"]{
+    --quiet: color-mix(in srgb, var(--text-color) 72%, #3c443f);
+    color-scheme: light;
+}
+
+html,
+#chat,
+#settingsPanel,
+#shortcutSheetBox,
+#historyPanel{
+    scrollbar-width:thin;
+    scrollbar-color:color-mix(in srgb, var(--text-color) 45%, transparent) transparent;
+}
+
 #colorWheel{
     border-radius:50%;
     cursor:crosshair;
@@ -203,24 +232,37 @@ pre{
     overflow:hidden;
 }
 
+/* While you chat the header steps down to one row, and keeps who she is in it:
+   the salamander with its fire still moving, the wordmark in miniature, her
+   face and mood on the right. It used to fold away to the face alone, which
+   took the creature and the name off the screen for the whole conversation. */
 #pet.compact{
-    padding:8px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:6px 16px;
 }
 
 #pet.compact #logoWrap{
-    max-height:0;
-    opacity:0;
+    max-height:60px;
+    opacity:1;
     margin-bottom:0;
-    overflow:hidden;
+    gap:12px;
+    justify-content:flex-start;
 }
 
+#pet.compact #logoMark{ width:46px; }
+
+#pet.compact #logo{ font-size:7.2px; }
+
 #pet.compact #face{
-    font-size:18px;
+    font-size:22px;
     margin-bottom:0;
 }
 
 #pet.compact #stats{
-    font-size:12px;
+    font-size:13px;
     line-height:1.3;
     gap:14px;
 }
@@ -426,7 +468,7 @@ pre{
 #chat{
     flex:1;
     border:1px solid var(--text-color);
-    padding:12px;
+    padding:14px 16px;
     overflow-y:auto;
     white-space:pre-wrap;
     word-break:break-word;
@@ -546,25 +588,35 @@ pre{
     right:0;
     /* visible as soon as the line exists, not hidden behind a hover - the
        whole-conversation "Copy chat" button was removed in favour of this
-       being discoverable on its own */
-    opacity:0.55;
+       being discoverable on its own. Quiet until the line is pointed at. */
+    opacity:0.4;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:26px;
+    height:26px;
     background:transparent;
     border:none;
     color:inherit;
     cursor:pointer;
-    font-size:13px;
-    padding:2px 4px;
-    line-height:1;
+    padding:0;
+    line-height:0;
     transition:opacity .15s ease;
 }
 
+/* drawn at one pixel a square, the size the old glyph was */
+.copyBtn .icon{ width:12px; height:12px; }
+
+#chat > div:hover > .copyBtn,
+.copyBtn:focus-visible{ opacity:.85; }
+
 .copyBtn:hover{
     opacity:1 !important;
+    background:transparent;
 }
 
 .copyBtn.copied{
     opacity:1;
-    color:#7CFF9E;
 }
 
 #attachBar{
@@ -573,9 +625,13 @@ pre{
     gap:8px;
     margin-top:8px;
     padding:5px 8px;
-    border:1px solid var(--hover-color);
-    font-size:13px;
+    border:1px solid var(--line);
+    font-size:15px;
 }
+
+/* display:flex above beats the browser's own [hidden] rule, so the empty bar
+   was drawn under the transcript all along - the trap #micIndicator documents */
+#attachBar[hidden]{ display:none; }
 
 #attachBar .attachLabel{
     flex:1;
@@ -667,11 +723,66 @@ pre{
     #chat.swapping{ opacity:1; transform:none; }
 }
 
+/* ---- icons and icon buttons ------------------------------------------------
+   The drawings come from src/icons.js; a span.icon is sized here and filled
+   with currentColor, and glows the way the text does. An icon button is just
+   the drawing until it is pointed at - its name and key arrive as a hover
+   label, so the screen stays quiet and nothing is unlabelled. */
+.icon{
+    display:inline-flex;
+    flex:none;
+    width:24px;
+    height:24px;
+}
+
+.icon svg{
+    display:block;
+    width:100%;
+    height:100%;
+    filter:drop-shadow(0 0 var(--glow-small) currentColor);
+}
+
+.iconBtn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    flex:none;
+    width:36px;
+    height:36px;
+    padding:0;
+    border:1px solid transparent;
+    background:transparent;
+    color:var(--text-color);
+    line-height:0;
+    transition:background-color .15s var(--ease), border-color .15s var(--ease), transform .08s ease;
+}
+
+.iconBtn:hover{
+    background:var(--hover-color);
+    border-color:var(--line);
+}
+
+.iconBtn:active:not(:disabled){ transform:translateY(1px); }
+
+.iconBtn:disabled{ opacity:.4; }
+
 #row{
+    display:flex;
+    align-items:stretch;
+    gap:8px;
+    margin-top:10px;
+}
+
+/* The prompt line as it always was - prompt, box, the two tools, [ send ] -
+   each in its own glowing frame, now all one height (the emoji made the attach
+   box 45px in a row of 38) and with drawn icons where [o] and the paperclip
+   emoji were. #bar only groups the box with its tools; it draws nothing. */
+#bar{
+    flex:1;
+    min-width:0;
     display:flex;
     align-items:center;
     gap:8px;
-    margin-top:10px;
 }
 
 #prompt{
@@ -680,32 +791,50 @@ pre{
 
 #input{
     flex:1;
+    min-width:0;
+    height:44px;
+    box-sizing:border-box;
     background:var(--bg-color);
     color:var(--text-color);
     border:1px solid var(--text-color);
-    padding:8px 10px;
+    padding:0 10px;
     font-family:inherit;
     font-size:inherit;
     outline:none;
     text-shadow:0 0 var(--glow-small) var(--text-color);
+    transition:box-shadow .15s var(--ease);
 }
+
+/* a soft phosphor bloom where the typing goes */
+#input:focus{
+    box-shadow:0 0 10px color-mix(in srgb, var(--text-color) 28%, transparent);
+}
+
+#input::placeholder{
+    color:color-mix(in srgb, var(--text-color) 55%, var(--bg-color));
+    text-shadow:none;
+}
+
+#bar .iconBtn,
+.iconBtn.framed{
+    border-color:var(--text-color);
+    background:var(--bg-color);
+}
+
+#bar .iconBtn{
+    width:46px;
+    height:44px;
+}
+
+#bar .iconBtn:hover,
+.iconBtn.framed:hover{ background:var(--hover-color); }
 
 #send,
-#micButton,
-#uploadButton{
-    background:var(--bg-color);
-    color:var(--text-color);
-    border:1px solid var(--text-color);
-    padding:8px 16px;
-    font-family:inherit;
-    font-size:inherit;
-    cursor:pointer;
-    transition:0.15s;
-}
-
-#send:hover,
-#uploadButton:hover{
-    background:var(--hover-color);
+#stopButton{
+    height:44px;
+    box-sizing:border-box;
+    padding:0 16px;
+    white-space:nowrap;
 }
 
 #send:disabled{
@@ -721,16 +850,17 @@ pre{
     background:var(--bg-color);
     color:#ffb020;
     border:1px solid #ffb020;
-    padding:8px 16px;
-    font-family:inherit;
-    font-size:inherit;
-    cursor:pointer;
     text-shadow:0 0 4px #ff6a00;
 }
+
+#stopButton[hidden]{ display:none; }
 
 #stopButton:hover:not(:disabled){
     background:#241a08;
 }
+
+[data-theme="light"] #stopButton{ color:#b45309; border-color:#b45309; text-shadow:none; }
+[data-theme="light"] #stopButton:hover:not(:disabled){ background:#fdf0dc; }
 
 /* the generation meter reuses the download bar's glyphs, so it needs the same
    font - VT323 lacks the block characters and the bar would jitter */
@@ -748,8 +878,8 @@ pre{
     display:flex;
     justify-content:flex-end;
     align-items:center;
-    gap:8px;
-    margin-bottom:12px;
+    gap:4px;
+    margin-bottom:10px;
 }
 
 #netIndicator{
@@ -757,8 +887,8 @@ pre{
     align-items:center;
     gap:6px;
     margin-right:auto; /* status light hugs the left, buttons stay right */
-    font-size:13px;
-    opacity:0.6;
+    font-size:15px;
+    color:var(--quiet);
     white-space:nowrap;
     transition:opacity .2s ease, color .2s ease;
 }
@@ -966,10 +1096,13 @@ pre{
     cursor:not-allowed;
 }
 
+/* The notes say what leaves the machine and what each setting does, so they
+   should be the easiest text here to read: VT323's small letters made 13px
+   about 5px tall. 15px is the floor, and quieter by colour, not by fading. */
 .settingsNote{
-    font-size:13px;
-    opacity:0.7;
-    line-height:1.5;
+    font-size:15px;
+    color:var(--quiet);
+    line-height:1.45;
     margin:8px 0 0;
 }
 
@@ -1013,17 +1146,31 @@ pre{
     position:absolute;
     top:calc(100% + 6px);
     right:0;
-    width:260px;
-    max-height:340px;
+    width:300px;
+    max-height:min(420px, calc(100vh - 90px));
     overflow-y:auto;
     background:var(--bg-color);
-    border:1px solid var(--text-color);
-    padding:10px;
+    border:1px solid var(--line-strong);
+    box-shadow:0 12px 32px rgba(0, 0, 0, .55);
+    padding:6px;
     z-index:1500;
 }
 
+[data-theme="light"] #historyPanel{ box-shadow:0 12px 32px rgba(20, 60, 35, .18); }
+
+/* it drops from the button that opened it, so you see where it came from */
 #historyWrap.open #historyPanel{
     display:block;
+    animation:menuIn .14s var(--ease);
+}
+
+@keyframes menuIn{
+    from{ opacity:0; transform:translateY(-4px); }
+    to{ opacity:1; transform:none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+    #historyWrap.open #historyPanel{ animation:none; }
 }
 
 #newChatButton{
@@ -1037,31 +1184,46 @@ pre{
    at is a button in disguise. */
 #historyPanel > #faceButton,
 #historyPanel > #settingsButton,
+#historyPanel > #sheetButton,
 #newChatButton{
+    display:flex;
+    align-items:center;
+    gap:10px;
     width:100%;
     margin:0 0 2px;
-    padding:5px 6px;
+    padding:5px 8px;
     text-align:left;
     border:none;
     background:transparent;
-    font-size:14px;
-    letter-spacing:0.04em;
+    font-size:18px;
+    line-height:1.2;
+    letter-spacing:0.02em;
 }
 
 #historyPanel > #faceButton:hover,
 #historyPanel > #settingsButton:hover,
+#historyPanel > #sheetButton:hover,
 #newChatButton:hover{
     background:var(--hover-color);
 }
 
-/* The bracketed glyph in front of each row. Dimmed, because it is punctuation
-   telling you where the row starts, not a second thing to read. */
-.menuKey{
-    opacity:0.55;
-    margin-right:8px;
+.menuLabel{ flex:1; }
+
+/* A row's key, at the right, shown once the row is pointed at or reached with
+   the arrows: the list stays quiet until you are choosing from it. Read from
+   keys.js, so it cannot disagree with what the key does. */
+.menuShortcut{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    color:var(--quiet);
+    text-shadow:none;
+    white-space:nowrap;
+    opacity:0;
+    transition:opacity .12s var(--ease);
 }
 
-#historyPanel > button:hover .menuKey{ opacity:1; }
+#historyPanel > button:hover .menuShortcut,
+#historyPanel > button:focus-visible .menuShortcut{ opacity:1; }
 
 /* Drawn with characters rather than a border, so the rule belongs to the same
    drawing as everything around it. */
@@ -1079,13 +1241,10 @@ pre{
     content:"────────────────────────────";
 }
 
-/* The trigger, bracketed like [ send ] and [ stop ] elsewhere. */
-#historyButton{
-    width:auto;
-    min-width:44px;
-    font-size:14px;
-    line-height:1;
-    letter-spacing:0.08em;
+/* the trigger is open while its menu is */
+#historyWrap.open #historyButton{
+    background:var(--hover-color);
+    border-color:var(--line);
 }
 
 .historyRow{
@@ -1093,9 +1252,9 @@ pre{
     align-items:center;
     justify-content:space-between;
     gap:6px;
-    padding:6px 4px;
-    font-size:14px;
-    border-bottom:1px solid var(--hover-color);
+    padding:5px 4px 5px 8px;
+    font-size:17px;
+    border-bottom:1px solid color-mix(in srgb, var(--text-color) 12%, transparent);
     cursor:pointer;
 }
 
@@ -1119,17 +1278,34 @@ pre{
     white-space:nowrap;
 }
 
+/* a chat's delete: the cross, quiet until its row is pointed at */
 .historyRow button{
-    width:auto;
-    padding:1px 7px;
-    font-size:12px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:26px;
+    height:26px;
+    padding:0;
+    border:1px solid transparent;
+    background:transparent;
+    line-height:0;
     flex-shrink:0;
+    opacity:.35;
+    transition:opacity .12s var(--ease);
 }
 
+.historyRow button .icon{ width:12px; height:12px; }
+
+.historyRow:hover button,
+.historyRow:focus-visible button,
+.historyRow button:focus-visible{ opacity:1; }
+
+.historyRow button:hover{ border-color:var(--line); background:var(--bg-color); }
+
 .historyEmpty{
-    font-size:13px;
-    opacity:0.6;
-    padding:6px 4px;
+    font-size:16px;
+    color:var(--quiet);
+    padding:6px 8px;
 }
 
 #title{
@@ -1456,14 +1632,28 @@ pre{
     -webkit-background-clip:text;
     background-clip:text;
     color:transparent;
-    filter:drop-shadow(0 0 calc(var(--glow) * 1.5) var(--text-color));
+    /* --glow-big: there has never been a --glow, so this computed to none and
+       the warming below never showed */
+    filter:drop-shadow(0 0 calc(var(--glow-big) * 1.5) var(--text-color));
 }
 
 /* Listening warms the glow. The state has to be readable from across a room -
    the point of this view is that you are not looking at it closely. */
 #app.listening #faceBig{
-    filter:drop-shadow(0 0 calc(var(--glow) * 3) var(--text-color));
+    filter:drop-shadow(0 0 calc(var(--glow-big) * 3) var(--text-color));
 }
+
+/* The koi, or her face: one of the two, chosen in Settings > Display. */
+#faceKoi{
+    margin:0;
+    font-family:inherit;
+    font-size:clamp(8px, 1.15vw, 19px);
+    line-height:1;
+    white-space:pre;
+}
+
+#app.talkFace #faceKoi,
+#app:not(.talkFace) #faceBig{ display:none; }
 
 #faceHeard{
     max-width:44ch;
@@ -1572,20 +1762,23 @@ pre{
     opacity:0.75;
 }
 
+/* The view's only instruction, so it is the one line in it that has to be
+   easy to read: was 13px capitals at 45% (3.8:1); now 16px, sentence case,
+   quieter by colour rather than by fading. */
 #faceHint{
-    font-size:13px;
-    letter-spacing:0.14em;
-    text-transform:uppercase;
-    opacity:0.45;
+    font-size:16px;
+    letter-spacing:0.03em;
+    color:var(--quiet);
 }
 
+/* the way back sits top left, where a way back is looked for */
 #faceExit{
-    width:auto;
-    opacity:0.6;
-    background:transparent;
+    position:absolute;
+    top:0;
+    left:0;
 }
 
-#faceExit:hover{ opacity:1; }
+#faceMode{ position:relative; }
 
 /* Someone who has asked for less movement gets a face that changes on state
    and not on a timer. The mouth still opens while Ember speaks - that is
@@ -2534,13 +2727,207 @@ canvas:focus-visible,
 
 #app{
     display:none;
-    flex-direction:column;
+    flex-direction:row;
+    gap:14px;
     height:100%;
+    min-height:0;
 }
 
 #app.visible{
     display:flex;
 }
+
+/* everything that was the whole window is now the right-hand column */
+#main{
+    flex:1;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+}
+
+/* ---- the sidebar: tutors pinned at the top, chats under them --------------- */
+#sidebar{
+    flex:0 0 236px;
+    /* a long chat title is cut with an ellipsis, never allowed to widen this */
+    min-width:0;
+    max-width:236px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    min-height:0;
+    box-sizing:border-box;
+    padding:10px 10px 8px;
+    border:1px solid var(--text-color);
+}
+
+/* Talk is a view for not looking at the screen; Settings is a page of its own.
+   Neither needs the list beside it. A window too narrow for both columns
+   keeps the conversation. */
+#app.faceMode #sidebar{ display:none; }
+
+@media (max-width: 720px){
+    #sidebar{ display:none; }
+}
+
+/* A section's name, written the way the transcript writes a note to itself. */
+.sideLabel{
+    margin:0;
+    font-size:16px;
+    font-weight:400;
+    line-height:1.2;
+    color:var(--quiet);
+}
+
+.sideLabel::before{ content:"// "; }
+
+.sideLabelRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+}
+
+.iconBtn.small{ width:28px; height:28px; }
+
+#tutorDock{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+}
+
+/* Eight tutors, eight pictures, nothing else until one is pointed at - then
+   its name, in the label every icon here uses. 64px, so each square of the
+   32-square drawing is two whole pixels (three at 150% scaling). */
+#tutorGrid{
+    display:grid;
+    grid-template-columns:repeat(3, 64px);
+    justify-content:space-between;
+    gap:4px 0;
+}
+
+.tutorBtn{
+    position:relative;
+    width:64px;
+    height:64px;
+    padding:0;
+    border:1px solid transparent;
+    background:transparent;
+    line-height:0;
+    transition:background-color .15s var(--ease), border-color .15s var(--ease);
+}
+
+.tutorBtn img{
+    display:block;
+    width:64px;
+    height:64px;
+    margin:-1px;
+    transition:transform .15s var(--ease);
+}
+
+.tutorBtn:hover,
+.tutorBtn:focus-visible{
+    background:color-mix(in srgb, var(--tutor) 16%, transparent);
+    border-color:var(--tutor);
+}
+
+.tutorBtn:hover img,
+.tutorBtn:focus-visible img{ transform:translateY(-2px); }
+
+@media (prefers-reduced-motion: reduce){
+    .tutorBtn img{ transition:none; }
+    .tutorBtn:hover img, .tutorBtn:focus-visible img{ transform:none; }
+}
+
+#chatsSection{
+    flex:1;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+}
+
+#historyList{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    margin:0 -4px;
+    scrollbar-width:thin;
+    scrollbar-color:color-mix(in srgb, var(--text-color) 45%, transparent) transparent;
+}
+
+#sidebar .historyRow{
+    border-bottom:none;
+    border-left:2px solid transparent;
+    padding:4px 2px 4px 8px;
+    font-size:17px;
+}
+
+#sidebar .historyRow.active{
+    font-weight:400;
+    color:var(--user-text-color);
+    background:var(--hover-color);
+    border-left-color:var(--text-color);
+}
+
+#sideFoot{
+    display:flex;
+    gap:6px;
+    padding-top:8px;
+    border-top:1px solid var(--line);
+}
+
+/* the tutor whose chat is open, marked where you chose it */
+.tutorBtn.current{
+    border-color:var(--tutor);
+    background:color-mix(in srgb, var(--tutor) 12%, transparent);
+}
+
+.historyTutor{
+    flex:none;
+    width:16px;
+    height:16px;
+    margin-right:6px;
+}
+
+/* A tutor's chat says so above the transcript: its picture, its name in its
+   colour, and where it answers. */
+#tutorBar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:8px;
+    padding:4px 10px;
+    border:1px solid var(--tutor);
+    background:color-mix(in srgb, var(--tutor) 10%, transparent);
+}
+
+#tutorBar[hidden],
+#app.faceMode #tutorBar,
+#app.settingsOpen #tutorBar{ display:none; }
+
+#tutorBar img{ width:32px; height:32px; }
+
+.tutorBarName{
+    font-size:20px;
+    color:var(--tutor);
+    text-shadow:0 0 var(--glow-small) var(--tutor);
+}
+
+.tutorBarWhere{
+    margin-left:auto;
+    font-size:15px;
+    color:var(--quiet);
+}
+
+/* on white the bright tutor colours are too pale for text; the name takes the
+   theme's ink and the colour stays in the frame and the picture */
+[data-theme="light"] .tutorBarName,
+[data-theme="contrast"] .tutorBarName{
+    color:var(--text-color);
+    text-shadow:none;
+}
+
+.tutorHint{ margin-top:6px; }
 /* ============================= */
 /* Accessibility                 */
 /* ============================= */
@@ -2562,6 +2949,10 @@ body{ font-size:1rem; }
     --hover-color:#333333 !important;
     --glow-small:0px !important;
     --glow-big:0px !important;
+    /* no quiet tier here: every line and every word at full strength */
+    --line:#ffffff !important;
+    --line-strong:#ffffff !important;
+    --quiet:#ffffff !important;
 }
 
 [data-theme="contrast"] .settingsNote,
@@ -2621,6 +3012,70 @@ html.easyRead #faceBig{
     font-family:"VT323", "JetBrains Mono", monospace;
 }
 
+/* ---- hover labels ----------------------------------------------------------
+   One label, drawn by emb3r rather than by Windows, moved to whatever is being
+   pointed at (renderer.js, "hover labels"). It says the control's name and the
+   key that does the same thing. aria-hidden: the name is already the
+   control's own accessible name, and reading it twice would be noise. */
+#tip{
+    position:fixed;
+    top:0;
+    left:0;
+    z-index:4000;
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    max-width:300px;
+    padding:3px 9px 4px;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--line-strong);
+    box-shadow:0 6px 18px rgba(0, 0, 0, .5);
+    font-size:17px;
+    line-height:1.2;
+    white-space:nowrap;
+    pointer-events:none;
+    text-shadow:0 0 var(--glow-small) var(--text-color);
+    opacity:0;
+    transform:translateY(3px);
+    transition:opacity .12s var(--ease), transform .12s var(--ease);
+}
+
+#tip.below{ transform:translateY(-3px); }
+
+#tip.on{
+    opacity:1;
+    transform:none;
+}
+
+#tip kbd{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    color:var(--quiet);
+    text-shadow:none;
+}
+
+[data-theme="light"] #tip{ box-shadow:0 6px 18px rgba(20, 60, 35, .16); }
+
+@media (prefers-reduced-motion: reduce){
+    #tip{ transition:none; transform:none; }
+}
+
+/* The way back from Settings, with its arrow drawn like the other icons. */
+#closeSettings{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+}
+
+/* inline code in Settings was the browser's monospace, larger than the text
+   round it */
+.settingsSection code{
+    font-family:"JetBrains Mono", monospace;
+    font-size:.8em;
+    text-shadow:none;
+}
+
 /* the shortcut sheet: the same frame as "what's new" */
 #shortcutSheet{
     position:fixed;
@@ -2650,6 +3105,10 @@ html.easyRead #faceBig{
 #shortcutSheetBox h3{
     margin-top:0;
 }
+
+/* the sheet takes focus when it opens so it starts at its top; the frame is
+   already its outline */
+#shortcutSheetBox:focus-visible{ outline:none; }
 
 #shortcutSheetButtons{
     margin-top:16px;
@@ -2870,6 +3329,30 @@ kbd.shortcutKeys{
 
 <div id="app">
 
+<!-- The left side: the tutors, pinned, then your chats. Both used to be out of
+     sight - the chats behind the menu, the tutors nowhere - and they are the
+     two things a student comes back to. -->
+<aside id="sidebar" aria-label="Tutors and chats">
+    <section id="tutorDock" aria-labelledby="tutorDockTitle">
+        <h2 class="sideLabel" id="tutorDockTitle">tutors</h2>
+        <!-- filled from TUTORS in renderer.js -->
+        <div id="tutorGrid" role="group" aria-labelledby="tutorDockTitle"></div>
+    </section>
+    <section id="chatsSection" aria-labelledby="chatsTitle">
+        <div class="sideLabelRow">
+            <h2 class="sideLabel" id="chatsTitle">chats</h2>
+            <button id="sideNewChat" class="iconBtn small" data-tip="New chat" data-tip-key="newChat" aria-label="New chat"><span class="icon" data-icon="plus"></span></button>
+        </div>
+        <div id="historyList"></div>
+    </section>
+    <div id="sideFoot">
+        <button id="sideSettings" class="iconBtn" data-tip="Settings" data-tip-key="settings" aria-label="Settings"><span class="icon" data-icon="settings"></span></button>
+        <button id="sideKeys" class="iconBtn" data-tip="Every shortcut" data-tip-key="sheet" aria-label="Every shortcut"><span class="icon" data-icon="keys"></span></button>
+    </div>
+</aside>
+
+<div id="main">
+
 <div id="topbar">
     <!-- the whole privacy claim in one glance: this only lights up while
          something is actually leaving the machine. Sits left of the buttons
@@ -2888,25 +3371,29 @@ kbd.shortcutKeys{
          three buttons competing for the corner with the network indicator, which
          is the one thing up here that is a promise rather than a control. They
          are now behind a single menu, and the indicator has the room. -->
+    <!-- The two things a student reaches for most, as icons, and the menu for
+         the rest. Each one names itself and its key on hover (see "hover
+         labels" in renderer.js); the icons are drawn in src/icons.js on the
+         same pixel grid as the mark, never borrowed from an emoji font. -->
+    <button id="talkTopButton" class="iconBtn framed" data-tip="Talk to Ember" data-tip-key="talkView" aria-label="Talk to Ember"><span class="icon" data-icon="talk"></span></button>
     <div id="historyWrap">
-        <button id="historyButton" title="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="historyPanel" aria-label="Menu, with history">[ &equiv; ]</button>
+        <button id="historyButton" class="iconBtn framed" data-tip="Menu" data-tip-key="menu" aria-haspopup="true" aria-expanded="false" aria-controls="historyPanel" aria-label="Menu, with history"><span class="icon" data-icon="menu"></span></button>
         <div id="historyPanel" role="menu" aria-label="Menu">
-            <!-- The microphone, drawn rather than borrowed from an emoji font:
-                 a round head on a stem, in the same characters the rest of the
-                 interface is built from. An emoji here would be the one glyph
-                 on screen rendered by somebody else's typeface. -->
-            <button id="faceButton" role="menuitem" title="Talk to Ember"><span class="menuKey">[o]</span> talk</button>
-            <button id="settingsButton" role="menuitem"><span class="menuKey">[=]</span> settings</button>
+            <!-- Each row: its icon, its name, and its key - the key shown when
+                 the row is pointed at or reached with the arrows, so the list
+                 stays quiet until you are choosing from it. -->
+            <button id="faceButton" role="menuitem"><span class="icon" data-icon="talk"></span><span class="menuLabel">talk</span><kbd class="menuShortcut" data-key="talkView"></kbd></button>
+            <button id="settingsButton" role="menuitem"><span class="icon" data-icon="settings"></span><span class="menuLabel">settings</span><kbd class="menuShortcut" data-key="settings"></kbd></button>
+            <button id="sheetButton" role="menuitem"><span class="icon" data-icon="keys"></span><span class="menuLabel">every shortcut</span><kbd class="menuShortcut" data-key="sheet"></kbd></button>
             <div class="menuRule"></div>
-            <button id="newChatButton" role="menuitem"><span class="menuKey">[+]</span> new chat</button>
-            <div id="historyList"></div>
+            <button id="newChatButton" role="menuitem"><span class="icon" data-icon="plus"></span><span class="menuLabel">new chat</span><kbd class="menuShortcut" data-key="newChat"></kbd></button>
         </div>
     </div>
 </div>
 
 <div id="settingsPanel">
     <div id="settingsHeader">
-        <button id="closeSettings">← Back to chat</button>
+        <button id="closeSettings"><span class="icon" data-icon="back"></span>Back to chat</button>
         <h2>Settings</h2>
     </div>
 
@@ -2941,7 +3428,7 @@ kbd.shortcutKeys{
     <div class="settingsSection active" data-tab="account">
         <h3>Account</h3>
         <div id="profileList"></div>
-        <label>New profile name</label>
+        <label for="newProfileName">New profile name</label>
         <input type="text" id="newProfileName" placeholder="e.g. Ziyan">
         <button id="addProfileButton">Add Profile</button>
     </div>
@@ -2995,7 +3482,7 @@ kbd.shortcutKeys{
 
     <div class="settingsSection" data-tab="personality">
         <h3>Personality</h3>
-        <label>What Ember is told to be, before every reply</label>
+        <label for="personalityInput">What Ember is told to be, before every reply</label>
         <textarea id="personalityInput" rows="4" placeholder="Loading..."></textarea>
         <div id="personalityButtons">
             <button id="personalitySave">Save</button>
@@ -3013,7 +3500,7 @@ kbd.shortcutKeys{
         </div>
         <p class="settingsNote">Off means remembered facts are never consulted and cost nothing.
         They are kept, not deleted.</p>
-        <label>Things Ember should remember about you between conversations</label>
+        <label for="memoryInput">Things Ember should remember about you between conversations</label>
         <input type="text" id="memoryInput" maxlength="200" autocomplete="off"
                placeholder="e.g. I'm learning Python, and I prefer short answers">
         <div><button id="memoryAdd">Remember this</button></div>
@@ -3027,7 +3514,7 @@ kbd.shortcutKeys{
 
     <div class="settingsSection" data-tab="spotify">
         <h3>Spotify</h3>
-        <label>Client ID</label>
+        <label for="spotifyClientIdInput">Client ID</label>
         <input type="text" id="spotifyClientIdInput" placeholder="from developer.spotify.com">
         <button id="spotifyConnectButton">Connect Spotify</button>
         <div id="spotifyStatusText" style="font-size:15px; margin-top:4px;"></div>
@@ -3046,7 +3533,7 @@ kbd.shortcutKeys{
 
     <div class="settingsSection" data-tab="web">
         <h3>Web access</h3>
-        <label>Gemini API key — lets Ember search the web for questions that look like they need current information (news, prices, "today", etc). Optional; without a key, Ember only ever answers from the local model.</label>
+        <label for="geminiKeyInput">Gemini API key — lets Ember search the web for questions that look like they need current information (news, prices, "today", etc). Optional; without a key, Ember only ever answers from the local model.</label>
         <input type="password" id="geminiKeyInput" placeholder="paste your key" autocomplete="off">
         <div id="geminiButtons">
             <button id="geminiKeySave">Save</button>
@@ -3056,7 +3543,7 @@ kbd.shortcutKeys{
         <div id="geminiKeyStatus"></div>
         <p class="settingsNote">Get a key from <b>aistudio.google.com/apikey</b>. New keys start with <code>AQ.</code>; older ones start with <code>AIza</code> and Google stops accepting those in September 2026. Both work here. Use <b>Test key</b> after saving — it makes one real request and tells you exactly what Google said, rather than leaving you to find out when a reply quietly comes from the local model instead.</p>
 
-        <label>Gemini model — leave this empty unless you have a reason not to. Empty means <code>gemini-flash-latest</code>, an alias Google repoints at its current Flash model, so it keeps working as models come and go. Naming a specific version instead (<code>gemini-3.6-flash</code>, <code>gemini-2.5-pro</code>) pins you to that one, and older versions stop being offered to new accounts.</label>
+        <label for="geminiModelInput">Gemini model — leave this empty unless you have a reason not to. Empty means <code>gemini-flash-latest</code>, an alias Google repoints at its current Flash model, so it keeps working as models come and go. Naming a specific version instead (<code>gemini-3.6-flash</code>, <code>gemini-2.5-pro</code>) pins you to that one, and older versions stop being offered to new accounts.</label>
         <input type="text" id="geminiModelInput" placeholder="gemini-flash-latest" autocomplete="off">
         <div id="geminiModelButtons">
             <button id="geminiModelSave">Save</button>
@@ -3149,8 +3636,12 @@ kbd.shortcutKeys{
 
     <div class="settingsSection" data-tab="display">
         <h3>Display</h3>
-        <label>Accent Color</label>
-        <canvas id="colorWheel" width="150" height="150"></canvas>
+        <!-- Every control here has a label tied to it with for, and each slider
+             says its value, so a screen reader names it and a sighted person
+             does not have to guess what "20" means. -->
+        <label>Accent colour</label>
+        <canvas id="colorWheel" width="150" height="150" role="img" aria-label="Colour wheel - pick the accent"></canvas>
+        <label for="lightness">Lightness - <span id="lightnessValue">55%</span></label>
         <input type="range" id="lightness" min="20" max="80" value="55">
 
         <label for="accentHex">Or type a hex code</label>
@@ -3162,18 +3653,25 @@ kbd.shortcutKeys{
         </div>
         <div id="accentHexStatus"></div>
 
-        <label>Theme</label>
+        <label for="themeSelect">Theme</label>
         <select id="themeSelect">
             <option value="dark">Dark</option>
             <option value="light">Light</option>
             <option value="contrast">High contrast</option>
         </select>
 
-        <label>Font Size</label>
+        <label for="fontSize">Font size - <span id="fontSizeValue">20px</span></label>
         <input type="range" id="fontSize" min="12" max="28" value="20">
 
-        <label>Phosphor Glow</label>
+        <label for="glowIntensity">Phosphor glow - <span id="glowValue">6</span></label>
         <input type="range" id="glowIntensity" min="0" max="20" value="6">
+
+        <!-- Who is on the Talk screen: the koi by default, or Ember's own face. -->
+        <label for="talkAvatarSelect">On the Talk screen</label>
+        <select id="talkAvatarSelect">
+            <option value="koi">The koi</option>
+            <option value="face">Ember's face</option>
+        </select>
 
         <div id="soundToggleRow">
             <input type="checkbox" id="soundToggle" checked>
@@ -3343,6 +3841,10 @@ kbd.shortcutKeys{
     <!-- The same face as the one beside the mood bar, at size. aria-hidden
          because a row of brackets says nothing useful to a screen reader;
          #faceSaid below carries the actual words. -->
+    <!-- The koi: two fish circling, drawn in text by src/koi.js, reacting to
+         listening, thinking and speaking. Ember's own face below is the other
+         choice, in Settings > Display. -->
+    <pre id="faceKoi" aria-hidden="true"></pre>
     <pre id="faceBig" aria-hidden="true">( ^_^ )</pre>
     <!-- what Ember is saying, in text, for anyone who cannot hear it and for
          anyone whose speakers are off. aria-live so a screen reader gets the
@@ -3360,11 +3862,14 @@ kbd.shortcutKeys{
         <span id="faceMicDot"></span><span id="faceMicLabel">hold to talk</span>
     </button>
     <div id="faceHint">hold the button or the spacebar, or press Ctrl+T to start and stop · Esc to go back</div>
-    <button id="faceExit">[ back to the terminal ]</button>
+    <button id="faceExit" class="iconBtn" data-tip="Back to the chat" data-tip-keys="Esc" aria-label="Back to the chat"><span class="icon" data-icon="back"></span></button>
 </div>
 
+<!-- whose chat this is, when it is a tutor's: filled by showTutorBar() -->
+<div id="tutorBar" hidden></div>
+
 <div id="chat" role="log" aria-live="off" aria-label="Conversation">
-<span class="dim">// ember terminal ready. type below and hit enter.</span>
+<span class="dim">// ember terminal ready. type below and hit enter · ctrl+/ for every key</span>
 </div>
 
 <!-- persists between messages: a large attachment is worth several questions,
@@ -3372,26 +3877,33 @@ kbd.shortcutKeys{
 <div id="attachBar" hidden></div>
 
 <div id="row">
-<span id="prompt">&gt;</span>
+<!-- One prompt line, the way a shell has one: the prompt, the box, and the two
+     tools that put words into it, inside a single frame. Send stands outside
+     it as the one solid button on the screen. -->
+<div id="bar">
+<span id="prompt" aria-hidden="true">&gt;</span>
 <input
     id="input"
     autocomplete="off"
+    aria-label="Message"
     placeholder="say something..."
 >
 <!-- Dictation for the terminal. Same microphone as face mode, different
      ending: there the transcript is sent, here it is put in the box so it can
      be read and corrected first. Speech recognition is wrong often enough that
      sending unseen text is worse than one extra keypress. -->
-<button id="micButton" title="Hold to speak" aria-label="Talk">[o]</button>
-<button id="uploadButton" title="Attach a file" aria-label="Attach a file">📎</button>
+<button id="micButton" class="iconBtn" data-tip="Hold to speak" data-tip-key="talk" aria-label="Talk"><span class="icon" data-icon="mic"></span></button>
+<button id="uploadButton" class="iconBtn" data-tip="Attach a file" data-tip-key="attach" aria-label="Attach a file"><span class="icon" data-icon="attach"></span></button>
 <input type="file" id="fileInput"
     accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.odt,.ods,.odp,.rtf,.epub,.txt,.md,.markdown,.rst,.csv,.tsv,.json,.jsonl,.yaml,.yml,.xml,.log,.ini,.cfg,.conf,.toml,.js,.mjs,.cjs,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cc,.cs,.php,.sh,.bash,.zsh,.ps1,.sql,.html,.htm,.css,.scss,.less,.vue,.svelte,.r,.lua,.dart,.tex,.srt,.vtt,text/*">
-<button id="send">[ send ]</button>
-<button id="stopButton" title="Stop generating" hidden>[ stop ]</button>
+</div>
+<button id="send" data-tip="Send" data-tip-keys="Enter">[ send ]</button>
+<button id="stopButton" data-tip="Stop her reply" data-tip-keys="Esc" hidden>[ stop ]</button>
 </div>
 <div id="genStats" aria-live="off"></div>
 
-</div>
+</div><!-- /main -->
+</div><!-- /app -->
 
 <!-- What a screen reader is told, once: a finished reply, an error, what a
      shortcut did. The transcript itself is not live, or every streamed word
@@ -3401,7 +3913,7 @@ kbd.shortcutKeys{
 <!-- Every key, built from src/keys.js when it opens, so the list cannot fall
      out of step with what the keys actually do. -->
 <div id="shortcutSheet" role="dialog" aria-modal="true" aria-labelledby="shortcutSheetTitle">
-    <div id="shortcutSheetBox">
+    <div id="shortcutSheetBox" tabindex="-1">
         <h3 id="shortcutSheetTitle">Shortcuts</h3>
         <div id="shortcutSheetBody"></div>
         <div id="shortcutSheetButtons">
@@ -3411,6 +3923,8 @@ kbd.shortcutKeys{
 </div>
 
 <script src="./keys.js"></script>
+<script src="./icons.js"></script>
+<script src="./koi.js"></script>
 <script src="./renderer.js"></script>
 
 </body>
