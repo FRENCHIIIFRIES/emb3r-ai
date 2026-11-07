@@ -61,6 +61,7 @@
       "access.js",
       "downloads.js",
       "tutors.js",
+      "study.js",
       "preload.cjs",
       "src/**/*",
       "build/icon.png",
