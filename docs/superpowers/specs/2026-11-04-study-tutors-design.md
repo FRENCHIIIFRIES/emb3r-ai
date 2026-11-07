@@ -89,7 +89,7 @@ It teaches **any language** the student picks on its page — French, Spanish, H
 
 ### Where Study lives
 
-**Study** is an entry in the corner menu for everyone, beside Talk, with a key of its own. It opens the tutor picker; a tutor opens its page; review, the draft list and explanations happen inside the Study screen, not in the chat.
+*Revised 7 November, after v1.40.0.* The tutors are pinned in the left sidebar (the user asked for "a pane for the study people which is pinned"), and clicking one opens that tutor's chat. A tutor's cards live with its chat: the tutor bar above the transcript has a **cards** button (and a key), which swaps the transcript for the tutor's deck — the same way Settings swaps in for the chat — and Esc goes back to the chat. Review, the draft list and explanations happen there, not in the transcript.
 
 ### Making cards
 
@@ -139,11 +139,14 @@ These come from a review of the current interface (screens, Talk, Settings) that
 
 Each stage is its own pull request, measured and released.
 
-1. **Study: tutors, decks, review, explain**, with the avatars and the Study screen. Cards made from a topic.
-2. **Cards from files and from the chat**, and the draft list.
-3. **Talking to a tutor, goals, check-ins.**
-4. **The koi in Talk.** Independent; can move earlier.
-5. **The UI improvements the user picks.**
+Shipped in v1.40.0 (7 November): the tutors pinned in the sidebar with their avatars; talking to a tutor (local only, on the installed model that suits its subject: Qwen2.5 3B for maths and the sciences, Llama 3.2 3B for the rest, never a reasoning model); the koi in Talk; the UI improvements, all five of them, plus the review's small bugs.
+
+Left, in this order:
+
+1. **Cards: decks, review, explain.** The deck behind the tutor bar's cards button; cards made from a topic or pasted notes, arriving as a draft list; review with Space and 1/2/3; explain with E. Leitner boxes as above.
+2. **The tutors' models at first launch.** The user asked for them to be "preinstalled". One GitHub file cannot exceed 2 GB and the two models are about 3.7 GB together, so they cannot ride in the installer; first-run setup fetches them after the model it already offers, with the same permission question, on machines with the memory for them.
+3. **Cards from files and from the chat.**
+4. **Goals and check-ins.**
 
 ## Left to the builder
 
@@ -170,9 +173,4 @@ Each stage is its own pull request, measured and released.
 
 ## Status
 
-Three pieces are being made in parallel as drafts for review, in `emb3r evidence\staging\`:
-- the koi animation (`koi\`);
-- the tutor avatars (`tutors\`);
-- a mockup of the Study screens, with a review of the current UI (`study-ui\`).
-
-None of them is in the app until this document is approved.
+The avatars, the koi and the UI review were made as drafts in `emb3r evidence\staging\` and approved by the user ("they look good"); all three shipped in v1.40.0. The Study mockup (`study-ui\study.html`) set the deck, review and explain screens; its tutor picker was replaced by the sidebar after the user asked for "just the icons, and when you hover over it, it shows". Cards are next (Order, step 1).
