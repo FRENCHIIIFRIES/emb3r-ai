@@ -3508,6 +3508,24 @@ const setupSkipBtn = document.getElementById("setupSkip");
 
 let setupModelId = null;
 
+// The tutors' models, offered on the same screen and fetched one after another
+// once the recommended model is in place - so a fresh install has every tutor
+// ready. They cannot ride in the installer (GitHub limits a file to 2 GB).
+const setupTutorRow = document.getElementById("setupTutorRow");
+const setupTutorBox = document.getElementById("setupTutorModels");
+const setupTutorLabel = document.getElementById("setupTutorLabel");
+let setupTutorModels = [];
+let setupTutorQueue = [];
+
+function describeTutorModels(models) {
+  setupTutorModels = models || [];
+  setupTutorRow.hidden = setupTutorModels.length === 0;
+  if (!setupTutorModels.length) return;
+  const total = setupTutorModels.reduce((sum, m) => sum + m.sizeGB, 0);
+  const names = setupTutorModels.map((m) => m.name).join(" and ");
+  setupTutorLabel.textContent = `also get the tutors' models - ${names}, about ${total.toFixed(1)} GB more - so every tutor is ready from the start`;
+}
+
 function setSetupButtonsEnabled(enabled) {
   setupDownloadBtn.disabled = !enabled || !setupModelId;
   setupSkipBtn.disabled = !enabled;
@@ -3727,6 +3745,7 @@ async function maybeRunFirstTimeSetup() {
 
   setupModelId = state.recommended ? state.recommended.id : null;
   describePick(state);
+  describeTutorModels(state.recommended ? state.tutorModels : []);
   setSetupButtonsEnabled(true);
   setupModal.classList.add("open");
 
@@ -3751,6 +3770,7 @@ window.emb3r.onHardwareUpdated(async () => {
     describeGpu(state.gpu);
   setupModelId = state.recommended ? state.recommended.id : null;
   describePick(state);
+  describeTutorModels(state.recommended ? state.tutorModels : []);
   if (state.recommended) fillDownloadEstimate(state.recommended.sizeGB);
 });
 
@@ -4240,15 +4260,42 @@ async function startDownload(modelId) {
     await refreshModelList();
     setProgressText(modelId, `${progressBar(100)}  done`);
     if (setupModal.classList.contains("open")) {
-      await selectModel(modelsCache.find((m) => m.id === modelId).file);
+      if (modelId === setupModelId) {
+        // the model chosen on this screen is the one Ember answers on; the
+        // tutors' models are only fetched, never selected
+        await selectModel(modelsCache.find((m) => m.id === modelId).file);
+        setupTutorQueue = setupTutorBox.checked && !setupTutorRow.hidden
+          ? setupTutorModels.map((m) => m.id).filter((id) => id !== modelId)
+          : [];
+      }
+      if (nextSetupDownload()) return;
       setupProgressEl.textContent = "ready.";
       setTimeout(() => setupModal.classList.remove("open"), 900);
     }
   } else {
     renderModelList();
     setProgressText(modelId, result.cancelled ? "cancelled" : `failed: ${result.error}`);
+    // a tutor's model that would not come is not a failed setup: Ember already
+    // has hers, and the tutor offers its model again in its chat
+    if (setupModal.classList.contains("open") && modelId !== setupModelId) {
+      const m = setupTutorModels.find((x) => x.id === modelId);
+      setupProgressEl.textContent = `${m ? m.name : modelId} did not download${result.error ? ` (${result.error})` : ""} - its tutors will offer it again.`;
+      if (nextSetupDownload()) return;
+      setTimeout(() => setupModal.classList.remove("open"), 2500);
+      return;
+    }
     setSetupButtonsEnabled(true);
   }
+}
+
+// the next of the tutors' models during setup, if any are left
+function nextSetupDownload() {
+  const next = setupTutorQueue.shift();
+  if (!next) return false;
+  const m = setupTutorModels.find((x) => x.id === next);
+  setupProgressEl.textContent = `now ${m ? m.name : next}, for the tutors...`;
+  startDownload(next);
+  return true;
 }
 
 async function cancelDownload(modelId) {

@@ -17,7 +17,7 @@ import {
 import { DEFAULT_GLOBALS, prepareClipboard, isUsableAccelerator } from "./access.js";
 import { DOWNLOAD_ATTEMPTS, RETRY_DELAYS_MS, describeDownloadError, isRetryableConnectionError } from "./downloads.js";
 // the eight subject tutors: their prompts and which model suits each
-import { TUTORS, isTutor, tutorPrompt, preferredModelFor, bestModelFor } from "./tutors.js";
+import { TUTORS, TUTOR_MODELS, isTutor, tutorPrompt, preferredModelFor, bestModelFor } from "./tutors.js";
 // a tutor's flashcards: decks, Leitner boxes, prompts, cards read as they come
 import {
   isDeckId, tutorOfDeck, parseDeck, addCards, schedule, dueCards, cutNotes,
@@ -2448,8 +2448,22 @@ ipcMain.handle("emb3r:setup-state", async () => {
     recommended: best,
     why: explainRecommendation(best, ram, gpu),
     speedNote: best ? modelSpeedNote(best, ram, gpu) : null,
+    tutorModels: tutorModelsToFetch(ram, best),
   };
 });
+
+// The tutors' models a fresh install could fetch during setup, after the one it
+// recommends: those the tutors use (tutors.js), not on this computer yet, not
+// the recommended one itself, and only where this machine has the memory for
+// them. They cannot come inside the installer - GitHub limits a file to 2 GB.
+function tutorModelsToFetch(ram, recommended) {
+  const files = [...new Set([...TUTOR_MODELS.stem, ...TUTOR_MODELS.general])];
+  const installed = installedModelFiles();
+  return files
+    .map((file) => MODEL_CATALOG.find((m) => m.file === file))
+    .filter((m) => m && !installed.includes(m.file) && m.minRamGB <= ram && (!recommended || m.id !== recommended.id))
+    .map((m) => ({ id: m.id, name: m.name, sizeGB: m.sizeGB }));
+}
 
 // Deliberately cheap and synchronous-feeling (no GPU probe, no disk-space
 // check) - the boot screen calls this once to find out whether it needs to

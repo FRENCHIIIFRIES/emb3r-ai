@@ -3368,6 +3368,18 @@ kbd.shortcutKeys{
     margin-top:6px;
 }
 
+#setupTutorRow{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    margin-top:10px;
+    font-size:16px;
+}
+
+#setupTutorRow[hidden]{ display:none; }
+
+#setupTutorRow input{ margin-top:4px; }
+
 #globalKeysRow,
 #easyReadRow,
 #contrastRow{
@@ -3511,6 +3523,12 @@ kbd.shortcutKeys{
         <p>emb3r runs a language model on your own machine — nothing is sent to a server. It needs to download one first.</p>
         <div id="setupHardware"></div>
         <div id="setupPick"></div>
+        <!-- the tutors' models, fetched after the one above so every tutor is
+             ready from the start; filled in by maybeRunFirstTimeSetup() -->
+        <div id="setupTutorRow" hidden>
+            <input type="checkbox" id="setupTutorModels" checked>
+            <label for="setupTutorModels" id="setupTutorLabel">also get the tutors' models</label>
+        </div>
         <div id="setupProgress"></div>
         <div id="setupButtons">
             <button id="setupSkip">I'll choose later</button>
