@@ -2929,6 +2929,192 @@ canvas:focus-visible,
 
 .tutorHint{ margin-top:6px; }
 
+/* ---- the cards panel: a tutor's deck, in place of the transcript ----------
+   The same glowing frame as the conversation it replaces; the card itself in
+   the tutor's colour. Swapped in by a class on #app, like Settings. */
+#cardsPanel{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    box-sizing:border-box;
+    padding:14px 16px;
+    border:1px solid var(--text-color);
+}
+
+#app.cardsOpen #chat,
+#app.cardsOpen #row,
+#app.cardsOpen #attachBar,
+#app.cardsOpen #genStats{ display:none; }
+
+#cardsPanel[hidden],
+#app.faceMode #cardsPanel,
+#app.settingsOpen #cardsPanel,
+#cardsDeck[hidden],
+#cardsReview[hidden],
+#cardsDrafts[hidden],
+#cardsExplanation[hidden],
+#cardsLanguageRow[hidden],
+#cardsRateRow[hidden],
+#cardsFlipRow[hidden],
+#cardBack[hidden],
+#cardsStop[hidden]{ display:none; }
+
+#cardsDeck,
+#cardsReview{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    min-height:100%;
+}
+
+.cardsHeadRow{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.cardsRow{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+.cardsQuiet{
+    color:var(--quiet);
+    font-size:16px;
+}
+
+#cardsSource,
+#cardsLanguage,
+#cardsAnswer,
+.draft textarea{
+    box-sizing:border-box;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    font-family:inherit;
+    font-size:18px;
+    padding:6px 10px;
+    text-shadow:0 0 var(--glow-small) var(--text-color);
+}
+
+#cardsSource{ resize:vertical; min-height:4.5em; }
+
+#cardsLanguageRow{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+#cardsLanguage{ width:14ch; }
+
+#cardsStudy{ align-self:flex-start; }
+
+#cardsDraftList{
+    margin:0;
+    padding-left:2em;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+
+.draft{
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap:8px;
+    align-items:start;
+}
+
+.draft textarea{
+    width:100%;
+    font-size:17px;
+    resize:vertical;
+}
+
+.draft.dropped textarea{
+    opacity:.35;
+    text-decoration:line-through;
+}
+
+.draft button{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:32px;
+    height:32px;
+    padding:0;
+    line-height:0;
+}
+
+.draft button .icon{ width:12px; height:12px; }
+
+/* the card: the tutor's colour round it, the question large, the answer
+   under a dashed rule once it is turned over */
+#cardFace{
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:16px;
+    min-height:170px;
+    padding:20px 24px;
+    border:1px solid var(--tutor, var(--text-color));
+    background:color-mix(in srgb, var(--tutor, var(--text-color)) 7%, transparent);
+}
+
+#cardFront{
+    font-size:26px;
+    line-height:1.3;
+}
+
+#cardBack{
+    font-size:21px;
+    line-height:1.4;
+    color:var(--user-text-color);
+    border-top:1px dashed var(--line-strong);
+    padding-top:14px;
+}
+
+#cardsPanel kbd{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    margin-right:6px;
+    padding:0 4px;
+    border:1px solid var(--line-strong);
+    text-shadow:none;
+}
+
+#cardsExplainText{
+    white-space:pre-wrap;
+    font-size:18px;
+    line-height:1.45;
+    padding-left:12px;
+    border-left:2px solid var(--tutor, var(--line-strong));
+}
+
+#cardsAnswer{ flex:1; min-width:14ch; }
+
+/* While an explanation is open the card steps down to a strip, so the
+   explanation fits under it in a 650px window instead of below the fold. */
+#cardsReview.explaining #cardFace{
+    min-height:0;
+    gap:6px;
+    padding:8px 14px;
+}
+
+#cardsReview.explaining #cardFront{ font-size:19px; }
+#cardsReview.explaining #cardBack{ font-size:16px; padding-top:6px; }
+
+.cardsHint{
+    margin-top:auto;
+    padding-top:6px;
+    text-align:center;
+}
+
 .tutorGet{
     margin-left:4px;
     padding:1px 8px;
@@ -3874,6 +4060,69 @@ kbd.shortcutKeys{
 <!-- whose chat this is, when it is a tutor's: filled by showTutorBar() -->
 <div id="tutorBar" hidden></div>
 
+<!-- A tutor's flashcards, in place of the transcript while open: the deck,
+     the drafts the model makes, a review session, an explanation. Built by
+     renderer.js ("the cards panel"); Esc steps back out one layer at a time. -->
+<section id="cardsPanel" hidden aria-label="Flashcards">
+    <div id="cardsDeck">
+        <div class="cardsHeadRow">
+            <h2 class="sideLabel" id="cardsTitle">cards</h2>
+            <span id="cardsCount" class="cardsQuiet"></span>
+        </div>
+        <div id="cardsLanguageRow" hidden>
+            <label for="cardsLanguage">Language</label>
+            <input id="cardsLanguage" list="cardsLanguages" maxlength="24" autocomplete="off" value="French">
+            <datalist id="cardsLanguages">
+                <option value="French"></option>
+                <option value="Spanish"></option>
+                <option value="Hindi"></option>
+                <option value="German"></option>
+            </datalist>
+        </div>
+        <button id="cardsStudy">[ study now ]</button>
+        <label for="cardsSource" class="cardsQuiet">make cards from a topic, or paste your notes</label>
+        <textarea id="cardsSource" rows="3" placeholder="e.g. osmosis - or paste a page of your notes"></textarea>
+        <div class="cardsRow">
+            <button id="cardsMake">[ make cards ]</button>
+            <button id="cardsStop" hidden>[ stop ]</button>
+            <span id="cardsStatus" class="cardsQuiet" aria-live="polite"></span>
+        </div>
+        <div id="cardsDrafts" hidden>
+            <div class="cardsHeadRow"><h2 class="sideLabel">drafts - keep, change or drop each one</h2></div>
+            <ol id="cardsDraftList"></ol>
+            <button id="cardsKeep">[ add to the deck ]</button>
+        </div>
+    </div>
+    <div id="cardsReview" hidden>
+        <div class="cardsHeadRow">
+            <h2 class="sideLabel">review</h2>
+            <span id="cardsLeft" class="cardsQuiet"></span>
+        </div>
+        <div id="cardFace" aria-live="polite">
+            <div id="cardFront"></div>
+            <div id="cardBack" hidden></div>
+        </div>
+        <div id="cardsFlipRow" class="cardsRow">
+            <button id="cardsFlip"><kbd>Space</kbd> show the answer</button>
+        </div>
+        <div id="cardsRateRow" class="cardsRow" hidden>
+            <button data-rate="again"><kbd>1</kbd> again <span class="cardsQuiet">this session</span></button>
+            <button data-rate="good"><kbd>2</kbd> good <span class="cardsQuiet" data-when="good"></span></button>
+            <button data-rate="easy"><kbd>3</kbd> easy <span class="cardsQuiet" data-when="easy"></span></button>
+            <button id="cardsExplain"><kbd>E</kbd> explain</button>
+        </div>
+        <div id="cardsExplanation" hidden>
+            <div id="cardsExplainText" aria-live="polite"></div>
+            <div class="cardsRow">
+                <input id="cardsAnswer" maxlength="500" autocomplete="off" aria-label="Your answer to the question" placeholder="answer the question...">
+                <button id="cardsAnswerSend">[ check ]</button>
+                <button id="cardsDifferently">[ explain it differently ]</button>
+            </div>
+        </div>
+        <div class="cardsHint cardsQuiet">Space turns the card · 1 again · 2 good · 3 easy · E explain · Esc back</div>
+    </div>
+</section>
+
 <div id="chat" role="log" aria-live="off" aria-label="Conversation">
 <span class="dim">// ember terminal ready. type below and hit enter · ctrl+/ for every key</span>
 </div>
@@ -3931,6 +4180,7 @@ kbd.shortcutKeys{
 <script src="./keys.js"></script>
 <script src="./icons.js"></script>
 <script src="./koi.js"></script>
+<script src="./cards.js"></script>
 <script src="./renderer.js"></script>
 
 </body>

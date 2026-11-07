@@ -20,6 +20,7 @@
     { id: "focusInput", keys: { mod: true, code: "KeyL" }, label: "Jump to the message box", group: "Moving around" },
     { id: "escape", keys: { code: "Escape" }, label: "Stop what is happening, or close what is open", group: "Moving around" },
     { id: "attach", keys: { mod: true, code: "KeyO" }, label: "Attach a file", group: "Messages" },
+    { id: "cards", keys: { mod: true, shift: true, code: "KeyD" }, label: "A tutor's cards - in a tutor's chat", group: "Studying" },
     { id: "copyLast", keys: { mod: true, shift: true, code: "KeyC" }, label: "Copy her last reply", group: "Messages" },
     { id: "zoomIn", keys: { mod: true, anyShift: true, code: ["Equal", "NumpadAdd"] }, label: "Zoom in", group: "Seeing" },
     { id: "zoomOut", keys: { mod: true, anyShift: true, code: ["Minus", "NumpadSubtract"] }, label: "Zoom out", group: "Seeing" },

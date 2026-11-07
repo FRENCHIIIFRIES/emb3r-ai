@@ -1569,7 +1569,8 @@ input.addEventListener("keydown", (e) => { if (e.key === "Enter") onSend(); });
 input.addEventListener("focus", () => petEl.classList.add("compact"));
 input.addEventListener("blur", () => {
   const empty = !chat.querySelector(".you, .bot");
-  if (empty && !input.value.trim() && !thinkTimer) petEl.classList.remove("compact");
+  // the cards need the room as much as a conversation does
+  if (empty && !input.value.trim() && !thinkTimer && !appEl.classList.contains("cardsOpen")) petEl.classList.remove("compact");
 });
 
 // =============================
@@ -2453,7 +2454,7 @@ async function renderActiveConversationHistory() {
     // conversation was a blank panel with no indication it was working.
     if (!conv || !conv.messages.length) {
       // an empty chat is a fresh start: the full header, unless you are typing
-      if (document.activeElement !== input) petEl.classList.remove("compact");
+      if (document.activeElement !== input && !appEl.classList.contains("cardsOpen")) petEl.classList.remove("compact");
       const empty = document.createElement("span");
       empty.className = "dim";
       // the platform asked here rather than through IS_MAC, which is declared
@@ -5097,8 +5098,12 @@ function tutorById(id) {
 // The tutor bar: whose chat this is, above the transcript, in the tutor's own
 // colour - and the tutor's picture marked in the sidebar.
 const tutorBar = document.getElementById("tutorBar");
+let currentTutorId = null;
 function showTutorBar(tutorId) {
   const t = tutorById(tutorId);
+  currentTutorId = t ? t.id : null;
+  // the cards belong to the tutor whose chat this is; another chat closes them
+  if (appEl.classList.contains("cardsOpen") && (!t || !cardsTutor || cardsTutor.id !== t.id)) closeCards({ focus: false });
   appEl.classList.toggle("tutorChat", Boolean(t));
   for (const b of tutorGrid.querySelectorAll(".tutorBtn")) {
     const on = Boolean(t) && b.dataset.tutor === t.id;
@@ -5120,8 +5125,348 @@ function showTutorBar(tutorId) {
   where.className = "tutorBarWhere";
   const note = tutorModelNote && tutorModelNote.tutor === t.id ? tutorModelNote : null;
   where.textContent = note && note.model ? `on this computer · ${note.model}` : "on this computer";
-  tutorBar.replaceChildren(img, name, where);
+  const cardsButton = document.createElement("button");
+  cardsButton.id = "tutorCardsButton";
+  cardsButton.textContent = "[ cards ]";
+  cardsButton.dataset.tip = `${t.name} flashcards`;
+  cardsButton.dataset.tipKey = "cards";
+  cardsButton.setAttribute("aria-keyshortcuts", keyFor("cards").replace(/Ctrl/g, "Control").replace(/Cmd/g, "Meta"));
+  cardsButton.addEventListener("click", () => toggleCards());
+  tutorBar.replaceChildren(img, name, where, cardsButton);
 }
+
+// ---- the cards panel ------------------------------------------------------------
+//
+// A tutor's flashcards, in place of the transcript while open: its deck, cards
+// made by the model on this computer from a topic or pasted notes (arriving as
+// drafts the student keeps, changes or drops - nothing joins the deck unseen),
+// a review session, and an explanation of the card in front of you. Where a
+// card comes back is decided in study.js; the order of this session in
+// src/cards.js.
+
+const CARDS = window.emb3rCards;
+const STUDY = window.emb3r.study;
+const cardsPanel = document.getElementById("cardsPanel");
+const cardsDeckEl = document.getElementById("cardsDeck");
+const cardsReviewEl = document.getElementById("cardsReview");
+const cardsTitle = document.getElementById("cardsTitle");
+const cardsCount = document.getElementById("cardsCount");
+const cardsLanguageRow = document.getElementById("cardsLanguageRow");
+const cardsLanguage = document.getElementById("cardsLanguage");
+const cardsStudy = document.getElementById("cardsStudy");
+const cardsSource = document.getElementById("cardsSource");
+const cardsMake = document.getElementById("cardsMake");
+const cardsStop = document.getElementById("cardsStop");
+const cardsStatus = document.getElementById("cardsStatus");
+const cardsDraftsEl = document.getElementById("cardsDrafts");
+const cardsDraftList = document.getElementById("cardsDraftList");
+const cardsKeep = document.getElementById("cardsKeep");
+const cardsLeft = document.getElementById("cardsLeft");
+const cardFront = document.getElementById("cardFront");
+const cardBack = document.getElementById("cardBack");
+const cardsFlipRow = document.getElementById("cardsFlipRow");
+const cardsRateRow = document.getElementById("cardsRateRow");
+const cardsExplanation = document.getElementById("cardsExplanation");
+const cardsExplainText = document.getElementById("cardsExplainText");
+const cardsAnswer = document.getElementById("cardsAnswer");
+
+let cardsTutor = null;
+let cardsDeckId = null;
+let cardsDeckCards = [];
+let cardsDrafts = [];
+let cardsDraftProfile = null;
+let cardsMaking = false;
+let cardsSession = null;
+let cardsExplaining = false;
+let cardsLastExplanation = "";
+
+// the same rule as deckIdFor in study.js; the main process checks it again
+function deckIdForTutor(t) {
+  if (t.id !== "languages") return t.id;
+  const slug = (cardsLanguage.value.trim() || "French").toLowerCase().replace(/[ -]+/g, "-").replace(/^-+|-+$/g, "");
+  return `languages-${slug}`;
+}
+
+function toggleCards() {
+  if (appEl.classList.contains("cardsOpen")) { closeCards(); return; }
+  if (!currentTutorId) { flashNote("The cards are a tutor's - open a tutor on the left first."); return; }
+  openCards(currentTutorId);
+}
+
+async function openCards(tutorId) {
+  const t = tutorById(tutorId);
+  if (!t) return;
+  cardsTutor = t;
+  cardsPanel.style.setProperty("--tutor", t.colour);
+  cardsLanguageRow.hidden = t.id !== "languages";
+  cardsSession = null;
+  cardsReviewEl.hidden = true;
+  cardsDeckEl.hidden = false;
+  cardsStatus.textContent = "";
+  appEl.classList.add("cardsOpen");
+  cardsPanel.hidden = false;
+  // the header steps down to its row, as it does for a conversation
+  petEl.classList.add("compact");
+  await refreshDeck();
+  cardsSource.focus();
+  announce(`${t.name} cards. ${cardsCount.textContent}.`);
+}
+
+function closeCards({ focus = true } = {}) {
+  if (cardsMaking || cardsExplaining) STUDY.stop();
+  appEl.classList.remove("cardsOpen");
+  cardsPanel.hidden = true;
+  cardsSession = null;
+  if (focus) input.focus();
+}
+
+async function refreshDeck() {
+  if (!cardsTutor) return;
+  cardsDeckId = deckIdForTutor(cardsTutor);
+  const lang = cardsTutor.id === "languages" ? ` (${cardsLanguage.value.trim() || "French"})` : "";
+  cardsTitle.textContent = `${cardsTutor.name.toLowerCase()} cards${lang.toLowerCase()}`;
+  const r = await STUDY.deck(cardsDeckId);
+  if (!r || !r.success) {
+    cardsDeckCards = [];
+    cardsCount.textContent = cardsTutor.id === "languages" ? "type the language in letters" : (r && r.error) || "";
+    cardsStudy.disabled = true;
+    return;
+  }
+  cardsDeckCards = r.deck.cards;
+  cardsCount.textContent = r.deck.cards.length ? `${r.due} due of ${r.deck.cards.length}` : "no cards yet";
+  cardsStudy.disabled = r.due === 0;
+  cardsStudy.textContent = r.due ? `[ study now - ${r.due} due ]` : "[ nothing due ]";
+}
+
+cardsLanguage.addEventListener("change", () => refreshDeck());
+
+// ---- making cards
+
+async function makeCards() {
+  const text = cardsSource.value.trim();
+  if (!text) { cardsStatus.textContent = "type a topic, or paste your notes"; cardsSource.focus(); return; }
+  // a line is a topic; more than that is notes, and the cards come only from them
+  const asNotes = text.length > 120 || text.includes("\n");
+  cardsMaking = true;
+  cardsMake.hidden = true;
+  cardsStop.hidden = false;
+  cardsDrafts = [];
+  renderDrafts();
+  cardsStatus.textContent = "making cards on this computer... [ stop ] keeps what is made";
+  const r = await STUDY.generate(cardsDeckId, asNotes ? { notes: text } : { topic: text });
+  cardsMaking = false;
+  cardsMake.hidden = false;
+  cardsStop.hidden = true;
+  if (!r || !r.success) {
+    const why = (r && r.error) || "Could not make cards.";
+    cardsStatus.textContent = why;
+    announce(why);
+    return;
+  }
+  cardsDraftProfile = r.profileId || null;
+  cardsDrafts = r.drafts.map((d) => ({ ...d, keep: true }));
+  renderDrafts();
+  const n = r.drafts.length;
+  const said = n
+    ? `${n} draft card${n === 1 ? "" : "s"}${r.stopped ? ", stopped early" : ""}${r.cut ? " - your notes were long, so only the first part was used" : ""}. keep, change or drop each one.`
+    : "no cards came back - try a more particular topic.";
+  cardsStatus.textContent = said;
+  announce(said);
+}
+
+STUDY.onProgress(({ deckId, drafts }) => {
+  if (!cardsMaking || deckId !== cardsDeckId) return;
+  cardsDrafts = drafts.map((d) => ({ ...d, keep: true }));
+  renderDrafts();
+  cardsStatus.textContent = `${drafts.length} made so far... [ stop ] keeps them`;
+});
+
+function renderDrafts() {
+  cardsDraftList.replaceChildren();
+  cardsDraftsEl.hidden = cardsDrafts.length === 0;
+  cardsDrafts.forEach((d, i) => {
+    const li = document.createElement("li");
+    li.className = "draft" + (d.keep ? "" : " dropped");
+    const front = document.createElement("textarea");
+    front.rows = 2;
+    front.value = d.front;
+    front.setAttribute("aria-label", `Card ${i + 1}, front`);
+    front.addEventListener("input", () => { d.front = front.value; });
+    const back = document.createElement("textarea");
+    back.rows = 2;
+    back.value = d.back;
+    back.setAttribute("aria-label", `Card ${i + 1}, back`);
+    back.addEventListener("input", () => { d.back = back.value; });
+    const drop = document.createElement("button");
+    drop.appendChild(iconSpan(d.keep ? "close" : "plus"));
+    drop.dataset.tip = d.keep ? "Drop this card" : "Keep it after all";
+    drop.setAttribute("aria-label", d.keep ? `Drop card ${i + 1}` : `Keep card ${i + 1}`);
+    drop.setAttribute("aria-pressed", String(!d.keep));
+    drop.addEventListener("click", () => { d.keep = !d.keep; renderDrafts(); });
+    li.append(front, back, drop);
+    cardsDraftList.appendChild(li);
+  });
+  const kept = cardsDrafts.filter((d) => d.keep).length;
+  cardsKeep.textContent = `[ add ${kept} to the deck ]`;
+  cardsKeep.disabled = kept === 0 || cardsMaking;
+}
+
+async function keepDrafts() {
+  const kept = cardsDrafts.filter((d) => d.keep).map((d) => ({ front: d.front, back: d.back, source: d.source }));
+  if (!kept.length) return;
+  const r = await STUDY.add(cardsDeckId, kept, cardsDraftProfile);
+  if (!r || !r.success) { cardsStatus.textContent = (r && r.error) || "Could not add them."; return; }
+  cardsDrafts = [];
+  renderDrafts();
+  cardsSource.value = "";
+  const said = `${r.added} added to the deck${r.skipped ? ` - ${r.skipped} skipped, empty or already in it` : ""}.`;
+  cardsStatus.textContent = said;
+  announce(said);
+  await refreshDeck();
+}
+
+// ---- reviewing
+
+const BOX_DAYS_SHOWN = [0, 1, 3, 7, 16];
+function comesBack(card, rating) {
+  const box = Math.min(5, (card.box || 1) + (rating === "easy" ? 2 : 1));
+  const days = BOX_DAYS_SHOWN[box - 1];
+  return days === 1 ? "tomorrow" : `in ${days} days`;
+}
+
+function startReview() {
+  const now = Date.now();
+  const due = cardsDeckCards.filter((c) => c.due <= now).sort((a, b) => a.due - b.due);
+  if (!due.length) return;
+  cardsSession = CARDS.startSession(due);
+  cardsDeckEl.hidden = true;
+  cardsReviewEl.hidden = false;
+  showCard();
+}
+
+function showCard() {
+  const c = CARDS.current(cardsSession);
+  if (!c) { finishReview(); return; }
+  cardFront.textContent = c.front;
+  cardBack.textContent = c.back;
+  cardBack.hidden = !cardsSession.flipped;
+  cardsFlipRow.hidden = cardsSession.flipped;
+  cardsRateRow.hidden = !cardsSession.flipped;
+  cardsExplanation.hidden = true;
+  cardsReviewEl.classList.remove("explaining");
+  cardsLeft.textContent = `${CARDS.left(cardsSession)} left`;
+  cardsRateRow.querySelector('[data-when="good"]').textContent = comesBack(c, "good");
+  cardsRateRow.querySelector('[data-when="easy"]').textContent = comesBack(c, "easy");
+  announce(cardsSession.flipped ? `Answer: ${c.back}` : `${c.front}`);
+  (cardsSession.flipped ? cardsRateRow.querySelector('[data-rate="good"]') : document.getElementById("cardsFlip")).focus({ preventScroll: true });
+}
+
+function flipCard() {
+  if (!cardsSession || cardsSession.flipped) return;
+  cardsSession = CARDS.flip(cardsSession);
+  showCard();
+}
+
+async function rateCard(rating) {
+  if (!cardsSession || !cardsSession.flipped || cardsExplaining) return;
+  const { session, rated } = CARDS.rate(cardsSession, rating);
+  cardsSession = session;
+  showCard();
+  const r = await STUDY.rate(cardsDeckId, rated.cardId, rating);
+  if (!r || !r.success) flashNote((r && r.error) || "That rating was not saved.");
+}
+
+async function finishReview() {
+  cardsSession = null;
+  cardsReviewEl.hidden = true;
+  cardsDeckEl.hidden = false;
+  await refreshDeck();
+  const said = "that's everything due. well done.";
+  cardsStatus.textContent = said;
+  announce(said);
+  cardsStudy.focus();
+}
+
+// ---- explaining
+
+async function explainCard(mode = "explain") {
+  const c = cardsSession && CARDS.current(cardsSession);
+  if (!c || cardsExplaining) return;
+  const answer = cardsAnswer.value.trim();
+  if (mode === "answer" && !answer) { cardsAnswer.focus(); return; }
+  cardsExplaining = true;
+  cardsExplanation.hidden = false;
+  cardsReviewEl.classList.add("explaining");
+  if (mode === "answer") {
+    cardsExplainText.textContent += `\n\n> ${answer}\n`;
+    cardsAnswer.value = "";
+  } else {
+    cardsExplainText.textContent = "";
+  }
+  const r = await STUDY.explain(cardsDeckId, c.id, mode === "answer"
+    ? { mode, explanation: cardsLastExplanation, answer }
+    : { mode });
+  cardsExplaining = false;
+  if (!r || !r.success) {
+    cardsExplainText.textContent += (r && r.error) || "Could not explain it.";
+    return;
+  }
+  if (mode !== "answer") cardsLastExplanation = r.text;
+  cardsPanel.scrollTop = cardsPanel.scrollHeight;
+  announce(r.text);
+  if (mode !== "answer") cardsAnswer.focus({ preventScroll: true });
+}
+
+STUDY.onExplain(({ text }) => {
+  if (!cardsExplaining) return;
+  cardsExplainText.textContent += text;
+  // the newest words stay in view as they arrive
+  cardsPanel.scrollTop = cardsPanel.scrollHeight;
+});
+
+// ---- Esc, one layer at a time: an answer being written, the explanation, the
+// session, then the panel itself
+function cardsEscape() {
+  if (cardsMaking || cardsExplaining) { STUDY.stop(); return; }
+  if (!cardsExplanation.hidden && cardsSession) { cardsExplanation.hidden = true; showCard(); return; }
+  if (cardsSession) { finishReview(); return; }
+  closeCards();
+}
+
+cardsStudy.addEventListener("click", startReview);
+cardsMake.addEventListener("click", makeCards);
+cardsStop.addEventListener("click", () => STUDY.stop());
+cardsKeep.addEventListener("click", keepDrafts);
+document.getElementById("cardsFlip").addEventListener("click", flipCard);
+for (const b of cardsRateRow.querySelectorAll("[data-rate]")) b.addEventListener("click", () => rateCard(b.dataset.rate));
+document.getElementById("cardsExplain").addEventListener("click", () => explainCard("explain"));
+document.getElementById("cardsDifferently").addEventListener("click", () => explainCard("differently"));
+document.getElementById("cardsAnswerSend").addEventListener("click", () => explainCard("answer"));
+cardsAnswer.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); explainCard("answer"); } });
+cardsSource.addEventListener("keydown", (e) => {
+  // Enter makes cards from a one-line topic; Shift+Enter starts a new line of notes
+  if (e.key === "Enter" && !e.shiftKey && !cardsSource.value.includes("\n")) { e.preventDefault(); makeCards(); }
+});
+
+// the review's single keys - never while a box has the keyboard
+document.addEventListener("keydown", (e) => {
+  if (!appEl.classList.contains("cardsOpen") || cardsReviewEl.hidden || !cardsSession) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = e.target && e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (e.key === " " || e.code === "Space") { e.preventDefault(); flipCard(); return; }
+  if (e.key === "1") { e.preventDefault(); rateCard("again"); return; }
+  if (e.key === "2") { e.preventDefault(); rateCard("good"); return; }
+  if (e.key === "3") { e.preventDefault(); rateCard("easy"); return; }
+  if (e.key === "e" || e.key === "E") { e.preventDefault(); explainCard("explain"); }
+});
+// Space presses the focused button on release too; the keydown already flipped
+document.addEventListener("keyup", (e) => {
+  if (appEl.classList.contains("cardsOpen") && cardsSession && (e.key === " " || e.code === "Space")) {
+    const tag = e.target && e.target.tagName;
+    if (tag !== "INPUT" && tag !== "TEXTAREA") e.preventDefault();
+  }
+});
 
 // the list of chats lives in the sidebar now, so it is drawn at the start and
 // kept current rather than only when the menu opens
@@ -5438,6 +5783,7 @@ function escapeOne() {
   if (!stopButton.hidden) { stopButton.click(); return; }
   if (voiceSources.length) { stopSpeaking(); return; }
   if (appEl.classList.contains("settingsOpen")) { closeSettings.click(); input.focus(); return; }
+  if (appEl.classList.contains("cardsOpen") && !faceModeOn) { cardsEscape(); return; }
   if (faceModeOn) { setFaceMode(false); }
 }
 
@@ -5462,6 +5808,7 @@ const SHORTCUT_ACTIONS = {
   },
   focusInput: () => { if (faceModeOn) setFaceMode(false); closeOverlays(); input.focus(); },
   attach: () => uploadButton.click(),
+  cards: () => toggleCards(),
   copyLast: () => copyLastReply(),
   zoomIn: () => setZoom(zoom + 0.1),
   zoomOut: () => setZoom(zoom - 0.1),
