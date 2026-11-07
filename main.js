@@ -142,7 +142,7 @@ function defaultConfig() {
 const CHANGELOG = [
   { version: "1.40.0",
     added: [
-      "Eight tutors, pinned on the left: Maths, Biology, Chemistry, Physics, History, Geography, English and Languages. Click one to start a chat with it. A tutor answers only on this computer - never on the web, whatever web access is set to - on the installed model that suits its subject, and it sticks to its subject.",
+      "Eight tutors, pinned on the left: Maths, Biology, Chemistry, Physics, History, Geography, English and Languages. Click one to start a chat with it. A tutor answers only on this computer - never on the web, whatever web access is set to - on the installed model that suits its subject, and it sticks to its subject. If that model is missing, the tutor offers it with one press.",
       "Your chats are on the left too, always in view, and a tutor's chats carry its picture.",
       "Talk has a new face: two koi circling, drawn in text, swimming faster while she speaks. Ember's own face is still there in Settings > Display.",
       "Every button is drawn in emb3r's own pixel style - the paperclip emoji is gone - and pointing at one tells you what it does and its key.",
