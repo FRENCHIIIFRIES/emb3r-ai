@@ -1,9 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isMusicQuestion, parseMusicCommand, commandReply, musicContext,
+  isMusicQuestion, parseMusicCommand, isBareMusicCommand, commandReply, musicContext,
   describeSpotifyError, dominantColour, reactionLine,
 } from "../music.js";
+
+test("a bare command is told apart from one that names the music", () => {
+  for (const bare of ["next", "skip", "play", "resume", "go back", "back", "pause", "Next please"]) {
+    assert.equal(isBareMusicCommand(bare), true, bare);
+  }
+  for (const named of ["skip this song", "pause the music", "next track", "play my music"]) {
+    assert.equal(isBareMusicCommand(named), false, named);
+  }
+  // not a command at all, so not a bare one either
+  assert.equal(isBareMusicCommand("what does next mean?"), false);
+});
+
+test("a title with dollar signs keeps every one of them", () => {
+  const line = reactionLine({ track: "$$$ Money $$$", artist: "Some Band" }, () => 0);
+  assert.ok(line.includes("$$$ Money $$$"), line);
+});
 
 test("music questions are recognised by the words people use", () => {
   for (const q of ["what am I listening to?", "who sings this?", "is this song sad?", "what album is this from"]) {

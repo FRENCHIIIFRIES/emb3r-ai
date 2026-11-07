@@ -31,13 +31,17 @@ export function prepareClipboard(raw) {
 
 const MODIFIERS = new Set(["Control", "Alt", "Shift", "Super", "Command", "CommandOrControl"]);
 
-// A key and at least one modifier that is not Shift. Shift alone would take
-// capital letters from every other app on the computer.
+// A key and two different modifiers, at least one of them not Shift. Shift
+// alone would take capital letters from every other app on the computer; one
+// modifier and a key is the shape of every app's own commands - Ctrl+Z,
+// Ctrl+V, Alt+F4 - and a key that works from anywhere takes it from all of
+// them, through every restart (found by review, 6 November). A key saved
+// before this rule is refused at start-up too, and Settings says so.
 export function isUsableAccelerator(accelerator) {
   if (typeof accelerator !== "string" || !accelerator) return false;
   const parts = accelerator.split("+");
   const key = parts[parts.length - 1];
   const mods = parts.slice(0, -1);
   if (!key || mods.some((m) => !MODIFIERS.has(m))) return false;
-  return mods.some((m) => m !== "Shift");
+  return new Set(mods).size >= 2 && mods.some((m) => m !== "Shift");
 }

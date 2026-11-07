@@ -45,6 +45,14 @@ export function parseMusicCommand(text) {
   return null;
 }
 
+// "next", "play", "go back" on their own - commands that don't name the music.
+// They are only Spotify's while it has a song; otherwise they are words said
+// to her, like any others (found by review: "next" with nothing playing came
+// back as "Spotify isn't playing on any device").
+export function isBareMusicCommand(text) {
+  return parseMusicCommand(text) !== null && !/\b(music|song|track|spotify)\b/i.test(text);
+}
+
 const REPLIES = { pause: "Paused.", play: "Playing.", next: "Skipping.", previous: "Back one." };
 
 export function commandReply(action) {
@@ -191,5 +199,7 @@ export function reactionLine(np, pick = Math.random) {
   if (!np || !np.track) return null;
   const firstArtist = String(np.artist || "").split(",")[0].trim() || "this one";
   const line = REACTIONS[Math.floor(pick() * REACTIONS.length) % REACTIONS.length];
-  return line.replace("{track}", np.track).replace("{artist}", firstArtist);
+  // replaced by function, not by string: in a replacement string "$$" means
+  // "$", so a title like "$$$" came out as "$$"
+  return line.replace("{track}", () => np.track).replace("{artist}", () => firstArtist);
 }

@@ -60,6 +60,7 @@
       "music.js",
       "access.js",
       "downloads.js",
+      "tutors.js",
       "preload.cjs",
       "src/**/*",
       "build/icon.png",

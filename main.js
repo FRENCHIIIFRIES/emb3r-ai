@@ -10,12 +10,14 @@ import { fileURLToPath } from "url";
 import { getLlama, LlamaChatSession, GgmlType } from "node-llama-cpp";
 // the parts of the Spotify features that need neither Electron nor the network
 import {
-  isMusicQuestion, parseMusicCommand, commandReply, musicContext,
+  isMusicQuestion, parseMusicCommand, isBareMusicCommand, commandReply, musicContext,
   describeSpotifyError, dominantColour, reactionLine,
 } from "./music.js";
 // the keys that work from anywhere, and the clipboard made ready to explain
 import { DEFAULT_GLOBALS, prepareClipboard, isUsableAccelerator } from "./access.js";
 import { DOWNLOAD_ATTEMPTS, RETRY_DELAYS_MS, describeDownloadError, isRetryableConnectionError } from "./downloads.js";
+// the eight subject tutors: their prompts and which model suits each
+import { TUTORS, isTutor, tutorPrompt, preferredModelFor, bestModelFor } from "./tutors.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
 // assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
@@ -138,11 +140,25 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.40.0",
+    added: [
+      "Eight tutors, pinned on the left: Maths, Biology, Chemistry, Physics, History, Geography, English and Languages. Click one to start a chat with it. A tutor answers only on this computer - never on the web, whatever web access is set to - on the installed model that suits its subject, and it sticks to its subject.",
+      "Your chats are on the left too, always in view, and a tutor's chats carry its picture.",
+      "Talk has a new face: two koi circling, drawn in text, swimming faster while she speaks. Ember's own face is still there in Settings > Display.",
+      "Every button is drawn in emb3r's own pixel style - the paperclip emoji is gone - and pointing at one tells you what it does and its key.",
+    ],
+    fixed: [
+      "Switching profile, or starting a new chat, while Ember was answering could save her reply into the other profile or chat. It stays where it was asked.",
+      "Picking two models one straight after the other loaded both at once and kept the extra one in memory. They load one at a time now.",
+      "Clicking into the conversation to read it made the text jump down the window. It stays put: the header slims to one row while you chat, and keeps the salamander and the name in it.",
+      "Talking from the keyboard with no microphone failed in silence; it says why now. A global shortcut can no longer be set to something like Ctrl+Z, which took it from every other program. On a Mac, the summon key works after the window is closed.",
+      "Settings' sliders show their values, every control there has a name a screen reader can say, and the small notes are bigger. A download that is interrupted while the offline lock is switched on stops cleanly.",
+    ] },
   { version: "1.39.1",
     added: [],
     fixed: [
-      "Installing a model could fail with nothing but the word 'AggregateError'. A download whose connection drops before it starts is now tried again by itself, and if it still can't connect it tells you why in plain words. The same goes for her voice and for models you add yourself.",
-      "Your colour stopped changing by itself: music moods are off until you turn them on in Settings > Spotify. If you had turned them on yourself, they stay on.",
+      "Installing a model could fail with nothing but the word 'AggregateError'. A download whose connection drops before it starts is now tried again by itself, and if it still can't connect it tells you why in plain words. The same goes for models you add yourself.",
+      "Your colour stopped changing by itself: music moods are off until you turn them on in Settings > Display. If you had turned them on yourself, they stay on.",
     ] },
   { version: "1.39.0",
     added: [
@@ -407,6 +423,8 @@ let chatSession = null;
 let chatSequence = null;
 // what is actually holding memory, kept so it can be let go of - see releaseLocalModel
 let loadedModel = null;
+// the key (file name, or path for a model pointed at on disk) of loadedModel
+let loadedModelKey = null;
 let loadedContext = null;
 let modelLoadError = null;
 let mainWindow = null;
@@ -698,6 +716,19 @@ function systemPrompt() {
   const base = typeof config.systemPrompt === "string" ? config.systemPrompt : DEFAULT_PERSONALITY;
   const safe = config.safeMode ? SAFE_MODE_PROMPT + " " : "";
   return `${safe}${ORIGIN_PROMPT} ${base} ${name}`.trim();
+}
+
+// What a conversation's model is told before anything else: Ember's own prompt,
+// or - in a tutor's chat - the tutor's, which keeps her origin and student mode
+// and replaces the personality with the subject and how it is taught.
+function conversationPrompt(conv) {
+  if (!conv || !isTutor(conv.tutor)) return systemPrompt();
+  const profile = activeProfile();
+  return tutorPrompt(conv.tutor, {
+    origin: ORIGIN_PROMPT,
+    safe: config.safeMode ? SAFE_MODE_PROMPT : "",
+    name: profile && profile.name ? `The user's name is ${profile.name}.` : "",
+  });
 }
 
 // A last line of defence that does not depend on the model behaving. These
@@ -1039,7 +1070,9 @@ function saveConversationFile(profileId, conv) {
   fs.writeFileSync(conversationFilePath(profileId, conv.id), JSON.stringify(conv, null, 2));
 
   const index = readConversationIndex(profileId).filter((c) => c.id !== conv.id);
-  index.push({ id: conv.id, title: conv.title, updatedAt: conv.updatedAt });
+  const entry = { id: conv.id, title: conv.title, updatedAt: conv.updatedAt };
+  if (isTutor(conv.tutor)) entry.tutor = conv.tutor;
+  index.push(entry);
   index.sort((a, b) => b.updatedAt - a.updatedAt);
   writeConversationIndex(profileId, index);
 }
@@ -1053,9 +1086,12 @@ function deleteConversationFile(profileId, convId) {
   writeConversationIndex(profileId, readConversationIndex(profileId).filter((c) => c.id !== convId));
 }
 
-function newConversation() {
+function newConversation(tutor) {
   const now = Date.now();
-  return { id: crypto.randomUUID(), title: null, createdAt: now, updatedAt: now, messages: [] };
+  const conv = { id: crypto.randomUUID(), title: null, createdAt: now, updatedAt: now, messages: [] };
+  // a tutor's chat says whose it is, on disk and in the list
+  if (isTutor(tutor)) conv.tutor = tutor;
+  return conv;
 }
 
 // first ~48 characters of the opening message, so the history list is
@@ -1070,7 +1106,7 @@ function deriveTitle(text) {
 // shape used on disk - kept separate so the storage format doesn't have to
 // change if the library's shape ever does
 function toChatHistory(conv) {
-  const items = [{ type: "system", text: systemPrompt() }];
+  const items = [{ type: "system", text: conversationPrompt(conv) }];
   for (const m of conv.messages) {
     items.push(m.role === "user" ? { type: "user", text: m.text } : { type: "model", response: [m.text] });
   }
@@ -1081,8 +1117,13 @@ function toChatHistory(conv) {
 // makes it the active one, and - if a session is already loaded - replays it
 // into the model so continuing an old conversation actually carries memory of
 // it rather than just showing old text above a blank context
-function attachConversation(profileId, convId) {
-  const conv = (convId && loadConversationFile(profileId, convId)) || newConversation();
+function attachConversation(profileId, convId, tutor) {
+  // A chat with nothing in it yet exists only here, not on disk. Re-attaching
+  // it after a model loads - which a tutor's chat does at once, to load the
+  // tutor's model - must keep that chat, not quietly start another.
+  const inMemory = activeConversation && convId && activeConversation.id === convId
+    && activeConversation.profileId === profileId ? activeConversation : null;
+  const conv = inMemory || (convId && loadConversationFile(profileId, convId)) || newConversation(tutor);
   activeConversation = { ...conv, profileId };
 
   if (chatSession) {
@@ -1286,12 +1327,14 @@ async function disposeQuietly(thing) {
 }
 
 async function releaseLocalModel() {
-  // a reply in progress belongs to the model being let go of
-  if (activeGeneration) activeGeneration.abort();
+  // a reply in progress belongs to the model being let go of: it is stopped
+  // and allowed to finish before the model goes from underneath it
+  await settleGeneration();
   const context = loadedContext;
   const model = loadedModel;
   loadedContext = null;
   loadedModel = null;
+  loadedModelKey = null;
   chatSession = null;
   chatSequence = null;
   await disposeQuietly(context);
@@ -1318,7 +1361,61 @@ async function getLlamaPreferringGraphics() {
   return again.gpu ? again : llama;
 }
 
-async function loadLocalModel(filename, { conversationId } = {}) {
+// One load at a time, and only the newest one asked for. A second choice made
+// while a model was still loading - a double click, or another model picked
+// during a 20-77 s switch - ran beside the first: each released nothing, both
+// loaded, and the one overwritten was never let go of. Two copies again, the
+// very thing v1.39.0 said was gone (found by review, 6 November).
+let loadTicket = 0;
+let loadQueue = Promise.resolve();
+function loadLocalModel(filename, options) {
+  const ticket = ++loadTicket;
+  const run = loadQueue.then(() => (ticket === loadTicket ? loadLocalModelNow(filename, options) : undefined));
+  loadQueue = run.catch(() => {});
+  return run;
+}
+
+// ---- Which model a chat answers on ----
+//
+// A tutor answers on the installed model that suits its subject (tutors.js);
+// every other chat on the model chosen in Settings. Moving between them loads
+// the other model - one at a time, through the queue above - and never changes
+// what is chosen in Settings.
+
+function installedModelFiles() {
+  try {
+    return fs.readdirSync(MODELS_DIR).filter((f) => f.endsWith(".gguf"));
+  } catch {
+    return [];
+  }
+}
+
+function modelWantedFor(conv) {
+  if (conv && isTutor(conv.tutor)) {
+    const suited = preferredModelFor(conv.tutor, installedModelFiles());
+    if (suited) return suited;
+  }
+  return config.activeModel || DEFAULT_MODEL_FILE;
+}
+
+let modelSwitch = null; // { key, promise } while a switch is under way
+// set by the first load that works; until then the start-up load is the one
+// in charge, and a chat asking for a model must not queue a second copy
+let everLoaded = false;
+
+function ensureModelFor(conv) {
+  const want = modelWantedFor(conv);
+  if (modelSwitch && modelSwitch.key === want) return modelSwitch.promise;
+  if (!modelSwitch && want === loadedModelKey) return Promise.resolve();
+  console.log(`This chat answers on ${want}${conv && conv.tutor ? ` (the ${conv.tutor} tutor)` : ""}`);
+  chatSession = null;
+  const promise = loadLocalModel(want, { conversationId: conv ? conv.id : undefined })
+    .finally(() => { if (modelSwitch && modelSwitch.promise === promise) modelSwitch = null; });
+  modelSwitch = { key: want, promise };
+  return promise;
+}
+
+async function loadLocalModelNow(filename, { conversationId } = {}) {
   const target = filename || config.activeModel || DEFAULT_MODEL_FILE;
   // not a plain join any more: a model the user pointed at lives outside
   // MODELS_DIR, and resolveModelPath is what maps either kind of key to a path
@@ -1351,6 +1448,8 @@ async function loadLocalModel(filename, { conversationId } = {}) {
     chatSequence = context.getSequence();
     chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
     loadedModel = model;
+    loadedModelKey = target;
+    everLoaded = true;
     loadedContext = context;
     modelLoadError = null;
     console.log("Local model loaded:", target);
@@ -1382,6 +1481,8 @@ async function loadLocalModel(filename, { conversationId } = {}) {
       chatSequence = cpuContext.getSequence();
       chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
       loadedModel = cpuModel;
+      loadedModelKey = target;
+      everLoaded = true;
       loadedContext = cpuContext;
       modelLoadError = null;
       console.log("Local model loaded on CPU fallback:", target);
@@ -1667,21 +1768,30 @@ function fetchText(url) {
   return new Promise((resolve, reject) => {
     const get = (target, depth) => {
       if (depth > 5) return reject(new Error("too many redirects"));
-      https.get(target, { headers: { "user-agent": "emb3r" } }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          return get(new URL(res.headers.location, target).href, depth + 1);
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          return reject(new Error(`${target} returned ${res.statusCode}`));
-        }
-        let body = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => { body += c; });
-        res.on("end", () => resolve(body));
-        res.on("error", reject);
-      }).on("error", reject);
+      const host = new URL(target).host;
+      let req;
+      try {
+        // the network guard throws when the offline lock is on; on a redirect
+        // this runs from a callback, where nothing else would catch it
+        req = https.get(target, { headers: { "user-agent": "emb3r" } }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume();
+            return get(new URL(res.headers.location, target).href, depth + 1);
+          }
+          if (res.statusCode !== 200) {
+            res.resume();
+            return reject(new Error(`${target} returned ${res.statusCode}`));
+          }
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (c) => { body += c; });
+          res.on("end", () => resolve(body));
+          res.on("error", (e) => reject(new Error(describeDownloadError(e, host, { partway: true }))));
+        });
+      } catch (err) {
+        return reject(err);
+      }
+      req.on("error", (e) => reject(new Error(describeDownloadError(e, host))));
     };
     get(url, 0);
   });
@@ -1845,7 +1955,17 @@ const GLOBAL_ACTIONS = {
 // always happens with the window in front, so the microphone is never open
 // behind something else.
 function summonWindow(message) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // On a Mac, closing the window leaves emb3r running with no window, and the
+  // keys from anywhere used to do nothing - while still taking those keys from
+  // every other app (found by review). They bring the window back instead;
+  // the shortcut is passed on once the new page has loaded and is listening.
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow();
+    mainWindow.webContents.once("did-finish-load", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("emb3r:shortcut", message);
+    });
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -1950,6 +2070,11 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// and on a Mac the Dock icon brings a closed window back, as Mac apps do
+app.on("activate", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow();
 });
 
 // ---- Config / consent IPC ----
@@ -2068,7 +2193,7 @@ function refreshSystemPrompt() {
   if (!chatSession) return;
   try {
     const history = chatSession.getChatHistory().filter((h) => h.type !== "system");
-    chatSession.setChatHistory([{ type: "system", text: systemPrompt() }, ...history]);
+    chatSession.setChatHistory([{ type: "system", text: conversationPrompt(activeConversation) }, ...history]);
   } catch (err) {
     console.error("Could not refresh personality:", err);
   }
@@ -2107,8 +2232,9 @@ ipcMain.handle("emb3r:reset-personality", () => {
 // is where the name lives. While the model is still loading there is nothing
 // to rewrite yet: the load attaches the active profile's conversation when it
 // finishes.
-function useActiveProfile() {
-  if (activeGeneration) activeGeneration.abort();
+async function useActiveProfile() {
+  // the reply in progress is the old profile's, and is saved there first
+  await settleGeneration();
   const profile = activeProfile();
   attachConversation(profile.id, profile.lastConversationId);
   if (chatSession) notifyModelReady();
@@ -2185,33 +2311,33 @@ ipcMain.handle("emb3r:delete-memory", (_e, id) => {
   return { success: true, memories: next };
 });
 
-ipcMain.handle("emb3r:create-profile", (_e, name) => {
+ipcMain.handle("emb3r:create-profile", async (_e, name) => {
   const trimmed = (name || "").trim();
   if (!trimmed) return { success: false, error: "Name can't be empty." };
   const id = `p_${Date.now()}`;
   config.profiles.push({ id, name: trimmed });
   config.activeProfileId = id;
   saveConfig(config);
-  useActiveProfile();
+  await useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
-ipcMain.handle("emb3r:switch-profile", (_e, id) => {
+ipcMain.handle("emb3r:switch-profile", async (_e, id) => {
   const exists = config.profiles.find((p) => p.id === id);
   if (!exists) return { success: false, error: "Profile not found." };
   config.activeProfileId = id;
   saveConfig(config);
-  useActiveProfile();
+  await useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
-ipcMain.handle("emb3r:delete-profile", (_e, id) => {
+ipcMain.handle("emb3r:delete-profile", async (_e, id) => {
   if (config.profiles.length <= 1) return { success: false, error: "Can't delete the only profile." };
   config.profiles = config.profiles.filter((p) => p.id !== id);
   const wasActive = config.activeProfileId === id;
   if (wasActive) config.activeProfileId = config.profiles[0].id;
   saveConfig(config);
-  if (wasActive) useActiveProfile();
+  if (wasActive) await useActiveProfile();
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
@@ -2431,6 +2557,18 @@ function downloadFile(url, destPath, onProgress, signal) {
 
     file.on("error", fail);
 
+    // The network guard refuses by throwing, synchronously, when the offline
+    // lock is on - and a retry starts from a timer, where nothing else would
+    // catch the throw. A refusal ends the download like any other failure.
+    const startGet = (target, onResponse) => {
+      try {
+        return https.get(target, { headers: { "User-Agent": "emb3r-app" } }, onResponse);
+      } catch (err) {
+        fail(err);
+        return null;
+      }
+    };
+
     if (signal) {
       if (signal.aborted) return fail(new Error("Download cancelled."));
       signal.addEventListener("abort", () => fail(new Error("Download cancelled.")), { once: true });
@@ -2448,7 +2586,7 @@ function downloadFile(url, destPath, onProgress, signal) {
         return fail(new Error(`Refusing to download over ${parsed.protocol.replace(":", "")}.`));
       }
 
-      currentReq = https.get(currentUrl, { headers: { "User-Agent": "emb3r-app" } }, (res) => {
+      const req = startGet(currentUrl, (res) => {
         if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
           if (redirectsLeft <= 0) return fail(new Error("Too many redirects."));
           res.resume();
@@ -2491,7 +2629,9 @@ function downloadFile(url, destPath, onProgress, signal) {
             total,
           });
         });
-        res.on("error", (err) => fail(new Error(describeDownloadError(err, parsed.host, { partway: receivedAny }))));
+        // the server had answered, so whatever happens now is a connection
+        // lost partway, not one that never got going
+        res.on("error", (err) => fail(new Error(describeDownloadError(err, parsed.host, { partway: true }))));
         res.pipe(file);
 
         file.on("finish", () => {
@@ -2507,9 +2647,13 @@ function downloadFile(url, destPath, onProgress, signal) {
           });
         });
       });
+      if (!req) return;
+      currentReq = req;
 
-      currentReq.on("error", (err) => {
-        if (settled) return;
+      req.on("error", (err) => {
+        // an error from a request this download has already moved past - an
+        // earlier redirect hop, or a start that was given up on - is not this one's
+        if (settled || req !== currentReq) return;
         // A connection that never got going is usually a network that dropped
         // for a moment: wait for it and start again from the original link,
         // which also fetches a fresh signed address for the file.
@@ -2765,7 +2909,8 @@ function fetchJson(url) {
         }
       });
     });
-    req.on("error", (e) => reject(new Error(e.message || String(e))));
+    // said in words: a dropped connection here is an empty AggregateError
+    req.on("error", (e) => reject(new Error(describeDownloadError(e, new URL(url).host))));
     req.setTimeout(20000, () => {
       req.destroy();
       reject(new Error("Timed out reading the file list."));
@@ -3776,7 +3921,8 @@ async function spotifyControl(action) {
   }
   let act = action;
   if (act === "toggle") act = (await readNowPlaying()).playing ? "pause" : "play";
-  const call = SPOTIFY_CONTROLS[act];
+  // own keys only: "constructor" and the like are not controls
+  const call = Object.hasOwn(SPOTIFY_CONTROLS, act) ? SPOTIFY_CONTROLS[act] : null;
   if (!call) return { success: false, error: "That isn't something I can do to Spotify." };
   const r = await spotifyApi(call[0], call[1], "control");
   if (!r.ok) {
@@ -3814,6 +3960,21 @@ ipcMain.handle("emb3r:spotify-cover-colour", async (_e, albumId, url) => {
 // ---- Message handling ----
 
 let activeGeneration = null;
+// settles when the reply in progress is over and saved
+let activeGenerationDone = null;
+
+// A reply in progress belongs to the conversation it was asked in. Anything
+// that changes the conversation - a profile, a new chat, an old one, deleting
+// one, another model - stops the reply and waits for it to be over first.
+// Stopping alone was not enough: node-llama-cpp writes the session's history
+// when a stopped prompt returns, a moment later, on top of whatever had been
+// loaded in the meantime; and the reply was then saved into the conversation
+// switched to. Found by review on 6 November - one profile's chat, and the
+// model's memory of it, ended up in another profile's.
+async function settleGeneration() {
+  if (activeGeneration) activeGeneration.abort();
+  if (activeGenerationDone) await activeGenerationDone;
+}
 
 // ---- Gemini web access ----
 //
@@ -4368,6 +4529,17 @@ async function currentMusicContext() {
   return musicContext(fresh ? spotifyLast.data : await readNowPlaying());
 }
 
+// The song is a nicety, and a reply waiting on a stalled network for it is
+// not: the lookup gets three seconds, then the question goes on without it.
+// It runs before the reply exists, so Stop could not reach it either.
+const MUSIC_LOOKUP_MS = 3000;
+function currentMusicContextWithin(ms) {
+  return Promise.race([
+    currentMusicContext().catch(() => null),
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // Checked first, ahead of the model-ready check and ahead of the Gemini
   // decision below. Ahead of the model because these answers are worth giving
@@ -4390,7 +4562,12 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // guard, and ahead of the model-ready check so they work while the model is
   // still loading - and only with Spotify connected, because without it the
   // word is just something said to her.
-  const command = config.spotifyAccessToken ? parseMusicCommand(userMessage) : null;
+  // a bare "next" or "play" is Spotify's only while it has a song to act on;
+  // otherwise it is said to her. "skip this song" goes to Spotify either way.
+  const parsed = config.spotifyAccessToken ? parseMusicCommand(userMessage) : null;
+  const songKnown = Boolean(spotifyLast && spotifyLast.data && spotifyLast.data.track
+    && Date.now() - spotifyLast.at < 120_000);
+  const command = parsed && (songKnown || !isBareMusicCommand(userMessage)) ? parsed : null;
   if (command) {
     const result = await spotifyControl(command);
     const reply = result.success ? result.reply : result.error;
@@ -4401,6 +4578,15 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     }
     persistFixedExchange(userMessage, reply, "spotify");
     return { success: true, text: reply, source: "spotify", stopped: false };
+  }
+
+  if (activeGeneration) return { success: false, error: "Ember is already replying." };
+
+  // the model this chat answers on: a tutor's own, or the one chosen in
+  // Settings. Usually already loaded; after moving between a tutor and an
+  // ordinary chat, loaded now.
+  if (activeConversation && (everLoaded || modelSwitch)) {
+    await ensureModelFor(activeConversation);
   }
 
   if (!chatSession) {
@@ -4434,7 +4620,10 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   //
   // And the gate and the dispatch now read one decision, so they cannot ask
   // different questions again - see remoteFor.
-  const remote = remoteFor(userMessage, opts);
+  // A tutor's chat never leaves this computer, whatever web access is set to:
+  // a student's notes and the cards they struggle with stay here.
+  const tutorChat = Boolean(activeConversation && isTutor(activeConversation.tutor));
+  const remote = tutorChat ? null : remoteFor(userMessage, opts);
   if (remote && !config.internetConsent) {
     return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
   }
@@ -4454,12 +4643,16 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // remoteFor() is sending the question to Gemini or another provider, what
   // the user is listening to stays here. A web answer will not know which song
   // "this" is; that is the price, and it is the right way round.
-  const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContext() : null;
+  const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContextWithin(MUSIC_LOOKUP_MS) : null;
   const extras = [memories, music, attachmentContext].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();
   activeGeneration = controller;
+  // the conversation this reply belongs to, whichever becomes active meanwhile
+  const conversation = activeConversation;
+  let generationOver;
+  activeGenerationDone = new Promise((resolve) => { generationOver = resolve; });
 
   const startedAt = Date.now();
   let chunks = 0;
@@ -4551,14 +4744,14 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
 
     // an empty reply means generation was stopped before anything came out -
     // nothing meaningful happened, so there is nothing worth persisting
-    if (text && activeConversation) {
+    if (text && conversation) {
       const now = Date.now();
-      const isFirstExchange = activeConversation.messages.length === 0;
-      activeConversation.messages.push({ role: "user", text: userMessage, ts: now, source });
-      activeConversation.messages.push({ role: "model", text, ts: now, source, sources });
-      activeConversation.updatedAt = now;
-      if (isFirstExchange) activeConversation.title = deriveTitle(userMessage);
-      saveConversationFile(activeConversation.profileId, activeConversation);
+      const isFirstExchange = conversation.messages.length === 0;
+      conversation.messages.push({ role: "user", text: userMessage, ts: now, source });
+      conversation.messages.push({ role: "model", text, ts: now, source, sources });
+      conversation.updatedAt = now;
+      if (isFirstExchange) conversation.title = deriveTitle(userMessage);
+      saveConversationFile(conversation.profileId, conversation);
 
       // a Gemini exchange never went through chatSession.prompt(), so the
       // local model's own history has no idea it happened. Replaying the
@@ -4567,9 +4760,9 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
       // actual source, not the original remote intent - a fallback to
       // local after a Gemini failure did go through chatSession.prompt(),
       // so re-syncing here would be redundant.
-      if (source === "gemini") {
+      if (source === "gemini" && conversation === activeConversation) {
         try {
-          chatSession.setChatHistory(toChatHistory(activeConversation));
+          chatSession.setChatHistory(toChatHistory(conversation));
         } catch (err) {
           console.error("Could not sync Gemini turn into local history:", err);
         }
@@ -4594,6 +4787,8 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
     return { success: false, error: err.message || String(err) };
   } finally {
     activeGeneration = null;
+    activeGenerationDone = null;
+    generationOver();
   }
 });
 
@@ -4609,8 +4804,8 @@ ipcMain.handle("emb3r:context-usage", () => contextUsage());
 
 ipcMain.handle("emb3r:get-active-conversation", () => {
   if (!activeConversation) return null;
-  const { id, title, messages } = activeConversation;
-  return { id, title, messages };
+  const { id, title, messages, tutor } = activeConversation;
+  return { id, title, messages, tutor: isTutor(tutor) ? tutor : null };
 });
 
 ipcMain.handle("emb3r:list-conversations", () => {
@@ -4619,23 +4814,44 @@ ipcMain.handle("emb3r:list-conversations", () => {
   return readConversationIndex(profile.id);
 });
 
-ipcMain.handle("emb3r:new-conversation", () => {
+ipcMain.handle("emb3r:new-conversation", async (_e, opts) => {
   const profile = activeProfile();
   if (!profile) return { success: false, error: "No active profile." };
-  const conv = attachConversation(profile.id, null);
-  return { success: true, id: conv.id };
+  // the reply in progress is finished, and saved where it belongs, first
+  await settleGeneration();
+  // a tutor's chat, when one is asked for by name; anything else is ignored
+  const tutor = opts && isTutor(opts.tutor) ? opts.tutor : null;
+  const conv = attachConversation(profile.id, null, tutor);
+  let model = null;
+  let suggest = null;
+  if (tutor) {
+    // its model starts loading now, so it is ready by the time the student
+    // has typed - not awaited, the load reports its own progress
+    if (everLoaded || modelSwitch) ensureModelFor(conv).catch((err) => console.error("Tutor model:", err));
+    model = modelDisplayName(modelWantedFor(conv));
+    // the one that would suit this subject best, when it is not on this computer,
+    // with what the renderer needs to offer it: its catalogue id, name and size
+    const best = bestModelFor(tutor);
+    const entry = best && !installedModelFiles().includes(best) ? MODEL_CATALOG.find((m) => m.file === best) : null;
+    if (entry) suggest = { id: entry.id, name: entry.name, sizeGB: entry.sizeGB };
+  }
+  return { success: true, id: conv.id, tutor, model, suggest };
 });
 
-ipcMain.handle("emb3r:load-conversation", (_e, convId) => {
+ipcMain.handle("emb3r:load-conversation", async (_e, convId) => {
   const profile = activeProfile();
   if (!profile) return { success: false, error: "No active profile." };
+  // the reply in progress is finished, and saved where it belongs, first
+  await settleGeneration();
   const conv = attachConversation(profile.id, convId);
-  return { success: true, id: conv.id, title: conv.title, messages: conv.messages };
+  return { success: true, id: conv.id, title: conv.title, messages: conv.messages, tutor: isTutor(conv.tutor) ? conv.tutor : null };
 });
 
-ipcMain.handle("emb3r:delete-conversation", (_e, convId) => {
+ipcMain.handle("emb3r:delete-conversation", async (_e, convId) => {
   const profile = activeProfile();
   if (!profile) return { success: false, error: "No active profile." };
+  // a reply still being written to the chat being deleted would save it back
+  await settleGeneration();
   deleteConversationFile(profile.id, convId);
   // deleting the conversation you are currently in needs somewhere to land -
   // the next most recent one, or a fresh conversation if none are left

@@ -27,6 +27,17 @@ const micButton  = document.getElementById("micButton");
 const faceMicLabel = document.getElementById("faceMicLabel");
 const micIndicator = document.getElementById("micIndicator");
 
+// the drawings for every <span class="icon" data-icon> in the markup
+// (src/icons.js); buttons made later get theirs as they are made
+const ICONS = window.emb3rIcons;
+ICONS.fillIcons(document.body);
+function iconSpan(name) {
+  const span = document.createElement("span");
+  span.className = "icon";
+  ICONS.setIcon(span, name);
+  return span;
+}
+
 // filled in below FACES, for paintFace to describe a face from its text
 let FACE_BY_TEXT = {};
 
@@ -387,19 +398,20 @@ function makeCopyButton(copyText) {
   const btn = document.createElement("button");
   btn.className = "copyBtn";
   btn.type = "button";
-  btn.title = "Copy";
+  btn.dataset.tip = "Copy";
   btn.setAttribute("aria-label", "Copy this reply");
-  btn.textContent = "⧉";
+  const icon = iconSpan("copy");
+  btn.appendChild(icon);
   btn.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(copyText());
-      btn.textContent = "✓";
+      ICONS.setIcon(icon, "check");
       btn.classList.add("copied");
       flashFace("wink", 900);
     } catch {
-      btn.textContent = "✗";
+      ICONS.setIcon(icon, "close");
     }
-    setTimeout(() => { btn.textContent = "⧉"; btn.classList.remove("copied"); }, 1000);
+    setTimeout(() => { ICONS.setIcon(icon, "copy"); btn.classList.remove("copied"); }, 1000);
   });
   return btn;
 }
@@ -680,7 +692,8 @@ function scheduleBuffer(buffer, rate) {
   // the recorded one - get that wrong and every piece overlaps the last.
   const playbackRate = rate || 1;
   source.playbackRate.value = playbackRate;
-  source.connect(ctx.destination);
+  // through the meter the koi swims to, then out
+  source.connect(voiceMeter(ctx));
   // a few milliseconds of margin, or a buffer scheduled for a moment that has
   // already passed starts late and drags everything after it
   const at = Math.max(ctx.currentTime + 0.03, voiceStartAt);
@@ -903,10 +916,97 @@ function stopMouth() {
 
 let faceModeOn = false;
 
+// ---- the koi ------------------------------------------------------------------
+//
+// Two koi circling, drawn in text by src/koi.js: the Talk screen's own creature
+// unless Ember's face is chosen in Settings > Display. Mounted the first time
+// Talk opens, never before, so nobody who does not use Talk pays for it. The
+// module pauses itself when the window is hidden or the view is closed, and
+// stands still under reduced motion.
+//
+// It is told what Ember is doing by asking, ten times a second while Talk is
+// open, rather than by a call at every place her state changes: those places
+// are many, and one missed would leave the fish swimming the wrong way.
+
+const faceKoiEl = document.getElementById("faceKoi");
+let koi = null;
+let koiTimer = null;
+let meterNode = null;
+let meterData = null;
+
+function voiceMeter(ctx) {
+  if (!meterNode || meterNode.context !== ctx) {
+    meterNode = ctx.createAnalyser();
+    meterNode.fftSize = 512;
+    meterNode.connect(ctx.destination);
+    meterData = new Float32Array(meterNode.fftSize);
+  }
+  return meterNode;
+}
+
+// how loud her voice is right now, 0..1
+function voiceLevel() {
+  if (!meterNode || !speaking()) return 0;
+  meterNode.getFloatTimeDomainData(meterData);
+  let sum = 0;
+  for (const v of meterData) sum += v * v;
+  return Math.min(1, Math.sqrt(sum / meterData.length) * 4);
+}
+
+function koiWanted() {
+  return localStorage.getItem("emb3rTalkAvatar") !== "face";
+}
+
+function koiState() {
+  if (listening) return "listening";
+  if (speaking()) return "speaking";
+  if (thinkTimer || transcribing || !stopButton.hidden) return "thinking";
+  return "idle";
+}
+
+function startKoi() {
+  if (!koiWanted() || !window.emb3rKoi) return;
+  if (!koi) {
+    const light = document.documentElement.getAttribute("data-theme") === "light";
+    koi = window.emb3rKoi.mount(faceKoiEl, { palette: light ? "light" : "dark" });
+    // the Animations setting is the app's own reduced motion: one still frame
+    if (!reactionsAllowed()) { koi.stop(); return; }
+  }
+  clearInterval(koiTimer);
+  koiTimer = setInterval(() => {
+    if (!koi) return;
+    koi.setState(koiState());
+    koi.setLevel(voiceLevel());
+  }, 100);
+}
+
+function stopKoiLoop() {
+  clearInterval(koiTimer);
+  koiTimer = null;
+}
+
+function applyTalkAvatar() {
+  appEl.classList.toggle("talkFace", !koiWanted());
+  if (faceModeOn) {
+    if (koiWanted()) startKoi();
+    else stopKoiLoop();
+  }
+}
+
+const talkAvatarSelect = document.getElementById("talkAvatarSelect");
+talkAvatarSelect.value = koiWanted() ? "koi" : "face";
+talkAvatarSelect.addEventListener("change", () => {
+  localStorage.setItem("emb3rTalkAvatar", talkAvatarSelect.value);
+  applyTalkAvatar();
+});
+applyTalkAvatar();
+
 function setFaceMode(on) {
   faceModeOn = on;
   appEl.classList.toggle("faceMode", on);
   paintFace(FACES[currentFace] || FACES.idle);
+  if (on) startKoi();
+  else stopKoiLoop();
   if (on) {
     faceHeardEl.textContent = "";
     // Warm the voice, because entering this view means she is about to speak.
@@ -976,9 +1076,9 @@ async function startListening() {
     });
   } catch (err) {
     faceHeardEl.textContent = "";
-    faceSaidEl.textContent = err && err.name === "NotAllowedError"
+    talkTrouble(err && err.name === "NotAllowedError"
       ? "The microphone was refused. Windows asks once, under Privacy settings."
-      : "No microphone was found on this computer.";
+      : "No microphone was found on this computer.");
     setFace("deaf");
     return;
   }
@@ -1042,22 +1142,22 @@ async function handleRecording() {
     const pcm = await toSixteenKilohertz(blob);
     if (!pcm || pcm.length < 16000 * 0.3) {
       faceHeardEl.textContent = "";
-      faceSaidEl.textContent = "That was too short to make out - hold the button while you talk.";
+      talkTrouble("That was too short to make out - keep talking a little longer before you stop.");
       setFace("puzzled");
       return;
     }
     const result = await window.emb3r.transcribe({ pcm });
     if (!result || !result.success) {
       faceHeardEl.textContent = "";
-      faceSaidEl.textContent = result && result.needsInstall
+      talkTrouble(result && result.needsInstall
         ? "This build did not ship the listening model."
-        : (result && result.error) || "That could not be transcribed.";
+        : (result && result.error) || "That could not be transcribed.");
       return;
     }
     const heard = String(result.text || "").trim();
     if (!heard) {
       faceHeardEl.textContent = "";
-      faceSaidEl.textContent = "I did not catch that.";
+      talkTrouble("I did not catch that.");
       setFace("puzzled");
       return;
     }
@@ -1080,7 +1180,7 @@ async function handleRecording() {
     }
   } catch (err) {
     faceHeardEl.textContent = "";
-    faceSaidEl.textContent = String(err && err.message ? err.message : err);
+    talkTrouble(String(err && err.message ? err.message : err));
   } finally {
     transcribing = false;
     setFace(restingFace());
@@ -1195,6 +1295,8 @@ async function onSend() {
   // the attachment deliberately survives, so follow-ups can query it again.
   // Cleared with the ✕ on the attachment bar.
   input.focus();
+  // a first message names a new chat; the sidebar shows the name
+  refreshHistoryList();
 }
 
 // `ui` is kept separate from `opts`: opts is forwarded to the main process,
@@ -1460,10 +1562,14 @@ stopButton.addEventListener("click", async () => {
 send.addEventListener("click", onSend);
 input.addEventListener("keydown", (e) => { if (e.key === "Enter") onSend(); });
 
-// shrink the pet box while actively chatting, expand again once idle
+// The header shrinks while you chat and opens again only for an empty chat.
+// It used to open whenever the box lost focus with nothing typed, so clicking
+// into the transcript to re-read or copy a line pushed the text you were
+// reading 164px down the window: reading made the reading jump.
 input.addEventListener("focus", () => petEl.classList.add("compact"));
 input.addEventListener("blur", () => {
-  if (!input.value.trim() && !thinkTimer) petEl.classList.remove("compact");
+  const empty = !chat.querySelector(".you, .bot");
+  if (empty && !input.value.trim() && !thinkTimer) petEl.classList.remove("compact");
 });
 
 // =============================
@@ -2193,6 +2299,8 @@ const settingsTabs   = document.querySelectorAll(".settingsTab");
 settingsButton.addEventListener("click", () => {
   historyWrap.classList.remove("open");
   appEl.classList.add("settingsOpen");
+  // a saved accent sets the lightness slider without an input event
+  showSliderValues();
 });
 
 function showSettingsTab(tab) {
@@ -2336,6 +2444,7 @@ async function renderActiveConversationHistory() {
     renderAttachBar();
   }
   activeConversationId = conv ? conv.id : null;
+  showTutorBar(conv && conv.tutor);
 
   await withTopicTransition(() => {
     chat.replaceChildren();
@@ -2343,12 +2452,42 @@ async function renderActiveConversationHistory() {
     // funnel replaces the whole transcript, so after the first switch an empty
     // conversation was a blank panel with no indication it was working.
     if (!conv || !conv.messages.length) {
+      // an empty chat is a fresh start: the full header, unless you are typing
+      if (document.activeElement !== input) petEl.classList.remove("compact");
       const empty = document.createElement("span");
       empty.className = "dim";
-      empty.textContent = "// new chat. type below and hit enter.";
+      // the platform asked here rather than through IS_MAC, which is declared
+      // further down and may not exist yet the first time this runs
+      const mod = /Mac/i.test(navigator.platform || navigator.userAgent) ? "cmd" : "ctrl";
+      const tutor = conv && conv.tutor ? tutorById(conv.tutor) : null;
+      empty.textContent = tutor
+        ? `// ${tutor.name.toLowerCase()} tutor. ask anything in ${tutor.name.toLowerCase()} - it answers on this computer and nothing leaves it.`
+        : `// new chat. type below and hit enter · ${mod}+/ for every key`;
       chat.appendChild(empty);
+      // the model that would suit this subject best, when it is not here yet
+      const note = tutor && tutorModelNote && tutorModelNote.tutor === tutor.id && tutorModelNote.suggest ? tutorModelNote : null;
+      if (note) {
+        const hint = document.createElement("div");
+        hint.className = "dim tutorHint";
+        hint.textContent = `// ${tutor.name.toLowerCase()} answers best on ${note.suggest.name}, which is not on this computer yet. until then it uses ${note.model}. `;
+        // one press to fetch it - through the same permission question as any
+        // download - and Settings opens on Models so the progress can be seen
+        const get = document.createElement("button");
+        get.className = "tutorGet";
+        get.textContent = `[ get it - ${note.suggest.sizeGB} GB ]`;
+        get.addEventListener("click", () => {
+          requestDownload(note.suggest.id);
+          settingsButton.click();
+          const tab = document.querySelector('.settingsTab[data-tab="models"]');
+          if (tab) showSettingsTab(tab);
+        });
+        hint.appendChild(get);
+        chat.appendChild(hint);
+      }
       return;
     }
+    // a conversation to read gets the room: the header steps down to its row
+    petEl.classList.add("compact");
     for (const m of conv.messages) {
       if (m.role === "user") append("you", "you", m.text, { copyable: true });
       else appendStaticBotLine(m.text, m.source);
@@ -2373,22 +2512,36 @@ async function refreshHistoryList() {
     const row = document.createElement("div");
     row.className = "historyRow" + (c.id === activeConversationId ? " active" : "");
 
+    // a tutor's chat carries its tutor's picture, so the list says whose it is
+    const tutor = c.tutor ? TUTORS.find((t) => t.id === c.tutor) : null;
+    if (tutor) {
+      const face = document.createElement("img");
+      face.className = "historyTutor";
+      face.src = `./tutors/${tutor.id}.svg`;
+      face.alt = "";
+      face.width = 16;
+      face.height = 16;
+      row.appendChild(face);
+    }
+
     const title = document.createElement("span");
     title.className = "historyTitle";
-    title.textContent = c.title || "New chat";
+    title.textContent = c.title || (tutor ? `${tutor.name} tutor` : "New chat");
     row.appendChild(title);
 
-    // a row of the menu: focusable, and opened with Enter as it is with a click
-    row.tabIndex = -1;
-    row.setAttribute("role", "menuitem");
+    // a row of the sidebar: reachable with Tab, opened with Enter as with a click
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    if (c.id === activeConversationId) row.setAttribute("aria-current", "true");
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); }
       else if (e.key === "Delete") { e.preventDefault(); delBtn.click(); }
     });
 
     const delBtn = document.createElement("button");
-    delBtn.textContent = "✕";
-    delBtn.title = "Delete this chat";
+    delBtn.appendChild(iconSpan("close"));
+    delBtn.dataset.tip = "Delete this chat";
+    delBtn.dataset.tipKeys = "Delete";
     delBtn.tabIndex = -1;
     delBtn.setAttribute("aria-label", `Delete the chat "${c.title || "New chat"}"`);
     delBtn.addEventListener("click", async (e) => {
@@ -2428,7 +2581,8 @@ newChatButton.addEventListener("click", async () => {
 // profiles), refresh it too so it cannot show another profile's chats.
 window.emb3r.onModelReady(() => {
   renderActiveConversationHistory();
-  if (historyWrap.classList.contains("open")) refreshHistoryList();
+  // the chats are always on screen now, in the sidebar
+  refreshHistoryList();
 });
 closeSettings.addEventListener("click", () => appEl.classList.remove("settingsOpen"));
 
@@ -4330,8 +4484,11 @@ spotifyReactToggle.addEventListener("change", async () => {
 // into the conversation - it is a reaction, not something said to her. Never
 // over a reply that is still arriving.
 function reactToSong(text) {
-  if (thinkTimer || !stopButton.hidden) return;
+  // only while the window is seen - hidden, they piled up unread
+  if (document.hidden || thinkTimer || !stopButton.hidden) return;
   const { line, span } = messageLine("bot", "ember");
+  // marked, so "her last reply" (copy it, read it aloud) is never a reaction
+  line.classList.add("reaction");
   span.textContent = text;
   chat.appendChild(line);
   chat.scrollTop = chat.scrollHeight;
@@ -4401,6 +4558,10 @@ function applyTheme(theme) {
     if (theme === "light" || theme === "contrast") document.documentElement.setAttribute("data-theme", theme);
     else document.documentElement.removeAttribute("data-theme");
     localStorage.setItem("emb3rTheme", theme);
+    // white fish vanish on the light background, so the koi has its own palette there
+    if (typeof koi !== "undefined" && koi && window.emb3rKoi) {
+        koi.setPalette(window.emb3rKoi.palettes[theme === "light" ? "light" : "dark"]);
+    }
 }
 
 const savedTheme = localStorage.getItem("emb3rTheme") || "dark";
@@ -4422,9 +4583,19 @@ themeSelect.addEventListener("change", (e) => {
 
 const fontSizeInput = document.getElementById("fontSize");
 
+// Each slider's label says its value, so "Font size - 22px" is read out and
+// seen, rather than a bare slider and a number nobody can find.
+function showSliderValues() {
+    const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    put("fontSizeValue", `${document.getElementById("fontSize").value}px`);
+    put("glowValue", document.getElementById("glowIntensity").value);
+    put("lightnessValue", `${document.getElementById("lightness").value}%`);
+}
+
 function applyFontSize(size) {
     document.documentElement.style.fontSize = size + "px";
     localStorage.setItem("emb3rFontSize", size);
+    showSliderValues();
 }
 
 const savedFontSize = localStorage.getItem("emb3rFontSize") || "20";
@@ -4443,6 +4614,7 @@ function applyGlow(intensity) {
     document.documentElement.style.setProperty("--glow-small", Math.max(0, n * 0.3) + "px");
     document.documentElement.style.setProperty("--glow-big", n + "px");
     localStorage.setItem("emb3rGlow", n);
+    showSliderValues();
 }
 
 const savedGlow = localStorage.getItem("emb3rGlow") || "6";
@@ -4620,6 +4792,7 @@ function applyColor() {
     const requestedLightness = Number(lightnessInput.value);
     paintAccent(currentHue, currentSat, requestedLightness);
     localStorage.setItem("emb3rAccentColor", JSON.stringify({ h: currentHue, s: currentSat, l: requestedLightness }));
+    showSliderValues();
 }
 
 // Back to the accent you chose - or to the theme's own, if you never chose one.
@@ -4746,7 +4919,213 @@ if (savedColor) {
 const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent);
 const { SHORTCUTS, matchShortcut, keyEventToAccelerator, acceleratorLabel, shortcutLabel } = window.emb3rKeys;
 
-micButton.title = `Hold to speak, or press ${IS_MAC ? "Cmd" : "Ctrl"}+T`;
+// the key that does what a button does, written the way this keyboard says it
+function keyFor(id) {
+  const s = SHORTCUTS.find((x) => x.id === id);
+  if (!s) return "";
+  return id === "sheet" ? `${shortcutLabel(s, IS_MAC)} or F1` : shortcutLabel(s, IS_MAC);
+}
+
+for (const kbd of document.querySelectorAll(".menuShortcut[data-key]")) kbd.textContent = keyFor(kbd.dataset.key);
+for (const el of document.querySelectorAll("[data-tip-key]")) el.setAttribute("aria-keyshortcuts", keyFor(el.dataset.tipKey).split(" or ")[0].replace(/Ctrl/g, "Control").replace(/Cmd/g, "Meta"));
+if (IS_MAC) {
+  const firstLine = chat.querySelector(".dim");
+  if (firstLine) firstLine.textContent = firstLine.textContent.replace("ctrl+/", "cmd+/");
+}
+
+// ---- hover labels --------------------------------------------------------------
+//
+// An icon says what it does when it is pointed at: one small label, drawn in
+// the app's own type rather than by Windows, with the key that does the same
+// thing. It waits a moment for the mouse, so sweeping across the toolbar does
+// not flash a string of labels, and comes at once for the keyboard, so the
+// arrows and Tab learn the same names. It is aria-hidden: the words are each
+// button's own accessible name already.
+
+const tipEl = document.createElement("div");
+tipEl.id = "tip";
+tipEl.setAttribute("aria-hidden", "true");
+document.body.appendChild(tipEl);
+
+let tipFor = null;     // what the label is showing for
+let tipWanted = null;  // what the pointer is resting on, waiting out the delay
+let tipTimer = null;
+
+function tipKeys(el) {
+  if (el.dataset.tipKeys) return el.dataset.tipKeys;
+  if (el.dataset.tipKey) return keyFor(el.dataset.tipKey);
+  return "";
+}
+
+function placeTip(el) {
+  const r = el.getBoundingClientRect();
+  const t = tipEl.getBoundingClientRect();
+  const gap = 8;
+  // above, unless there is no room; then below
+  const above = r.top - t.height - gap >= 4;
+  const top = above ? r.top - t.height - gap : r.bottom + gap;
+  const left = Math.min(Math.max(6, r.left + r.width / 2 - t.width / 2), innerWidth - t.width - 6);
+  tipEl.style.left = `${Math.round(left)}px`;
+  tipEl.style.top = `${Math.round(top)}px`;
+  tipEl.classList.toggle("below", !above);
+}
+
+function showTip(el) {
+  if (!el || !document.contains(el)) return;
+  const label = el.dataset.tip;
+  if (!label) return;
+  tipFor = el;
+  const text = document.createElement("span");
+  text.textContent = label;
+  const keys = tipKeys(el);
+  tipEl.replaceChildren(text);
+  if (keys) {
+    const kbd = document.createElement("kbd");
+    kbd.textContent = keys;
+    tipEl.appendChild(kbd);
+  }
+  tipEl.classList.remove("on");
+  placeTip(el);
+  // one frame at its starting position, so it eases in rather than appearing
+  requestAnimationFrame(() => { if (tipFor === el) tipEl.classList.add("on"); });
+}
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipTimer = null;
+  tipFor = null;
+  tipWanted = null;
+  tipEl.classList.remove("on");
+}
+
+document.addEventListener("pointerover", (e) => {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  // moving onto the icon inside the same button is not a new place to rest
+  if (!el || el === tipFor || el === tipWanted) return;
+  hideTip();
+  tipWanted = el;
+  tipTimer = setTimeout(() => { tipWanted = null; showTip(el); }, 420);
+});
+
+document.addEventListener("pointerout", (e) => {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  if (el && (!e.relatedTarget || !el.contains(e.relatedTarget))) hideTip();
+});
+
+document.addEventListener("focusin", (e) => {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  if (el && el.matches(":focus-visible")) { hideTip(); showTip(el); }
+  else hideTip();
+});
+
+document.addEventListener("focusout", hideTip);
+document.addEventListener("pointerdown", hideTip, true);
+document.addEventListener("keydown", (e) => { if (e.key !== "Tab" && !e.key.startsWith("Arrow")) hideTip(); }, true);
+window.addEventListener("blur", hideTip);
+document.addEventListener("scroll", hideTip, true);
+
+// the buttons outside the menu do what their rows in it do
+document.getElementById("talkTopButton").addEventListener("click", () => {
+  historyWrap.classList.remove("open");
+  setFaceMode(!faceModeOn);
+});
+document.getElementById("sheetButton").addEventListener("click", () => {
+  historyWrap.classList.remove("open");
+  openShortcutSheet();
+});
+document.getElementById("sideNewChat").addEventListener("click", () => {
+  closeOverlays();
+  newChatButton.click();
+});
+document.getElementById("sideSettings").addEventListener("click", () => SHORTCUT_ACTIONS.settings());
+document.getElementById("sideKeys").addEventListener("click", () => openShortcutSheet());
+
+// ---- the tutors, pinned in the sidebar -------------------------------------------
+//
+// Eight subject tutors, each a salamander from Ember's family holding its
+// subject (src/tutors/*.svg), in its subject's colour. Shown as pictures only;
+// pointing at one names it.
+
+const TUTORS = [
+  { id: "maths", name: "Maths", colour: "#4C8DFF" },
+  { id: "biology", name: "Biology", colour: "#3DDC84" },
+  { id: "chemistry", name: "Chemistry", colour: "#FF8A3D" },
+  { id: "physics", name: "Physics", colour: "#9B6BFF" },
+  { id: "history", name: "History", colour: "#E8B04A" },
+  { id: "geography", name: "Geography", colour: "#2EC4B6" },
+  { id: "english", name: "English", colour: "#FF5A6E" },
+  { id: "languages", name: "Languages", colour: "#FF6FD8" },
+];
+
+const tutorGrid = document.getElementById("tutorGrid");
+for (const t of TUTORS) {
+  const b = document.createElement("button");
+  b.className = "tutorBtn";
+  b.dataset.tutor = t.id;
+  b.dataset.tip = `${t.name} tutor`;
+  b.setAttribute("aria-label", `${t.name} tutor`);
+  b.style.setProperty("--tutor", t.colour);
+  const img = document.createElement("img");
+  img.src = `./tutors/${t.id}.svg`;
+  img.alt = "";
+  img.width = 64;
+  img.height = 64;
+  b.appendChild(img);
+  b.addEventListener("click", () => openTutor(t));
+  tutorGrid.appendChild(b);
+}
+
+// Opening a tutor starts a chat with it: answered on this computer only, on the
+// installed model that suits its subject, which starts loading at once.
+let tutorModelNote = null;
+async function openTutor(t) {
+  closeOverlays();
+  if (faceModeOn) setFaceMode(false);
+  const r = await window.emb3r.newConversation({ tutor: t.id });
+  if (!r || !r.success) { flashNote((r && r.error) || "Could not start that tutor's chat."); return; }
+  tutorModelNote = { tutor: t.id, model: r.model, suggest: r.suggest };
+  await renderActiveConversationHistory();
+  await refreshHistoryList();
+  input.focus();
+  announce(`${t.name} tutor. Answers on this computer.`);
+}
+
+function tutorById(id) {
+  return TUTORS.find((t) => t.id === id) || null;
+}
+
+// The tutor bar: whose chat this is, above the transcript, in the tutor's own
+// colour - and the tutor's picture marked in the sidebar.
+const tutorBar = document.getElementById("tutorBar");
+function showTutorBar(tutorId) {
+  const t = tutorById(tutorId);
+  appEl.classList.toggle("tutorChat", Boolean(t));
+  for (const b of tutorGrid.querySelectorAll(".tutorBtn")) {
+    const on = Boolean(t) && b.dataset.tutor === t.id;
+    b.classList.toggle("current", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+  if (!t) { tutorBar.hidden = true; tutorBar.replaceChildren(); return; }
+  tutorBar.hidden = false;
+  tutorBar.style.setProperty("--tutor", t.colour);
+  const img = document.createElement("img");
+  img.src = `./tutors/${t.id}.svg`;
+  img.alt = "";
+  img.width = 32;
+  img.height = 32;
+  const name = document.createElement("span");
+  name.className = "tutorBarName";
+  name.textContent = `${t.name} tutor`;
+  const where = document.createElement("span");
+  where.className = "tutorBarWhere";
+  const note = tutorModelNote && tutorModelNote.tutor === t.id ? tutorModelNote : null;
+  where.textContent = note && note.model ? `on this computer · ${note.model}` : "on this computer";
+  tutorBar.replaceChildren(img, name, where);
+}
+
+// the list of chats lives in the sidebar now, so it is drawn at the start and
+// kept current rather than only when the menu opens
+refreshHistoryList();
 
 // ---- telling a screen reader -----------------------------------------------
 
@@ -4905,6 +5284,16 @@ settingsTabList.addEventListener("keydown", (e) => {
 let talkCancelled = false;
 let talkAutoStop = null;
 
+// What went wrong with listening, said where it can be seen and heard: on her
+// face in Talk, and in the terminal - where keyboard talking starts too - as a
+// line a screen reader also hears. It used to go only to the face, which is
+// hidden outside Talk, so Ctrl+T there failed in silence (found by review).
+function talkTrouble(text) {
+  faceSaidEl.textContent = text;
+  if (!faceModeOn) systemNote(text);
+  announce(text);
+}
+
 async function toggleTalk() {
   if (listening) { stopTalk(false); return; }
   if (transcribing) return;
@@ -4929,7 +5318,7 @@ function stopTalk(cancel) {
 // ---- her last reply ----------------------------------------------------------
 
 function lastReplyText() {
-  const replies = chat.querySelectorAll(":scope > .bot .msgText");
+  const replies = chat.querySelectorAll(":scope > .bot:not(.reaction) .msgText");
   return replies.length ? replies[replies.length - 1].textContent.trim() : "";
 }
 
@@ -5017,6 +5406,12 @@ async function renderShortcutList(container) {
 async function openShortcutSheet() {
   await renderShortcutList(document.getElementById("shortcutSheetBody"));
   shortcutSheet.classList.add("open");
+  // Focus went to Close, the only button in it - the last thing in the sheet -
+  // so at 650px it opened scrolled to its end with the first groups out of
+  // sight. The sheet itself takes focus instead, at its top. Registered before
+  // the dialog watcher's own timer, which then finds focus already inside.
+  const box = document.getElementById("shortcutSheetBox");
+  setTimeout(() => { box.focus({ preventScroll: true }); box.scrollTop = 0; }, 0);
 }
 
 function closeShortcutSheet() {
@@ -5184,6 +5579,10 @@ async function recordGlobalKey(id, keysEl, statusEl) {
   announce(`Press the new keys for ${GLOBAL_NAMES[id]}, or Escape to cancel.`);
 
   const onKey = (e) => {
+    // Tab moves on, and a recorder that is no longer on screen - Settings
+    // closed, another tab opened - stops, rather than turning the next keys
+    // pressed anywhere in emb3r into a key that works from every app
+    if (e.key === "Tab" || !keysEl.isConnected || keysEl.offsetParent === null) { finish(null); return; }
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") { finish(null); return; }
@@ -5193,6 +5592,12 @@ async function recordGlobalKey(id, keysEl, statusEl) {
         statusEl.textContent = "add Ctrl, Alt or Cmd - Shift alone would take capital letters from every app";
         statusEl.classList.add("bad");
       }
+      return;
+    }
+    // one modifier and a key is the shape of every app's own commands
+    if (acc.split("+").length < 3) {
+      statusEl.textContent = "use two of Ctrl, Alt, Shift or Cmd - one alone would take a key every app uses, like Ctrl+Z";
+      statusEl.classList.add("bad");
       return;
     }
     const inApp = matchShortcut(e, IS_MAC);
@@ -5205,8 +5610,12 @@ async function recordGlobalKey(id, keysEl, statusEl) {
     finish(acc);
   };
 
+  let finished = false;
   async function finish(acc) {
+    if (finished) return;
+    finished = true;
     document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("blur", onBlur);
     let error = null;
     if (acc) {
       const r = await window.emb3r.setGlobalShortcut(id, acc);
@@ -5220,7 +5629,10 @@ async function recordGlobalKey(id, keysEl, statusEl) {
     else announce("Cancelled.");
   }
 
+  // leaving the window for another app ends recording too
+  const onBlur = () => finish(null);
   document.addEventListener("keydown", onKey, true);
+  window.addEventListener("blur", onBlur);
 }
 
 globalKeysToggle.addEventListener("change", async () => {

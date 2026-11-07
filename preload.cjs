@@ -60,7 +60,9 @@ contextBridge.exposeInMainWorld("emb3r", {
 
   getActiveConversation: () => ipcRenderer.invoke("emb3r:get-active-conversation"),
   listConversations: () => ipcRenderer.invoke("emb3r:list-conversations"),
-  newConversation: () => ipcRenderer.invoke("emb3r:new-conversation"),
+  // { tutor: "maths" } starts a chat with that tutor; nothing, an ordinary chat
+  newConversation: (opts) => ipcRenderer.invoke("emb3r:new-conversation",
+    opts && typeof opts.tutor === "string" ? { tutor: opts.tutor } : undefined),
   loadConversation: (id) => ipcRenderer.invoke("emb3r:load-conversation", id),
   deleteConversation: (id) => ipcRenderer.invoke("emb3r:delete-conversation", id),
   onModelReady: (callback) => {
