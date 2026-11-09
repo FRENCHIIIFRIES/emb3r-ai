@@ -160,8 +160,12 @@ export function cutNotes(text, maxChars = 6000) {
   return { text: head.slice(0, cutAt).trimEnd(), cut: true };
 }
 
+// At least three: allowed an empty array, a model held to the grammar took it -
+// Llama 3.2 3B answered "osmosis" with [] in five seconds (7 November). The
+// prompt says the same numbers, as node-llama-cpp asks when an array is bounded.
 export const CARD_SCHEMA = {
   type: "array",
+  minItems: 3,
   maxItems: 10,
   items: {
     type: "object",
@@ -182,7 +186,7 @@ export function cardsPrompt(tutorId, { topic, notes, language } = {}) {
   const hasTopic = typeof topic === "string" && topic.trim();
   if (!hasNotes && !hasTopic) throw new Error("cards need a topic or notes");
   const lines = [
-    `Make up to 10 flashcards for a student revising ${t.name.toLowerCase()}.`,
+    `Make between 3 and 10 flashcards for a student revising ${t.name.toLowerCase()}.`,
     "Each card has a short question or prompt on the front and a short, correct answer on the back - one or two sentences, in plain words a 14-year-old understands.",
     "Every card tests one idea. No two cards ask the same thing.",
   ];

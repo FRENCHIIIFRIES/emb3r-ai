@@ -121,9 +121,12 @@ test("long notes are cut at a sentence, short ones left alone", () => {
   assert.deepEqual(cutNotes("short notes."), { text: "short notes.", cut: false });
 });
 
-test("the schema asks for at most ten cards, each a front and a back", () => {
+test("the schema asks for three to ten cards, each a front and a back", () => {
   assert.equal(CARD_SCHEMA.type, "array");
+  // allowed none, a model held to the grammar answered with []
+  assert.equal(CARD_SCHEMA.minItems, 3);
   assert.equal(CARD_SCHEMA.maxItems, 10);
+  assert.match(cardsPrompt("biology", { topic: "x" }), /between 3 and 10/);
   assert.deepEqual(CARD_SCHEMA.items.required, ["front", "back"]);
 });
 

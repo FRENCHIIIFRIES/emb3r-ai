@@ -5051,6 +5051,7 @@ ipcMain.handle("emb3r:study-generate", async (_e, deckId, request = {}) => {
       },
     });
     const drafts = completeCards(text).map((d) => ({ ...d, source }));
+    console.log(`Study: ${drafts.length} cards from ${text.length} characters${signal.aborted ? ", stopped" : ""}`);
     return { success: true, drafts, stopped: signal.aborted, cut: notes.cut, profileId };
   });
 });
