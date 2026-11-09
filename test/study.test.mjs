@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   BOX_DAYS, deckIdFor, isDeckId, newCard, schedule, dueCards, normalizeFront, addCards,
-  parseDeck, cutNotes, CARD_SCHEMA, cardsPrompt, explainPrompt, answerPrompt, completeCards,
+  parseDeck, cutNotes, MAX_CARDS, cardsPrompt, cardsSystemPrompt, explainPrompt, answerPrompt, completeCards,
 } from "../study.js";
 
 const DAY = 86_400_000;
@@ -121,13 +121,17 @@ test("long notes are cut at a sentence, short ones left alone", () => {
   assert.deepEqual(cutNotes("short notes."), { text: "short notes.", cut: false });
 });
 
-test("the schema asks for three to ten cards, each a front and a back", () => {
-  assert.equal(CARD_SCHEMA.type, "array");
-  // allowed none, a model held to the grammar answered with []
-  assert.equal(CARD_SCHEMA.minItems, 3);
-  assert.equal(CARD_SCHEMA.maxItems, 10);
-  assert.match(cardsPrompt("biology", { topic: "x" }), /between 3 and 10/);
-  assert.deepEqual(CARD_SCHEMA.items.required, ["front", "back"]);
+test("the prompt asks for three to ten cards and shows the exact shape", () => {
+  const p = cardsPrompt("biology", { topic: "x" });
+  assert.match(p, /between 3 and 10/);
+  assert.match(p, /"front": "the question", "back": "the answer"/);
+  assert.equal(MAX_CARDS, 10);
+  const s = cardsSystemPrompt("biology", { safe: "SAFE." });
+  assert.ok(s.startsWith("SAFE."), s);
+  assert.match(s, /biology/);
+  assert.match(s, /JSON array and nothing else/);
+  assert.doesNotMatch(s, /hint before/, "the tutor's way of talking is not for writing cards");
+  assert.throws(() => cardsSystemPrompt("astrology"));
 });
 
 test("the card prompt follows the source and the language", () => {
@@ -161,4 +165,20 @@ test("complete cards are read out of half-finished JSON, and only complete ones"
   assert.deepEqual(completeCards("[]"), []);
   assert.deepEqual(completeCards('[{"front":"a"},{"front":"c","back":"d"}]'), [{ front: "c", back: "d" }]);
   assert.deepEqual(completeCards('[{"front":"a","back":"b"},{"front":"c","back":"d"}]').length, 2);
+});
+
+test("cards are read out of whatever a small model wraps them in", () => {
+  // as Llama 3.2 3B writes it: pretty-printed, and its own choice of field names
+  assert.deepEqual(completeCards('[\n  {\n    "question": "What is osmosis?",\n    "answer": "Water moving."\n  }\n]'),
+    [{ front: "What is osmosis?", back: "Water moving." }]);
+  assert.deepEqual(completeCards('Here are your cards:\n```json\n[{"front": "a", "back": "b"}]\n```\nGood luck!'),
+    [{ front: "a", back: "b" }]);
+  // no array round them at all
+  assert.deepEqual(completeCards('{"front": "a", "back": "b"}\n{"front": "c", "back": "d"}').length, 2);
+  // an escaped line break becomes a line break
+  assert.deepEqual(completeCards('[{"front": "a", "back": "one\\ntwo"}]'), [{ front: "a", back: "one\ntwo" }]);
+  // one garbled card costs only itself
+  assert.deepEqual(completeCards('[{"front": "bad "quote" here", "back": "x"}, {"front": "c", "back": "d"}]'), [{ front: "c", back: "d" }]);
+  // a card whose back has not finished arriving is not a card yet
+  assert.deepEqual(completeCards('[{"front": "a", "back": "still writ'), []);
 });

@@ -160,22 +160,22 @@ export function cutNotes(text, maxChars = 6000) {
   return { text: head.slice(0, cutAt).trimEnd(), cut: true };
 }
 
-// At least three: allowed an empty array, a model held to the grammar took it -
-// Llama 3.2 3B answered "osmosis" with [] in five seconds (7 November). The
-// prompt says the same numbers, as node-llama-cpp asks when an array is bounded.
-export const CARD_SCHEMA = {
-  type: "array",
-  minItems: 3,
-  maxItems: 10,
-  items: {
-    type: "object",
-    properties: {
-      front: { type: "string" },
-      back: { type: "string" },
-    },
-    required: ["front", "back"],
-  },
-};
+// No grammar. Cards were first held to a JSON grammar, and on the 8 GB Iris Xe
+// laptop that took the whole app down at random with an uncaught C++ exception
+// (0xe06d7363, then 0xc0000409) while the grammar steered the model: 5 of 8 runs
+// on the real app, and none in six rounds without it (harnesses\grammar-gc-crash.mjs,
+// 9 November). So the prompt shows the shape and completeCards reads what comes back.
+
+export const MAX_CARDS = 10;
+
+// What the model is told it is, for making cards: not the tutor's own prompt,
+// whose "hint before an answer, end with a question" is for talking to a student.
+export function cardsSystemPrompt(tutorId, { safe = "" } = {}) {
+  const t = TUTORS[tutorId];
+  if (!t) throw new Error(`no tutor called ${tutorId}`);
+  return [safe, `You write study flashcards for a school student learning ${t.subject}.`,
+    "Every card must be correct. You answer with a JSON array and nothing else."].filter(Boolean).join(" ");
+}
 
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -199,7 +199,8 @@ export function cardsPrompt(tutorId, { topic, notes, language } = {}) {
   } else {
     lines.push(`The topic: ${topic.trim()}. Make the cards a student studying this topic would need.`);
   }
-  lines.push("", "Answer with the cards only, as JSON.");
+  lines.push("", "Answer with only a JSON array, in exactly this form, with these two keys:",
+    '[{"front": "the question", "back": "the answer"}, {"front": "the next question", "back": "its answer"}]');
   return lines.join("\n");
 }
 
@@ -226,45 +227,22 @@ export function answerPrompt(card, explanation, answer) {
   ].join("\n");
 }
 
-// The cards in a reply that is still being written: every complete {...}
-// object inside the array, in order, read with a scanner that knows a brace in
-// a string is not a brace. Stop keeps exactly these.
-export function completeCards(partialJson) {
-  const s = String(partialJson || "");
-  const out = [];
-  const start = s.indexOf("[");
-  if (start < 0) return out;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  let objStart = -1;
-  for (let i = start + 1; i < s.length; i++) {
-    const ch = s[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') { inString = true; continue; }
-    if (ch === "{") {
-      if (depth === 0) objStart = i;
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0 && objStart >= 0) {
-        try {
-          const o = JSON.parse(s.slice(objStart, i + 1));
-          if (o && typeof o.front === "string" && typeof o.back === "string") out.push({ front: o.front, back: o.back });
-        } catch {
-          // a malformed object is skipped, not the ones after it
-        }
-        objStart = -1;
-      }
-      if (depth < 0) break;
-    } else if (ch === "]" && depth === 0) {
-      break;
-    }
+// A front and its back, wherever they turn up in the reply: the pair is complete
+// once the back's closing quote has arrived, so a reply still being written
+// gives only finished cards, and Stop keeps exactly those. With no grammar a
+// small model may wrap the array in chatter or a code fence, or call the two
+// fields question and answer; none of that matters here, and one card it
+// garbles is skipped without losing the ones after it.
+const CARD_PAIR = /"(?:front|question|prompt|term|q)"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"(?:back|answer|response|definition|a)"\s*:\s*"((?:[^"\\]|\\.)*)"/gi;
+
+function jsonText(raw) {
+  try {
+    return JSON.parse(`"${raw}"`);
+  } catch {
+    return raw; // a raw line break or stray escape: the words are still the card
   }
-  return out;
+}
+
+export function completeCards(text) {
+  return [...String(text || "").matchAll(CARD_PAIR)].map((m) => ({ front: jsonText(m[1]), back: jsonText(m[2]) }));
 }

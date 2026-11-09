@@ -21,7 +21,7 @@ import { TUTORS, TUTOR_MODELS, isTutor, tutorPrompt, preferredModelFor, bestMode
 // a tutor's flashcards: decks, Leitner boxes, prompts, cards read as they come
 import {
   isDeckId, tutorOfDeck, parseDeck, addCards, schedule, dueCards, cutNotes,
-  CARD_SCHEMA, cardsPrompt, explainPrompt, answerPrompt, completeCards,
+  MAX_CARDS, cardsPrompt, cardsSystemPrompt, explainPrompt, answerPrompt, completeCards,
 } from "./study.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
@@ -430,8 +430,6 @@ let chatSequence = null;
 let loadedModel = null;
 // the key (file name, or path for a model pointed at on disk) of loadedModel
 let loadedModelKey = null;
-// the llama instance loadedModel came from - what builds a grammar for it
-let loadedLlama = null;
 let loadedContext = null;
 let modelLoadError = null;
 let mainWindow = null;
@@ -1342,7 +1340,6 @@ async function releaseLocalModel() {
   loadedContext = null;
   loadedModel = null;
   loadedModelKey = null;
-  loadedLlama = null;
   chatSession = null;
   chatSequence = null;
   await disposeQuietly(context);
@@ -1457,7 +1454,6 @@ async function loadLocalModelNow(filename, { conversationId } = {}) {
     chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
     loadedModel = model;
     loadedModelKey = target;
-    loadedLlama = llama;
     everLoaded = true;
     loadedContext = context;
     modelLoadError = null;
@@ -1491,7 +1487,6 @@ async function loadLocalModelNow(filename, { conversationId } = {}) {
       chatSession = new LlamaChatSession({ contextSequence: chatSequence, systemPrompt: systemPrompt() });
       loadedModel = cpuModel;
       loadedModelKey = target;
-      loadedLlama = llama;
       everLoaded = true;
       loadedContext = cpuContext;
       modelLoadError = null;
@@ -4978,13 +4973,13 @@ ipcMain.handle("emb3r:study-delete", (_e, deckId, cardId) => changeCard(deckId, 
 // model, with the chat's history put back exactly as it was afterwards. The
 // session is the one there at the start; if a model switch replaced it
 // meanwhile, the new one already holds the right chat and is left alone.
-async function withStudySession(tutorId, run) {
+async function withStudySession(tutorId, run, { system } = {}) {
   if (activeGeneration) return { success: false, error: "Ember is busy - wait for her to finish, or press Esc." };
   if (everLoaded || modelSwitch) {
     await ensureModelFor({ ...(activeConversation || {}), tutor: tutorId });
   }
   const session = chatSession;
-  if (!session || !loadedLlama) {
+  if (!session) {
     return { success: false, error: modelLoadError ? `The model could not load: ${modelLoadError}` : "The model is still loading. Try again in a moment." };
   }
   if (activeGeneration) return { success: false, error: "Ember is busy - wait for her to finish, or press Esc." };
@@ -4994,8 +4989,8 @@ async function withStudySession(tutorId, run) {
   activeGenerationDone = new Promise((resolve) => { over = resolve; });
   const saved = session.getChatHistory();
   try {
-    session.setChatHistory([{ type: "system", text: conversationPrompt({ tutor: tutorId }) }]);
-    return await run(session, controller.signal);
+    session.setChatHistory([{ type: "system", text: system || conversationPrompt({ tutor: tutorId }) }]);
+    return await run(session, controller.signal, controller);
   } catch (err) {
     console.error("Study:", err);
     return { success: false, error: err && err.message ? err.message : String(err) };
@@ -5011,16 +5006,6 @@ async function withStudySession(tutorId, run) {
   }
 }
 
-let cardGrammar = null;
-let cardGrammarFor = null;
-async function cardsGrammar() {
-  if (cardGrammarFor !== loadedLlama) {
-    cardGrammar = await loadedLlama.createGrammarForJsonSchema(CARD_SCHEMA);
-    cardGrammarFor = loadedLlama;
-  }
-  return cardGrammar;
-}
-
 ipcMain.handle("emb3r:study-generate", async (_e, deckId, request = {}) => {
   const tutorId = tutorOfDeck(deckId);
   const profileId = deckProfile();
@@ -5032,28 +5017,31 @@ ipcMain.handle("emb3r:study-generate", async (_e, deckId, request = {}) => {
   const source = hasNotes ? "notes" : "topic";
   const language = deckId.startsWith("languages-") ? deckId.slice("languages-".length).replace(/-/g, " ") : undefined;
   const prompt = cardsPrompt(tutorId, hasNotes ? { notes: notes.text, language } : { topic, language });
-  return withStudySession(tutorId, async (session, signal) => {
-    const grammar = await cardsGrammar();
+  const system = cardsSystemPrompt(tutorId, { safe: config.safeMode ? SAFE_MODE_PROMPT : "" });
+  return withStudySession(tutorId, async (session, signal, controller) => {
     let text = "";
     let shown = 0;
+    let enough = false;
     await session.prompt(prompt, {
-      grammar,
       signal,
       stopOnAbortSignal: true,
       maxTokens: 900,
       onTextChunk: (chunk) => {
         text += chunk;
-        const drafts = completeCards(text);
+        const drafts = completeCards(text).slice(0, MAX_CARDS);
         if (drafts.length > shown && mainWindow) {
           shown = drafts.length;
           mainWindow.webContents.send("emb3r:study-progress", { deckId, drafts: drafts.map((d) => ({ ...d, source })) });
         }
+        // ten is what was asked for; anything after them is not a card
+        if (drafts.length >= MAX_CARDS && !enough) { enough = true; controller.abort(); }
       },
     });
-    const drafts = completeCards(text).map((d) => ({ ...d, source }));
-    console.log(`Study: ${drafts.length} cards from ${text.length} characters${signal.aborted ? ", stopped" : ""}`);
-    return { success: true, drafts, stopped: signal.aborted, cut: notes.cut, profileId };
-  });
+    const drafts = completeCards(text).slice(0, MAX_CARDS).map((d) => ({ ...d, source }));
+    const stopped = signal.aborted && !enough;
+    console.log(`Study: ${drafts.length} cards from ${text.length} characters${stopped ? ", stopped" : ""}`);
+    return { success: true, drafts, stopped, cut: notes.cut, profileId };
+  }, { system });
 });
 
 ipcMain.handle("emb3r:study-explain", async (_e, deckId, cardId, request = {}) => {
