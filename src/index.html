@@ -2785,18 +2785,12 @@ canvas:focus-visible,
     .bootLetter{ transition:none; }
 }
 
-/* Two lit panes side by side, like a terminal multiplexer, and no more than a
-   comfortable width: on a big monitor they sit in the middle of the dark
-   instead of stretching to its edges. */
 #app{
     display:none;
     flex-direction:row;
-    gap:12px;
     width:100%;
-    max-width:1420px;
     height:100%;
     min-height:0;
-    margin-inline:auto;
 }
 
 #app.visible{
@@ -2814,7 +2808,6 @@ canvas:focus-visible,
     flex-direction:column;
     box-sizing:border-box;
     border:1px solid var(--text-color);
-    border-radius:8px;
     box-shadow:var(--frame-glow);
     overflow:hidden;
 }
@@ -2828,11 +2821,16 @@ canvas:focus-visible,
 }
 
 /* ---- the sidebar: tutors pinned at the top, chats under them --------------- */
+/* Out of the way until it is wanted: it slides over the screen when the pointer
+   reaches the left edge, or the keyboard tabs into it, and goes when the pointer
+   leaves - after a moment's grace, so a wobble does not shut it. Ctrl+B pins it. */
 #sidebar{
-    flex:0 0 236px;
-    /* a long chat title is cut with an ellipsis, never allowed to widen this */
-    min-width:0;
-    max-width:236px;
+    position:fixed;
+    z-index:1200;
+    top:16px;
+    bottom:16px;
+    left:16px;
+    width:252px;
     display:flex;
     flex-direction:column;
     gap:12px;
@@ -2840,18 +2838,55 @@ canvas:focus-visible,
     box-sizing:border-box;
     padding:12px 12px 8px;
     border:1px solid var(--text-color);
-    border-radius:8px;
-    box-shadow:var(--frame-glow);
+    background:var(--bg-color);
+    box-shadow:0 0 44px rgba(0, 0, 0, .75), var(--frame-glow);
+    transform:translateX(calc(-100% - 24px));
+    transition:transform .2s var(--ease) .25s;
 }
 
-/* Talk is a view for not looking at the screen; Settings is a page of its own.
-   Neither needs the list beside it. A window too narrow for both columns
-   keeps the conversation. */
-#app.faceMode #sidebar{ display:none; }
-
-@media (max-width: 720px){
-    #sidebar{ display:none; }
+#sideEdge:hover ~ #sidebar,
+#sidebar:hover,
+#sidebar:has(:focus-visible),
+#app.sideOpen #sidebar{
+    transform:none;
+    transition-delay:0s;
 }
+
+/* something was picked: out of the way at once, whatever the pointer is doing */
+#app.sideAway #sidebar{
+    transform:translateX(calc(-100% - 24px));
+    transition-delay:0s;
+}
+
+/* The way to it: the whole left edge, and a small prompt on the edge to say so. */
+#sideEdge{
+    position:fixed;
+    z-index:1100;
+    top:0;
+    bottom:0;
+    left:0;
+    width:24px;
+}
+
+#sideEdge::after{
+    content:">";
+    position:absolute;
+    top:50%;
+    left:3px;
+    transform:translateY(-50%);
+    font-size:20px;
+    line-height:1;
+    color:var(--text-color);
+    text-shadow:0 0 var(--glow-big) var(--text-color);
+}
+
+@media (prefers-reduced-motion: reduce){
+    #sidebar{ transition:none; }
+}
+
+/* Talk is a view for not looking at the screen. */
+#app.faceMode #sidebar,
+#app.faceMode #sideEdge{ display:none; }
 
 /* In a small window the title line keeps the name and the light; the words
    beside the light come back whenever something is actually leaving. */
@@ -2927,26 +2962,6 @@ canvas:focus-visible,
    still, and a new ordinary chat when she is chosen. */
 .tutorBtn.ember .coilGlyph{ padding:6px; box-sizing:border-box; }
 
-/* At rest a tutor is drawn in the salamander's own five shades of the accent,
-   so the eight of them belong to the terminal; pointed at, reached with the
-   keyboard or open, it shows its real colours. */
-.tutorArt path{ transition:fill .18s var(--ease); }
-.tutorArt .o{ fill:#120a07; }
-:root:not([data-theme="light"]) .tutorArt .o{ fill:color-mix(in srgb, var(--text-color) 28%, #120a07); }
-.tutorArt .d{ fill:color-mix(in srgb, var(--text-color) 40%, #0f0a07 60%); }
-.tutorArt .b{ fill:color-mix(in srgb, var(--text-color) 60%, #140d09 40%); }
-.tutorArt .g{ fill:color-mix(in srgb, var(--text-color) 80%, #1a0f0a 20%); }
-.tutorArt .f2{ fill:var(--text-color); }
-.tutorArt .f3{ fill:color-mix(in srgb, var(--text-color) 50%, #fff 50%); }
-
-.tutorBtn:hover .tutorArt path,
-.tutorBtn:focus-visible .tutorArt path,
-.tutorBtn.current .tutorArt path,
-#tutorBar .tutorArt path,
-#tutorHero .tutorArt path,
-.historyRow:hover .tutorArt path,
-.historyRow.active .tutorArt path{ fill:var(--real); }
-
 .tutorBtn:hover,
 .tutorBtn:focus-visible{
     background:color-mix(in srgb, var(--tutor) 16%, transparent);
@@ -2959,7 +2974,7 @@ canvas:focus-visible,
 .tutorBtn:focus-visible .coilGlyph{ transform:translateY(-2px); }
 
 @media (prefers-reduced-motion: reduce){
-    .tutorBtn .tutorArt, .tutorBtn .coilGlyph, .tutorArt path{ transition:none; }
+    .tutorBtn .tutorArt, .tutorBtn .coilGlyph{ transition:none; }
     .tutorBtn:hover .tutorArt, .tutorBtn:focus-visible .tutorArt,
     .tutorBtn:hover .coilGlyph, .tutorBtn:focus-visible .coilGlyph{ transform:none; }
 }
@@ -3677,9 +3692,9 @@ kbd.shortcutKeys{
 
 <div id="app" class="emptyChat">
 
-<!-- The left side: the tutors, pinned, then your chats. Both used to be out of
-     sight - the chats behind the menu, the tutors nowhere - and they are the
-     two things a student comes back to. -->
+<!-- The tutors and your chats, on the left, out of the way until the pointer
+     reaches the edge of the window. -->
+<div id="sideEdge" aria-hidden="true"></div>
 <aside id="sidebar" aria-label="Tutors and chats">
     <section id="tutorDock" aria-labelledby="tutorDockTitle">
         <h2 class="sideLabel" id="tutorDockTitle">tutors</h2>

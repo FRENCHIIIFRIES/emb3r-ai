@@ -2555,6 +2555,7 @@ async function refreshHistoryList() {
     row.appendChild(delBtn);
 
     row.addEventListener("click", async () => {
+      dismissSidebar();
       await window.emb3r.loadConversation(c.id);
       await renderActiveConversationHistory();
       historyWrap.classList.remove("open");
@@ -5083,11 +5084,12 @@ document.getElementById("sheetButton").addEventListener("click", () => {
   openShortcutSheet();
 });
 document.getElementById("sideNewChat").addEventListener("click", () => {
+  dismissSidebar();
   closeOverlays();
   newChatButton.click();
 });
-document.getElementById("sideSettings").addEventListener("click", () => SHORTCUT_ACTIONS.settings());
-document.getElementById("sideKeys").addEventListener("click", () => openShortcutSheet());
+document.getElementById("sideSettings").addEventListener("click", () => { dismissSidebar(); SHORTCUT_ACTIONS.settings(); });
+document.getElementById("sideKeys").addEventListener("click", () => { dismissSidebar(); openShortcutSheet(); });
 
 // ---- the tutors, pinned in the sidebar -------------------------------------------
 //
@@ -5134,8 +5136,16 @@ function addEmberButton() {
   glyph.setAttribute("class", "coilGlyph");
   glyph.setAttribute("aria-hidden", "true");
   b.appendChild(glyph);
-  b.addEventListener("click", () => { closeOverlays(); newChatButton.click(); });
+  b.addEventListener("click", () => { dismissSidebar(); closeOverlays(); newChatButton.click(); });
   tutorGrid.appendChild(b);
+}
+
+// Something was picked in the sidebar: it gets out of the way at once, even
+// with the pointer still resting where it was. (Pinned with Ctrl+B, it stays.)
+function dismissSidebar() {
+  if (appEl.classList.contains("sideOpen")) return;
+  appEl.classList.add("sideAway");
+  setTimeout(() => appEl.classList.remove("sideAway"), 600);
 }
 
 TUTORS.forEach((t, i) => {
@@ -5147,6 +5157,7 @@ TUTORS.forEach((t, i) => {
 // installed model that suits its subject, which starts loading at once.
 let tutorModelNote = null;
 async function openTutor(t) {
+  dismissSidebar();
   closeOverlays();
   if (faceModeOn) setFaceMode(false);
   const r = await window.emb3r.newConversation({ tutor: t.id });
@@ -5879,6 +5890,7 @@ const SHORTCUT_ACTIONS = {
   focusInput: () => { if (faceModeOn) setFaceMode(false); closeOverlays(); input.focus(); },
   attach: () => uploadButton.click(),
   cards: () => toggleCards(),
+  sidebar: () => appEl.classList.toggle("sideOpen"),
   copyLast: () => copyLastReply(),
   zoomIn: () => setZoom(zoom + 0.1),
   zoomOut: () => setZoom(zoom - 0.1),
