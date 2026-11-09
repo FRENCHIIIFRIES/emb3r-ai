@@ -99,6 +99,11 @@
     --line-strong: color-mix(in srgb, var(--text-color) 58%, var(--bg-color));
     --quiet: color-mix(in srgb, var(--text-color) 70%, #a7aea9);
     --ease: cubic-bezier(.2, .7, .2, 1);
+    /* how wide the conversation and the box under it ever get */
+    --column: 860px;
+    /* the bloom round a lit frame, and the faint light inside it */
+    --frame-glow: 0 0 16px color-mix(in srgb, var(--text-color) 18%, transparent),
+                  inset 0 0 70px color-mix(in srgb, var(--text-color) 4%, transparent);
     /* the browser's own sliders, checkboxes and scrollbars take the accent
        instead of Chromium's blue on white */
     accent-color: var(--text-color);
@@ -223,25 +228,32 @@ pre{
     text-shadow:none;
 }
 
+/* The hero: a chat with nothing in it is the salamander and the name, large, in
+   the middle of the screen, and the place to start typing under them. */
 #pet{
-    border:1px solid var(--text-color);
-    padding:24px;
-    margin-bottom:12px;
+    flex:1;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:56px 24px 8px;
     text-align:center;
-    transition: padding .3s ease, max-height .3s ease;
     overflow:hidden;
 }
 
-/* While you chat the header steps down to one row, and keeps who she is in it:
-   the salamander with its fire still moving, the wordmark in miniature, her
-   face and mood on the right. It used to fold away to the face alone, which
-   took the creature and the name off the screen for the whole conversation. */
+/* Once there is a conversation they step up into the title line, as one group
+   in the middle of it: the salamander with its fire still moving, the name,
+   her face and mood. Nothing moves again until the next empty chat. */
 #pet.compact{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    padding:6px 16px;
+    flex:0 0 auto;
+    flex-direction:row;
+    flex-wrap:wrap;
+    gap:0 22px;
+    /* the title line's light on the left and buttons on the right sit level
+       with this row, so it keeps clear of them */
+    padding:8px 112px;
+    border-bottom:1px solid var(--line);
 }
 
 #pet.compact #logoWrap{
@@ -249,22 +261,49 @@ pre{
     opacity:1;
     margin-bottom:0;
     gap:12px;
-    justify-content:flex-start;
 }
 
-#pet.compact #logoMark{ width:46px; }
+#pet.compact #logoMark{ width:48px; }
 
-#pet.compact #logo{ font-size:7.2px; }
+#pet.compact #logo{ font-size:8px; }
 
 #pet.compact #face{
-    font-size:22px;
+    font-size:24px;
     margin-bottom:0;
 }
 
 #pet.compact #stats{
-    font-size:13px;
+    font-size:14px;
     line-height:1.3;
     gap:14px;
+}
+
+/* a tutor's empty chat: the tutor, large, where the salamander would be */
+#tutorHero{ display:none; }
+
+#app.tutorChat.emptyChat #logoWrap,
+#app.tutorChat.emptyChat #stats{ display:none; }
+
+#app.tutorChat.emptyChat #tutorHero{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+}
+
+#tutorHero .tutorArt{ width:128px; height:128px; }
+
+#tutorHeroName{
+    font-size:32px;
+    line-height:1;
+    color:var(--tutor);
+    text-shadow:0 0 var(--glow-big) var(--tutor);
+}
+
+[data-theme="light"] #tutorHeroName,
+[data-theme="contrast"] #tutorHeroName{
+    color:var(--text-color);
+    text-shadow:none;
 }
 
 #logoWrap{
@@ -467,8 +506,9 @@ pre{
 
 #chat{
     flex:1;
-    border:1px solid var(--text-color);
-    padding:14px 16px;
+    min-height:0;
+    /* one column of conversation, centred; the scrollbar stays at the edge */
+    padding:16px max(18px, calc((100% - var(--column)) / 2));
     overflow-y:auto;
     white-space:pre-wrap;
     word-break:break-word;
@@ -623,7 +663,10 @@ pre{
     display:flex;
     align-items:center;
     gap:8px;
-    margin-top:8px;
+    flex:none;
+    box-sizing:border-box;
+    width:min(100% - 36px, var(--column));
+    margin:8px auto 0;
     padding:5px 8px;
     border:1px solid var(--line);
     font-size:15px;
@@ -770,7 +813,10 @@ pre{
     display:flex;
     align-items:stretch;
     gap:8px;
-    margin-top:10px;
+    flex:none;
+    box-sizing:border-box;
+    width:min(100% - 36px, var(--column));
+    margin:10px auto 0;
 }
 
 /* The prompt line as it always was - prompt, box, the two tools, [ send ] -
@@ -865,22 +911,34 @@ pre{
 /* the generation meter reuses the download bar's glyphs, so it needs the same
    font - VT323 lacks the block characters and the bar would jitter */
 #genStats{
+    flex:none;
+    box-sizing:border-box;
+    width:min(100% - 36px, var(--column));
+    margin:4px auto 8px;
     font-family:"JetBrains Mono", monospace;
     font-size:12px;
     min-height:1.2em;
-    margin-top:4px;
     color:#8fd6ff;
     text-shadow:0 0 4px #8fd6ff;
     white-space:pre;
 }
 
+/* The title line of the screen: the promise about the network on the left, the
+   two buttons on the right, level with the name in the middle. */
 #topbar{
+    position:absolute;
+    z-index:20;
+    top:14px;
+    left:14px;
+    right:12px;
     display:flex;
     justify-content:flex-end;
     align-items:center;
     gap:4px;
-    margin-bottom:10px;
+    pointer-events:none;
 }
+
+#topbar > *{ pointer-events:auto; }
 
 #netIndicator{
     display:flex;
@@ -1338,7 +1396,7 @@ pre{
     flex:1;
     min-height:0; /* required for overflow-y:auto to work inside a flex column */
     gap:14px;
-    padding:4px 4px 16px;
+    padding:12px 18px 16px;
     overflow-y:auto;
 }
 
@@ -1346,7 +1404,9 @@ pre{
     display:flex;
 }
 
-#app.settingsOpen #pet,
+/* the name stays in the title line, above the page */
+#app.settingsOpen #pet{ order:-1; }
+
 #app.settingsOpen #chat,
 #app.settingsOpen #row,
 #app.settingsOpen #genStats{
@@ -1600,9 +1660,9 @@ pre{
     align-items:center;
     justify-content:center;
     gap:clamp(14px, 3vh, 30px);
-    /* fills what is left below the topbar, so the face is centred in the
-       window rather than sitting under it */
-    min-height:calc(100vh - 90px);
+    /* the whole screen, so the koi or the face is centred in it */
+    flex:1;
+    min-height:0;
     text-align:center;
 }
 
@@ -1647,7 +1707,7 @@ pre{
 #faceKoi{
     margin:0;
     font-family:inherit;
-    font-size:clamp(8px, 1.15vw, 19px);
+    font-size:clamp(9px, 1.45vw, 19px);
     line-height:1;
     white-space:pre;
 }
@@ -1771,11 +1831,11 @@ pre{
     color:var(--quiet);
 }
 
-/* the way back sits top left, where a way back is looked for */
+/* the way back sits top left, under the network light */
 #faceExit{
     position:absolute;
-    top:0;
-    left:0;
+    top:46px;
+    left:10px;
 }
 
 #faceMode{ position:relative; }
@@ -2725,25 +2785,46 @@ canvas:focus-visible,
     .bootLetter{ transition:none; }
 }
 
+/* Two lit panes side by side, like a terminal multiplexer, and no more than a
+   comfortable width: on a big monitor they sit in the middle of the dark
+   instead of stretching to its edges. */
 #app{
     display:none;
     flex-direction:row;
-    gap:14px;
+    gap:12px;
+    width:100%;
+    max-width:1420px;
     height:100%;
     min-height:0;
+    margin-inline:auto;
 }
 
 #app.visible{
     display:flex;
 }
 
-/* everything that was the whole window is now the right-hand column */
+/* the screen: the title line, the conversation and the box to type in, in one
+   frame rather than a stack of separate boxes */
 #main{
+    position:relative;
     flex:1;
     min-width:0;
     min-height:0;
     display:flex;
     flex-direction:column;
+    box-sizing:border-box;
+    border:1px solid var(--text-color);
+    border-radius:8px;
+    box-shadow:var(--frame-glow);
+    overflow:hidden;
+}
+
+/* an empty chat's one line sits under the hero, not at the top of an empty box */
+#app.emptyChat #chat{
+    flex:0 0 auto;
+    overflow:visible;
+    padding-block:0 12px;
+    text-align:center;
 }
 
 /* ---- the sidebar: tutors pinned at the top, chats under them --------------- */
@@ -2757,8 +2838,10 @@ canvas:focus-visible,
     gap:12px;
     min-height:0;
     box-sizing:border-box;
-    padding:10px 10px 8px;
+    padding:12px 12px 8px;
     border:1px solid var(--text-color);
+    border-radius:8px;
+    box-shadow:var(--frame-glow);
 }
 
 /* Talk is a view for not looking at the screen; Settings is a page of its own.
@@ -2768,6 +2851,21 @@ canvas:focus-visible,
 
 @media (max-width: 720px){
     #sidebar{ display:none; }
+}
+
+/* In a small window the title line keeps the name and the light; the words
+   beside the light come back whenever something is actually leaving. */
+@media (max-width: 1080px){
+    #netIndicator:not(.active):not(.locked) #netLabel{ display:none; }
+    #pet.compact{ padding-inline:44px 96px; }
+    #pet.compact #logo{ font-size:7px; }
+}
+
+/* On a big screen the conversation is read from further away. */
+@media (min-width: 1200px){
+    #chat{ font-size:1.15rem; }
+    #pet:not(.compact) #logo{ font-size:22px; }
+    #pet:not(.compact) #logoMark{ width:134px; }
 }
 
 /* A section's name, written the way the transcript writes a note to itself. */
@@ -2816,7 +2914,8 @@ canvas:focus-visible,
     transition:background-color .15s var(--ease), border-color .15s var(--ease);
 }
 
-.tutorBtn img{
+.tutorBtn .tutorArt,
+.tutorBtn .coilGlyph{
     display:block;
     width:64px;
     height:64px;
@@ -2824,18 +2923,45 @@ canvas:focus-visible,
     transition:transform .15s var(--ease);
 }
 
+/* Ember in the middle of her family: the same mark as the header, standing
+   still, and a new ordinary chat when she is chosen. */
+.tutorBtn.ember .coilGlyph{ padding:6px; box-sizing:border-box; }
+
+/* At rest a tutor is drawn in the salamander's own five shades of the accent,
+   so the eight of them belong to the terminal; pointed at, reached with the
+   keyboard or open, it shows its real colours. */
+.tutorArt path{ transition:fill .18s var(--ease); }
+.tutorArt .o{ fill:#120a07; }
+:root:not([data-theme="light"]) .tutorArt .o{ fill:color-mix(in srgb, var(--text-color) 28%, #120a07); }
+.tutorArt .d{ fill:color-mix(in srgb, var(--text-color) 40%, #0f0a07 60%); }
+.tutorArt .b{ fill:color-mix(in srgb, var(--text-color) 60%, #140d09 40%); }
+.tutorArt .g{ fill:color-mix(in srgb, var(--text-color) 80%, #1a0f0a 20%); }
+.tutorArt .f2{ fill:var(--text-color); }
+.tutorArt .f3{ fill:color-mix(in srgb, var(--text-color) 50%, #fff 50%); }
+
+.tutorBtn:hover .tutorArt path,
+.tutorBtn:focus-visible .tutorArt path,
+.tutorBtn.current .tutorArt path,
+#tutorBar .tutorArt path,
+#tutorHero .tutorArt path,
+.historyRow:hover .tutorArt path,
+.historyRow.active .tutorArt path{ fill:var(--real); }
+
 .tutorBtn:hover,
 .tutorBtn:focus-visible{
     background:color-mix(in srgb, var(--tutor) 16%, transparent);
     border-color:var(--tutor);
 }
 
-.tutorBtn:hover img,
-.tutorBtn:focus-visible img{ transform:translateY(-2px); }
+.tutorBtn:hover .tutorArt,
+.tutorBtn:focus-visible .tutorArt,
+.tutorBtn:hover .coilGlyph,
+.tutorBtn:focus-visible .coilGlyph{ transform:translateY(-2px); }
 
 @media (prefers-reduced-motion: reduce){
-    .tutorBtn img{ transition:none; }
-    .tutorBtn:hover img, .tutorBtn:focus-visible img{ transform:none; }
+    .tutorBtn .tutorArt, .tutorBtn .coilGlyph, .tutorArt path{ transition:none; }
+    .tutorBtn:hover .tutorArt, .tutorBtn:focus-visible .tutorArt,
+    .tutorBtn:hover .coilGlyph, .tutorBtn:focus-visible .coilGlyph{ transform:none; }
 }
 
 #chatsSection{
@@ -2882,7 +3008,7 @@ canvas:focus-visible,
     background:color-mix(in srgb, var(--tutor) 12%, transparent);
 }
 
-.historyTutor{
+.historyRow .tutorArt{
     flex:none;
     width:16px;
     height:16px;
@@ -2892,20 +3018,33 @@ canvas:focus-visible,
 /* A tutor's chat says so above the transcript: its picture, its name in its
    colour, and where it answers. */
 #tutorBar{
+    flex:none;
     display:flex;
     align-items:center;
     gap:10px;
-    margin-bottom:8px;
-    padding:4px 10px;
-    border:1px solid var(--tutor);
-    background:color-mix(in srgb, var(--tutor) 10%, transparent);
+    padding:4px max(18px, calc((100% - var(--column)) / 2));
+    border-bottom:1px solid color-mix(in srgb, var(--tutor) 60%, transparent);
+    background:color-mix(in srgb, var(--tutor) 9%, transparent);
 }
 
 #tutorBar[hidden],
 #app.faceMode #tutorBar,
 #app.settingsOpen #tutorBar{ display:none; }
 
-#tutorBar img{ width:32px; height:32px; }
+#tutorBar .tutorArt{ width:32px; height:32px; }
+
+/* under the large tutor of an empty chat the bar is just where it answers and
+   its cards, centred: the picture and the name are already there, bigger */
+#app.emptyChat #tutorBar{
+    justify-content:center;
+    background:none;
+    border-bottom:none;
+}
+
+#app.emptyChat #tutorBar .tutorArt,
+#app.emptyChat .tutorBarName{ display:none; }
+
+#app.emptyChat .tutorBarWhere{ margin-left:0; }
 
 .tutorBarName{
     font-size:20px;
@@ -2940,8 +3079,7 @@ canvas:focus-visible,
     flex-direction:column;
     gap:10px;
     box-sizing:border-box;
-    padding:14px 16px;
-    border:1px solid var(--text-color);
+    padding:14px max(18px, calc((100% - var(--column)) / 2));
 }
 
 #app.cardsOpen #chat,
@@ -3537,7 +3675,7 @@ kbd.shortcutKeys{
     </div>
 </div>
 
-<div id="app">
+<div id="app" class="emptyChat">
 
 <!-- The left side: the tutors, pinned, then your chats. Both used to be out of
      sight - the chats behind the menu, the tutors nowhere - and they are the
@@ -3975,6 +4113,9 @@ kbd.shortcutKeys{
 
 <div id="pet">
 
+<!-- an empty chat with a tutor: that tutor, large -->
+<div id="tutorHero"><span id="tutorHeroArt"></span><span id="tutorHeroName"></span></div>
+
 <div id="logoWrap">
 <!-- Inline rather than an <img> so the flames can follow the accent colour.
      Each rect carries a class and the stylesheet decides what it looks like;
@@ -4197,6 +4338,7 @@ kbd.shortcutKeys{
 
 <script src="./keys.js"></script>
 <script src="./icons.js"></script>
+<script src="./tutor-art.js"></script>
 <script src="./koi.js"></script>
 <script src="./cards.js"></script>
 <script src="./renderer.js"></script>

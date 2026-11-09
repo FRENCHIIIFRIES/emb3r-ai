@@ -1233,7 +1233,7 @@ async function onSend() {
   lastUserMessage = text;
   input.value = "";
   send.disabled = true;
-  petEl.classList.add("compact");
+  setHero(false);
 
   playSendBeep();
 
@@ -1562,16 +1562,25 @@ stopButton.addEventListener("click", async () => {
 send.addEventListener("click", onSend);
 input.addEventListener("keydown", (e) => { if (e.key === "Enter") onSend(); });
 
-// The header shrinks while you chat and opens again only for an empty chat.
-// It used to open whenever the box lost focus with nothing typed, so clicking
-// into the transcript to re-read or copy a line pushed the text you were
-// reading 164px down the window: reading made the reading jump.
-input.addEventListener("focus", () => petEl.classList.add("compact"));
-input.addEventListener("blur", () => {
-  const empty = !chat.querySelector(".you, .bot");
-  // the cards need the room as much as a conversation does
-  if (empty && !input.value.trim() && !thinkTimer && !appEl.classList.contains("cardsOpen")) petEl.classList.remove("compact");
-});
+// Two states and one rule: a chat with nothing in it is the hero, the salamander
+// and the name large in the middle of the screen; a conversation (or a tutor's
+// cards) puts them in the title line. Nothing depends on where the focus is -
+// it used to, so clicking into the transcript to re-read a line opened the
+// header and pushed the text you were reading 164px down the window.
+function setHero(on) {
+  petEl.classList.toggle("compact", !on);
+  appEl.classList.toggle("emptyChat", on);
+}
+
+// Settings is a page under the title line, so the name goes up there while it
+// is open, whichever of the many ways it was opened or closed.
+let settingsWasOpen = false;
+new MutationObserver(() => {
+  const open = appEl.classList.contains("settingsOpen");
+  if (open === settingsWasOpen) return;
+  settingsWasOpen = open;
+  setHero(!open && !chat.querySelector(".you, .bot") && !appEl.classList.contains("cardsOpen"));
+}).observe(appEl, { attributes: true, attributeFilter: ["class"] });
 
 // =============================
 // File uploader
@@ -2454,7 +2463,7 @@ async function renderActiveConversationHistory() {
     // conversation was a blank panel with no indication it was working.
     if (!conv || !conv.messages.length) {
       // an empty chat is a fresh start: the full header, unless you are typing
-      if (document.activeElement !== input && !appEl.classList.contains("cardsOpen")) petEl.classList.remove("compact");
+      if (!appEl.classList.contains("cardsOpen")) setHero(true);
       const empty = document.createElement("span");
       empty.className = "dim";
       // the platform asked here rather than through IS_MAC, which is declared
@@ -2487,8 +2496,8 @@ async function renderActiveConversationHistory() {
       }
       return;
     }
-    // a conversation to read gets the room: the header steps down to its row
-    petEl.classList.add("compact");
+    // a conversation to read gets the room: the header steps up to the title line
+    setHero(false);
     for (const m of conv.messages) {
       if (m.role === "user") append("you", "you", m.text, { copyable: true });
       else appendStaticBotLine(m.text, m.source);
@@ -2515,15 +2524,7 @@ async function refreshHistoryList() {
 
     // a tutor's chat carries its tutor's picture, so the list says whose it is
     const tutor = c.tutor ? TUTORS.find((t) => t.id === c.tutor) : null;
-    if (tutor) {
-      const face = document.createElement("img");
-      face.className = "historyTutor";
-      face.src = `./tutors/${tutor.id}.svg`;
-      face.alt = "";
-      face.width = 16;
-      face.height = 16;
-      row.appendChild(face);
-    }
+    if (tutor) row.appendChild(tutorArt(tutor.id));
 
     const title = document.createElement("span");
     title.className = "historyTitle";
@@ -5106,22 +5107,41 @@ const TUTORS = [
 ];
 
 const tutorGrid = document.getElementById("tutorGrid");
-for (const t of TUTORS) {
+const tutorArt = (id) => window.emb3rTutorArt.tutorArt(document, id);
+
+function addTutorButton(t) {
   const b = document.createElement("button");
   b.className = "tutorBtn";
   b.dataset.tutor = t.id;
   b.dataset.tip = `${t.name} tutor`;
   b.setAttribute("aria-label", `${t.name} tutor`);
   b.style.setProperty("--tutor", t.colour);
-  const img = document.createElement("img");
-  img.src = `./tutors/${t.id}.svg`;
-  img.alt = "";
-  img.width = 64;
-  img.height = 64;
-  b.appendChild(img);
+  b.appendChild(tutorArt(t.id));
   b.addEventListener("click", () => openTutor(t));
   tutorGrid.appendChild(b);
 }
+
+// Ember in the middle of her family: an ordinary chat, marked when you are in one
+function addEmberButton() {
+  const b = document.createElement("button");
+  b.className = "tutorBtn ember";
+  b.dataset.tip = "Ember - a new chat";
+  b.dataset.tipKey = "newChat";
+  b.setAttribute("aria-label", "Ember, a new chat");
+  b.style.setProperty("--tutor", "var(--text-color)");
+  const glyph = document.getElementById("logoMark").cloneNode(true);
+  glyph.removeAttribute("id");
+  glyph.setAttribute("class", "coilGlyph");
+  glyph.setAttribute("aria-hidden", "true");
+  b.appendChild(glyph);
+  b.addEventListener("click", () => { closeOverlays(); newChatButton.click(); });
+  tutorGrid.appendChild(b);
+}
+
+TUTORS.forEach((t, i) => {
+  if (i === 4) addEmberButton();
+  addTutorButton(t);
+});
 
 // Opening a tutor starts a chat with it: answered on this computer only, on the
 // installed model that suits its subject, which starts loading at once.
@@ -5153,18 +5173,19 @@ function showTutorBar(tutorId) {
   if (appEl.classList.contains("cardsOpen") && (!t || !cardsTutor || cardsTutor.id !== t.id)) closeCards({ focus: false });
   appEl.classList.toggle("tutorChat", Boolean(t));
   for (const b of tutorGrid.querySelectorAll(".tutorBtn")) {
-    const on = Boolean(t) && b.dataset.tutor === t.id;
+    const on = t ? b.dataset.tutor === t.id : b.classList.contains("ember");
     b.classList.toggle("current", on);
     b.setAttribute("aria-pressed", String(on));
   }
   if (!t) { tutorBar.hidden = true; tutorBar.replaceChildren(); return; }
   tutorBar.hidden = false;
   tutorBar.style.setProperty("--tutor", t.colour);
-  const img = document.createElement("img");
-  img.src = `./tutors/${t.id}.svg`;
-  img.alt = "";
-  img.width = 32;
-  img.height = 32;
+  // large in the middle of the screen until the first question is asked
+  const hero = document.getElementById("tutorHero");
+  hero.style.setProperty("--tutor", t.colour);
+  document.getElementById("tutorHeroArt").replaceChildren(tutorArt(t.id));
+  document.getElementById("tutorHeroName").textContent = `${t.name} tutor`;
+  const img = tutorArt(t.id);
   const name = document.createElement("span");
   name.className = "tutorBarName";
   name.textContent = `${t.name} tutor`;
@@ -5252,8 +5273,8 @@ async function openCards(tutorId) {
   cardsStatus.textContent = "";
   appEl.classList.add("cardsOpen");
   cardsPanel.hidden = false;
-  // the header steps down to its row, as it does for a conversation
-  petEl.classList.add("compact");
+  // the name steps up to the title line, as it does for a conversation
+  setHero(false);
   await refreshDeck();
   cardsSource.focus();
   announce(`${t.name} cards. ${cardsCount.textContent}.`);
@@ -5264,6 +5285,8 @@ function closeCards({ focus = true } = {}) {
   appEl.classList.remove("cardsOpen");
   cardsPanel.hidden = true;
   cardsSession = null;
+  // back to the hero if the chat behind the cards is still empty
+  setHero(!chat.querySelector(".you, .bot"));
   if (focus) input.focus();
 }
 
@@ -5908,7 +5931,7 @@ async function explainCopied(data) {
   }
   append("you", "you", `explain what I copied:\n${data.preview}`, { copyable: true });
   lastUserMessage = "explain what I copied";
-  petEl.classList.add("compact");
+  setHero(false);
   playSendBeep();
   const note = data.cut ? " (this is only the first 4,000 characters of what I copied)" : "";
   await submitToModel(`Explain this to me${note}:\n\n${data.text}`, { forceLocal: true });
