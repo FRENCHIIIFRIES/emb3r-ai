@@ -42,5 +42,20 @@
     return session.queue.length;
   }
 
-  root.emb3rCards = { startSession, current, flip, rate, isDone, left };
+  // The drafts on screen, brought up to date with the list the model reports -
+  // which it sends from its start every time it finishes a card, and once more
+  // when it is done. That takes a minute or more, which is exactly when a
+  // student starts mending the first cards. So a draft they have changed or
+  // dropped stays as they left it; one nobody has touched follows the model;
+  // a new one joins the end. A draft that did not change comes back as the very
+  // same object, so the page can leave its row - and a caret in it - alone.
+  function mergeDrafts(shown, incoming) {
+    return Array.from(incoming || [], (d, i) => {
+      const had = shown && shown[i];
+      if (had && (had.touched || (had.front === d.front && had.back === d.back))) return had;
+      return { ...d, keep: true, touched: false };
+    });
+  }
+
+  root.emb3rCards = { startSession, current, flip, rate, isDone, left, mergeDrafts };
 })(globalThis);

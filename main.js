@@ -3273,6 +3273,15 @@ const VOICE_PLAYBACK_RATE = 1.11;
 // does not chop a sentence into fragments that lose their intonation.
 const MAX_SPEECH_CHARS = 600;
 
+// What a question asked out loud is sent with. A written answer - four
+// paragraphs, a list, a block of code - is a minute of waiting and then a
+// minute of being read to. Three sentences are a conversation, and on a laptop
+// that writes five words a second they are also the difference between an
+// answer that starts in a few seconds and one that starts in twenty.
+const SPOKEN_REPLY_PROMPT = "(This was said out loud, and your answer will be read aloud by a voice. "
+  + "Answer the way a person talks: one to three short sentences in plain words, "
+  + "with no lists, no headings, no code and no emoji.)";
+
 function voiceWeightsPresent(dir) {
   try {
     // not an exact match: the repository could be re-uploaded with a byte or
@@ -4663,7 +4672,10 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // the user is listening to stays here. A web answer will not know which song
   // "this" is; that is the price, and it is the right way round.
   const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContextWithin(MUSIC_LOOKUP_MS) : null;
-  const extras = [memories, music, attachmentContext].filter(Boolean).join("\n\n");
+  // Said aloud in Talk, and answered aloud: for this one turn she is told so,
+  // and like the other extras it is not kept in the conversation.
+  const spoken = opts.spoken === true ? SPOKEN_REPLY_PROMPT : null;
+  const extras = [memories, music, attachmentContext, spoken].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();

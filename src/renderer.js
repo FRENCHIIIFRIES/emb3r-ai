@@ -560,6 +560,11 @@ let voiceRun = 0;
 // time the next piece should begin at
 let voiceSources = [];
 let voiceStartAt = 0;
+// Which run of speak() is making her voice with nothing heard yet, and which
+// has sound going (a gap between two pieces included). Zero for neither. Talk
+// reads these to say "about to speak" and "speaking" instead of "your turn".
+let voiceReadying = 0;
+let voiceSounding = 0;
 
 // Read aloud, a reply is prose - not the punctuation that makes it prose on a
 // screen. Spoken literally, a fenced block is "backtick backtick backtick j s"
@@ -713,6 +718,8 @@ function stopSpeaking() {
   }
   voiceSources = [];
   voiceStartAt = 0;
+  voiceReadying = 0;
+  voiceSounding = 0;
   // a mouth still moving after the sound stopped is the worst kind of wrong:
   // it looks like the app is talking to you and you have gone deaf
   stopMouth();
@@ -740,6 +747,8 @@ function voiceTrouble(reason) {
     note.className = "faceTrouble";
     note.textContent = message;
     faceSaidEl.appendChild(note);
+    // Talk's words are no longer a live region, so this is said outright
+    announce(message);
   } else {
     append("sys", "sys", message);
   }
@@ -776,6 +785,19 @@ async function speak(text) {
     voiceTrouble("The speech model is not on this machine, so there is nothing to speak with.");
     return;
   }
+  // From here until the first sound there are seconds in which her voice is
+  // being made and nothing is heard. Talk says so (see paintTalk): left saying
+  // "your turn", it invited you to talk over her first word.
+  voiceReadying = run;
+  try {
+    await speakPieces(chunks, run);
+  } finally {
+    if (voiceReadying === run) voiceReadying = 0;
+    if (voiceSounding === run) voiceSounding = 0;
+  }
+}
+
+async function speakPieces(chunks, run) {
   const ctx = getAudioCtx();
   // Chromium suspends a context created before the page has been interacted
   // with, and a suspended context plays nothing while reporting no error at
@@ -838,6 +860,9 @@ async function speak(text) {
     // to wait for, which is what makes a one-line answer immediate
     if (heldSeconds >= SPEECH_LEAD_SECONDS || i === chunks.length - 1) {
       playing = true;
+      // sound from here on: a pause between pieces is still her speaking
+      if (voiceReadying === run) voiceReadying = 0;
+      voiceSounding = run;
       for (const piece of held) scheduleBuffer(piece.buffer, piece.rate);
       held.length = 0;
       setFace("talking");
@@ -1007,15 +1032,22 @@ function setFaceMode(on) {
   paintFace(FACES[currentFace] || FACES.idle);
   if (on) startKoi();
   else stopKoiLoop();
+  clearInterval(talkTimer);
+  talkTimer = null;
   if (on) {
     faceHeardEl.textContent = "";
+    faceSaidEl.textContent = "";
+    buildMeter();
+    paintTalk();
+    talkTimer = setInterval(paintTalk, 100);
     // Warm the voice, because entering this view means she is about to speak.
-    // The listening model is deliberately not warmed here: holding the button
+    // The listening model is deliberately not warmed here: pressing the button
     // is what makes it certain, and loading it on the chance costs memory the
     // language model needs on exactly the machines this matters on.
     try { window.emb3r.warmVoice(); } catch (e) {}
     faceMic.focus();
   } else {
+    appEl.classList.remove("talkSpeaking");
     stopMouth();
     stopListening();
     input.focus();
@@ -1047,41 +1079,80 @@ faceExit.addEventListener("click", () => setFaceMode(false));
 // resample to 16 kHz happens in an OfflineAudioContext, which is the browser's
 // own resampler rather than one written here at midnight.
 
+const TALK = window.emb3rTalk;
+const talkStateEl = document.getElementById("talkState");
+const talkMeterEl = document.getElementById("talkMeter");
+
 let micStream = null;
 let micRecorder = null;
 let micChunks = [];
 let listening = false;
 let transcribing = false;
+// asked for and not yet answered: the first open of a microphone can take a
+// second, and that second used to be invisible
+let micOpening = false;
+// Bumped by every start and by every stop. A microphone that arrives carrying
+// an older number was let go of - or cancelled with Esc - before it had opened,
+// and is closed again unheard. Without this a quick tap opened the microphone
+// after the button had already come up, and nothing was left to close it.
+let micWanted = 0;
+// held down like a walkie-talkie, so letting go is the end of the sentence;
+// after a tap it ends when the talking does
+let talkHeld = false;
+let talkPressedAt = 0;
+// a voice has been heard in this recording
+let talkHeard = false;
+let micWatch = null;
 
 function setListening(on) {
   listening = on;
   appEl.classList.toggle("listening", on);
   micIndicator.hidden = !on;
-  faceMicLabel.textContent = on ? "listening" : "hold to talk";
   // the eyes change too, so the state is legible from the creature alone -
   // which is the whole point of a view you are not reading
   if (on) paintFace(FACES.listening);
   else paintFace(FACES[currentFace] || FACES.idle);
+  paintTalk();
 }
 
 async function startListening() {
-  if (listening || transcribing) return;
+  if (listening || transcribing || micOpening) return;
+  // In Talk what is heard is sent as it stands, and she can only answer one
+  // thing at a time: while she is working on an answer the microphone stays
+  // shut, and the button stops her instead.
+  if (faceModeOn && !stopButton.hidden) return;
   // a head start while the sentence is still being spoken
   try { window.emb3r.warmEars(); } catch (e) {}
   // whatever Ember was saying is over: you are talking now
   stopSpeaking();
+  const wanted = ++micWanted;
+  micOpening = true;
+  paintTalk();
+  let stream = null;
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
   } catch (err) {
+    micOpening = false;
+    talkHeld = false;
     faceHeardEl.textContent = "";
     talkTrouble(err && err.name === "NotAllowedError"
       ? "The microphone was refused. Windows asks once, under Privacy settings."
       : "No microphone was found on this computer.");
     setFace("deaf");
+    paintTalk();
     return;
   }
+  micOpening = false;
+  if (wanted !== micWanted) {
+    for (const track of stream.getTracks()) {
+      try { track.stop(); } catch (e) {}
+    }
+    paintTalk();
+    return;
+  }
+  micStream = stream;
   micChunks = [];
   micRecorder = new MediaRecorder(micStream);
   micRecorder.addEventListener("dataavailable", (e) => {
@@ -1089,11 +1160,19 @@ async function startListening() {
   });
   micRecorder.addEventListener("stop", handleRecording);
   micRecorder.start();
+  talkHeard = false;
+  // a cancel belongs to the recording it cancelled, never to the next one
+  talkCancelled = false;
+  watchMic(stream);
   setListening(true);
 }
 
 function stopListening() {
+  // and a start that has not been answered yet is taken back
+  micWanted += 1;
+  talkHeld = false;
   if (!listening) return;
+  unwatchMic();
   setListening(false);
   try { micRecorder.stop(); } catch (e) {}
   // the track is stopped as well as the recorder, or the operating system goes
@@ -1104,6 +1183,138 @@ function stopListening() {
     }
     micStream = null;
   }
+}
+
+// ---- hearing the microphone while it is open ---------------------------------
+//
+// Two things come from its loudness, twenty times a second: the meter, so that
+// you can see it hearing you, and the end of the sentence - a tap opens the
+// microphone and this closes it when the talking stops (src/talk.js decides).
+// The microphone goes to an analyser and nowhere else: never to the speakers.
+
+const TALK_METER_BARS = 40;
+let meterBars = [];
+
+function buildMeter() {
+  if (talkMeterEl.childElementCount === TALK_METER_BARS) return;
+  talkMeterEl.replaceChildren(...Array.from({ length: TALK_METER_BARS }, () => document.createElement("i")));
+  meterBars = TALK.meterHeights([], 0, TALK_METER_BARS);
+}
+
+function paintMeter(level) {
+  meterBars = TALK.meterHeights(meterBars, level, TALK_METER_BARS);
+  const bars = talkMeterEl.children;
+  for (let i = 0; i < bars.length; i++) bars[i].style.height = `${2 + Math.round(meterBars[i] * 30)}px`;
+}
+
+function watchMic(stream) {
+  unwatchMic();
+  const ctx = getAudioCtx();
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  source.connect(analyser);
+  const data = new Float32Array(analyser.fftSize);
+  const endpointer = TALK.createEndpointer();
+  let last = performance.now();
+  const timer = setInterval(() => {
+    if (!listening) return;
+    analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += v * v;
+    const level = Math.sqrt(sum / data.length);
+    const now = performance.now();
+    const verdict = endpointer.push(level, now - last);
+    last = now;
+    if (faceModeOn) paintMeter(level);
+    if (verdict === "speech" && !talkHeard) { talkHeard = true; paintTalk(); }
+    // held down, letting go decides - not a pause for breath
+    if (talkHeld) return;
+    if (verdict === "done") {
+      stopTalk(false);
+    } else if (verdict === "silence") {
+      stopTalk(true);
+      talkTrouble(faceModeOn ? "I did not hear anything. Tap talk and try again." : "I did not hear anything.");
+    }
+  }, 50);
+  micWatch = { source, analyser, timer };
+}
+
+function unwatchMic() {
+  if (!micWatch) return;
+  clearInterval(micWatch.timer);
+  try { micWatch.source.disconnect(); } catch (e) {}
+  micWatch = null;
+}
+
+// ---- the button, and the spacebar --------------------------------------------
+//
+// Down and up are both listened to, because they mean different things: a tap
+// starts listening and the talking ends it; held for longer than a tap, letting
+// go ends it. While the microphone is open a press sends what was said, and
+// while she is working on an answer it stops her - the button says which.
+const TALK_HOLD_MS = 400;
+let talkPressSpent = false;
+
+function pressTalk() {
+  talkPressSpent = false;
+  if (listening) { talkPressSpent = true; stopTalk(false); return; }
+  if (transcribing || micOpening) return;
+  if (!stopButton.hidden) { talkPressSpent = true; stopButton.click(); return; }
+  talkHeld = true;
+  talkPressedAt = performance.now();
+  startListening();
+}
+
+function releaseTalk() {
+  if (talkPressSpent) { talkPressSpent = false; return; }
+  if (!talkHeld) return;
+  talkHeld = false;
+  paintTalk();
+  // a tap: it stays open, and closes when they stop talking
+  if (performance.now() - talkPressedAt < TALK_HOLD_MS) return;
+  // held, and the microphone had not finished opening: it opens in a moment
+  // and listens the way a tap does, rather than throwing the sentence away
+  if (listening) stopTalk(false);
+}
+
+// What Talk says is happening and what its button will do, asked for ten times
+// a second while Talk is open rather than set at every place her state
+// changes: those places are many, and one missed would leave the screen saying
+// "listening" to nobody.
+let talkTimer = null;
+
+function paintTalk() {
+  if (!faceModeOn) return;
+  const generating = !stopButton.hidden;
+  const now = TALK.talkStatus({
+    opening: micOpening,
+    listening,
+    heard: talkHeard,
+    held: talkHeld,
+    transcribing,
+    thinking: generating && !streamText,
+    answering: generating && Boolean(streamText),
+    // a pause between two pieces of a sentence is still her speaking
+    speaking: speaking() || voiceSounding !== 0,
+    readying: voiceReadying !== 0,
+  });
+  const line = `// ${now.line}`;
+  if (talkStateEl.textContent !== line) talkStateEl.textContent = line;
+  const label = `[ ${now.button} ]`;
+  if (faceMicLabel.textContent !== label) faceMicLabel.textContent = label;
+  if (faceMic.dataset.act !== now.act) {
+    faceMic.dataset.act = now.act;
+    // a microphone on a button that stops her would be the wrong picture
+    const icon = faceMic.querySelector(".icon");
+    const wanted = now.act === "stop" ? "stop" : "mic";
+    if (icon && icon.dataset.icon !== wanted) ICONS.setIcon(icon, wanted);
+  }
+  const talking = speaking();
+  appEl.classList.toggle("talkSpeaking", talking && !listening);
+  // her voice on the same meter while she speaks; flat again when nobody is
+  if (!listening) paintMeter(talking ? voiceLevel() * 0.25 : 0);
 }
 
 // Whisper wants 16 kHz mono floats. The browser's own resampler does it, which
@@ -1137,6 +1348,7 @@ async function handleRecording() {
   faceSaidEl.textContent = "";
   faceHeardEl.textContent = "...";
   setFace("hearing");
+  paintTalk();
 
   try {
     const pcm = await toSixteenKilohertz(blob);
@@ -1168,6 +1380,14 @@ async function handleRecording() {
     faceHeardEl.textContent = heard;
     input.value = heard;
 
+    // The working-out is over once the words are known. It used to count as
+    // still going until her whole answer had come back, which was harmless
+    // while Talk's button was locked for that long - and now that the button
+    // stops her instead, it would have left it saying "working out what you
+    // said" and doing nothing, all through her answer.
+    transcribing = false;
+    paintTalk();
+
     // In face mode the transcript is the message - there is no keyboard there
     // and nothing to correct it with. In the terminal it lands in the box
     // instead, to be read and fixed before it is sent.
@@ -1185,32 +1405,39 @@ async function handleRecording() {
     transcribing = false;
     setFace(restingFace());
     if (faceModeOn) faceMic.focus();
+    paintTalk();
   }
 }
 
-// held, on both the button and the spacebar - the button for a pointer, the
-// spacebar because that is where a hand already is
-micButton.addEventListener("pointerdown", (e) => { e.preventDefault(); startListening(); });
-micButton.addEventListener("pointerup", stopListening);
-micButton.addEventListener("pointerleave", stopListening);
-micButton.addEventListener("pointercancel", stopListening);
+// tapped or held, on both buttons and the spacebar - the button for a pointer,
+// the spacebar because that is where a hand already is. Sliding off a button
+// that is being held is letting go of it.
+for (const button of [micButton, faceMic]) {
+  button.addEventListener("pointerdown", (e) => { e.preventDefault(); pressTalk(); });
+  button.addEventListener("pointerup", releaseTalk);
+  button.addEventListener("pointerleave", releaseTalk);
+  button.addEventListener("pointercancel", releaseTalk);
+}
 
-faceMic.addEventListener("pointerdown", (e) => { e.preventDefault(); startListening(); });
-faceMic.addEventListener("pointerup", stopListening);
-faceMic.addEventListener("pointerleave", stopListening);
-faceMic.addEventListener("pointercancel", stopListening);
+// Enter on the button, for a keyboard that reached it by Tab: the same as a tap
+faceMic.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.repeat) return;
+  e.preventDefault();
+  pressTalk();
+  releaseTalk();
+});
 
 document.addEventListener("keydown", (e) => {
   if (!faceModeOn || e.code !== "Space" || e.repeat) return;
   // the button has focus in this mode, and space would otherwise click it too
   e.preventDefault();
-  startListening();
+  pressTalk();
 });
 
 document.addEventListener("keyup", (e) => {
   if (!faceModeOn || e.code !== "Space") return;
   e.preventDefault();
-  stopListening();
+  releaseTalk();
 });
 
 // =============================
@@ -1291,7 +1518,12 @@ async function onSend() {
   mood = Math.min(5, mood + 1);
   renderStats();
 
-  await submitToModel(messageToSend, attachmentContext ? { attachmentContext } : undefined, { fromDocument: usedRetrieval });
+  const opts = {};
+  if (attachmentContext) opts.attachmentContext = attachmentContext;
+  // asked out loud, and about to be answered out loud: main.js asks her for a
+  // few short sentences instead of an essay to be read to you
+  if (faceModeOn) opts.spoken = true;
+  await submitToModel(messageToSend, Object.keys(opts).length ? opts : undefined, { fromDocument: usedRetrieval });
   // the attachment deliberately survives, so follow-ups can query it again.
   // Cleared with the ✕ on the attachment bar.
   input.focus();
@@ -1432,6 +1664,13 @@ function writeStream(chunk) {
     setStatus("replying");
   }
   streamText += chunk;
+  // In Talk the answer is written under the question as it is made, in the
+  // words she will say: something to read during the seconds before her voice
+  // starts, instead of a screen that only says it is thinking.
+  if (faceModeOn) {
+    faceSaidEl.textContent = speakableText(streamText);
+    faceSaidEl.parentElement.scrollTop = faceSaidEl.parentElement.scrollHeight;
+  }
   if (!streamTextEl) return;
   // textContent, never innerHTML - model output is untrusted text
   streamTextEl.textContent = streamText;
@@ -1524,9 +1763,9 @@ window.emb3r.onWebSearchStart(() => {
 function setGenerating(on) {
   send.disabled = on;
   input.disabled = on;
-  // the microphone is the face-mode equivalent of the send button, and leaving
-  // it live while the terminal one is locked would be one way to ask twice
-  faceMic.disabled = on;
+  // The terminal's microphone is locked with its send button, or that would be
+  // one way to ask twice. Talk's button is not: while she is working on an
+  // answer it reads [ stop ] and stops her (pressTalk).
   micButton.disabled = on;
   stopButton.hidden = !on;
   if (!on) statsEl.textContent = "";
@@ -2471,7 +2710,7 @@ async function renderActiveConversationHistory() {
       const mod = /Mac/i.test(navigator.platform || navigator.userAgent) ? "cmd" : "ctrl";
       const tutor = conv && conv.tutor ? tutorById(conv.tutor) : null;
       empty.textContent = tutor
-        ? `// ${tutor.name.toLowerCase()} tutor. ask anything in ${tutor.name.toLowerCase()} - it answers on this computer and nothing leaves it.`
+        ? `// ask anything in ${tutor.name.toLowerCase()}. nothing you type leaves this computer.`
         : `// new chat. type below and hit enter · ${mod}+/ for every key`;
       chat.appendChild(empty);
       // the model that would suit this subject best, when it is not here yet
@@ -5342,54 +5581,78 @@ async function makeCards() {
     const why = (r && r.error) || "Could not make cards.";
     cardsStatus.textContent = why;
     announce(why);
+    // whatever arrived before it went wrong can still be kept
+    renderDrafts();
     return;
   }
   cardsDraftProfile = r.profileId || null;
-  cardsDrafts = r.drafts.map((d) => ({ ...d, keep: true }));
+  cardsDrafts = CARDS.mergeDrafts(cardsDrafts, r.drafts);
   renderDrafts();
   const n = r.drafts.length;
   const said = n
-    ? `${n} draft card${n === 1 ? "" : "s"}${r.stopped ? ", stopped early" : ""}${r.cut ? " - your notes were long, so only the first part was used" : ""}. keep, change or drop each one.`
+    ? `${n} draft card${n === 1 ? "" : "s"}${r.stopped ? ", stopped early" : ""}${r.cut ? " - your notes were long, so only the first part was used" : ""}.`
     : "no cards came back - try a more particular topic.";
   cardsStatus.textContent = said;
-  announce(said);
+  announce(n ? `${said} Read each one before you keep it: a small model can be wrong.` : said);
 }
 
+// Cards arrive one at a time for a minute or more, and that is when the first
+// of them gets mended. mergeDrafts keeps whatever the student has changed or
+// dropped, and renderDrafts leaves a row alone unless its draft is a new one,
+// so typing in the first card is never interrupted by the fifth arriving.
 STUDY.onProgress(({ deckId, drafts }) => {
   if (!cardsMaking || deckId !== cardsDeckId) return;
-  cardsDrafts = drafts.map((d) => ({ ...d, keep: true }));
+  cardsDrafts = CARDS.mergeDrafts(cardsDrafts, drafts);
   renderDrafts();
   cardsStatus.textContent = `${drafts.length} made so far... [ stop ] keeps them`;
 });
 
-function renderDrafts() {
-  cardsDraftList.replaceChildren();
-  cardsDraftsEl.hidden = cardsDrafts.length === 0;
-  cardsDrafts.forEach((d, i) => {
-    const li = document.createElement("li");
-    li.className = "draft" + (d.keep ? "" : " dropped");
-    const front = document.createElement("textarea");
-    front.rows = 2;
-    front.value = d.front;
-    front.setAttribute("aria-label", `Card ${i + 1}, front`);
-    front.addEventListener("input", () => { d.front = front.value; });
-    const back = document.createElement("textarea");
-    back.rows = 2;
-    back.value = d.back;
-    back.setAttribute("aria-label", `Card ${i + 1}, back`);
-    back.addEventListener("input", () => { d.back = back.value; });
-    const drop = document.createElement("button");
-    drop.appendChild(iconSpan(d.keep ? "close" : "plus"));
-    drop.dataset.tip = d.keep ? "Drop this card" : "Keep it after all";
-    drop.setAttribute("aria-label", d.keep ? `Drop card ${i + 1}` : `Keep card ${i + 1}`);
-    drop.setAttribute("aria-pressed", String(!d.keep));
-    drop.addEventListener("click", () => { d.keep = !d.keep; renderDrafts(); });
-    li.append(front, back, drop);
-    cardsDraftList.appendChild(li);
-  });
+function paintDraft(li, d, i) {
+  li.className = "draft" + (d.keep ? "" : " dropped");
+  const drop = li.querySelector("button");
+  drop.replaceChildren(iconSpan(d.keep ? "close" : "plus"));
+  drop.dataset.tip = d.keep ? "Drop this card" : "Keep it after all";
+  drop.setAttribute("aria-label", d.keep ? `Drop card ${i + 1}` : `Keep card ${i + 1}`);
+  drop.setAttribute("aria-pressed", String(!d.keep));
+}
+
+function draftRow(d, i) {
+  const li = document.createElement("li");
+  li.draft = d;
+  const side = (name, label) => {
+    const box = document.createElement("textarea");
+    box.rows = 2;
+    box.value = d[name];
+    box.setAttribute("aria-label", `Card ${i + 1}, ${label}`);
+    box.addEventListener("input", () => { d[name] = box.value; d.touched = true; });
+    return box;
+  };
+  const drop = document.createElement("button");
+  // repainted where it stands, so the keyboard stays on the button just pressed
+  drop.addEventListener("click", () => { d.keep = !d.keep; d.touched = true; paintDraft(li, d, i); countKept(); });
+  li.append(side("front", "front"), side("back", "back"), drop);
+  paintDraft(li, d, i);
+  return li;
+}
+
+function countKept() {
   const kept = cardsDrafts.filter((d) => d.keep).length;
   cardsKeep.textContent = `[ add ${kept} to the deck ]`;
   cardsKeep.disabled = kept === 0 || cardsMaking;
+}
+
+function renderDrafts() {
+  cardsDraftsEl.hidden = cardsDrafts.length === 0;
+  const rows = cardsDraftList.children;
+  cardsDrafts.forEach((d, i) => {
+    const row = rows[i];
+    if (row && row.draft === d) return;
+    const li = draftRow(d, i);
+    if (row) row.replaceWith(li);
+    else cardsDraftList.appendChild(li);
+  });
+  while (rows.length > cardsDrafts.length) rows[rows.length - 1].remove();
+  countKept();
 }
 
 async function keepDrafts() {
@@ -5715,6 +5978,8 @@ let talkAutoStop = null;
 // line a screen reader also hears. It used to go only to the face, which is
 // hidden outside Talk, so Ctrl+T there failed in silence (found by review).
 function talkTrouble(text) {
+  // the last question is not what this is about, so it does not stay above it
+  faceHeardEl.textContent = "";
   faceSaidEl.textContent = text;
   if (!faceModeOn) systemNote(text);
   announce(text);
@@ -5860,7 +6125,7 @@ function escapeOne() {
     return;
   }
   if (historyWrap.classList.contains("open")) { historyWrap.classList.remove("open"); historyButton.focus(); return; }
-  if (listening) { stopTalk(true); flashNote("Stopped listening. Nothing was sent."); return; }
+  if (listening || micOpening) { stopTalk(true); flashNote("Stopped listening. Nothing was sent."); return; }
   if (!stopButton.hidden) { stopButton.click(); return; }
   if (voiceSources.length) { stopSpeaking(); return; }
   if (appEl.classList.contains("settingsOpen")) { closeSettings.click(); input.focus(); return; }
