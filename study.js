@@ -160,11 +160,18 @@ export function cutNotes(text, maxChars = 6000) {
   return { text: head.slice(0, cutAt).trimEnd(), cut: true };
 }
 
-// No grammar. Cards were first held to a JSON grammar, and on the 8 GB Iris Xe
-// laptop that took the whole app down at random with an uncaught C++ exception
-// (0xe06d7363, then 0xc0000409) while the grammar steered the model: 5 of 8 runs
-// on the real app, and none in six rounds without it (harnesses\grammar-gc-crash.mjs,
-// 9 November). So the prompt shows the shape and completeCards reads what comes back.
+// No grammar. Cards were first held to a JSON grammar, and while they were, the
+// app kept dying at random with an uncaught C++ exception (0xe06d7363, then
+// 0xc0000409). The grammar was blamed on one comparison - dead in round 5 with
+// it, six rounds alive without - and that was too little to go on. The next day
+// the same crash came with no grammar anywhere, before a single card had been
+// asked for, and the Windows event log has it in installed versions back to
+// v1.38.1, which had no cards at all. So the grammar was not the cause, and the
+// crash is its own open question (the vault has what is known).
+//
+// The plain prompt stays for what it is: it works, and it asks less of the
+// model library. The prompt shows the shape, and completeCards reads what comes
+// back.
 
 export const MAX_CARDS = 10;
 

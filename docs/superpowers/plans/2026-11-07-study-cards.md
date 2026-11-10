@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Revised 9 November, after this plan was built.** The JSON grammar named below (`createGrammarForJsonSchema`, `CARD_SCHEMA`, `grammar:` on the prompt) was built and then taken out: it crashed the whole app at random on the target laptop. Cards now come from a plain prompt that shows the shape, read by `completeCards()`. The spec's *Constraints* has the story; the rest of this plan stands as written.
+> **Revised 9 and 10 November, after this plan was built.** The JSON grammar named below (`createGrammarForJsonSchema`, `CARD_SCHEMA`, `grammar:` on the prompt) was built and then taken out, on the belief that it was crashing the app. It was not: the same crash turned up the next day with no grammar in the code. Cards come from a plain prompt that shows the shape, read by `completeCards()`, because that works and is simpler. The spec's *Constraints* has the story; the rest of this plan stands as written.
 
 **Goal:** Each tutor gets a deck of flashcards, made by the local model from a topic or pasted notes, kept or edited from a draft list, reviewed with Leitner boxes, and explained on request.
 
