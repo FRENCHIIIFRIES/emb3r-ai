@@ -37,7 +37,7 @@ They also pointed at ChatGPT's new **dots**, launched 29 September 2026: agents 
 ## Constraints
 
 - **The model.** The model is Llama 3.2 3B by default. On the target laptop it writes about 5 words a second on the graphics, so 10 cards take roughly 1½–2 minutes. Cards appear as they are made, and generation can be stopped.
-- **Structured output.** node-llama-cpp 3.19's `llama.createGrammarForJsonSchema()` keeps card generation to valid JSON, with no parsing of free text.
+- **No grammar on the cards.** *Revised 9 November.* The first build held card generation to a JSON grammar (node-llama-cpp 3.19's `llama.createGrammarForJsonSchema()`). On the target laptop that took the whole app down at random, with an uncaught C++ exception while the grammar steered the model: it died in round 5 of 6 with the grammar, and not once in six rounds without it. So the prompt shows the exact shape instead, and `completeCards()` in `study.js` reads finished cards out of whatever the model writes: chatter round the list, a code fence, `question` and `answer` for field names. A card the model garbles costs only itself.
 - **Reading files.** `extractDocumentText()` (`src/document-text.js`) already turns PDFs, Word files, slides and spreadsheets into text.
 - **The renderer's rules hold:**
   - no network;
@@ -91,10 +91,12 @@ It teaches **any language** the student picks on its page — French, Spanish, H
 
 *Revised 7 November, after v1.40.0.* The tutors are pinned in the left sidebar (the user asked for "a pane for the study people which is pinned"), and clicking one opens that tutor's chat. A tutor's cards live with its chat: the tutor bar above the transcript has a **cards** button (and a key), which swaps the transcript for the tutor's deck — the same way Settings swaps in for the chat — and Esc goes back to the chat. Review, the draft list and explanations happen there, not in the transcript.
 
+*Revised 9 November.* The sidebar no longer stays put. The user asked for it to "open when hovered on not constantly there", so it waits off the left edge and comes out when the pointer reaches that edge, or when the keyboard moves into it; Ctrl+B keeps it open or puts it away. The chat has the whole window the rest of the time.
+
 ### Making cards
 
 1. **The source.** From the tutor's page: *from a topic or notes* (one box: a topic name, or notes pasted in), *from a file* (the attach picker; long files are cut to a section the student picks, or the first part), or *from this chat*. Pasted notes are cut the same way as files: what goes to the model has to fit beside the prompt and ten cards in a window that can be as short as 2,048 tokens. A card made from a bare topic name comes from the model's own knowledge, the weakest source, which is what the draft list is for.
-2. **Generation.** The local model writes up to 10 cards in the tutor's style, constrained to `[{ "front": "...", "back": "..." }]`.
+2. **Generation.** The local model writes between 3 and 10 cards for the tutor's subject. It is shown the shape `[{ "front": "...", "back": "..." }]` and asked for nothing else; no grammar holds it to that (see Constraints), so the cards are read out of its reply. It is not given the tutor's own way of talking, whose "hint before an answer, end with a question" is for a conversation and not for a card.
 3. **The draft list.** The cards arrive in a draft list. The student keeps, edits or deletes each one, then adds them to the deck. Duplicates are skipped by normalised front text.
 4. **Progress and stopping.** Progress is shown, with a Stop that keeps whatever was already made.
 
@@ -151,7 +153,7 @@ Left, in this order:
 ## Left to the builder
 
 - Exact prompt wording.
-- The JSON schema's details.
+- How cards are read out of the model's reply.
 - The layout within the approved mockup.
 - How the decks' files are split.
 - The keys beyond those named here, added to `src/keys.js`.

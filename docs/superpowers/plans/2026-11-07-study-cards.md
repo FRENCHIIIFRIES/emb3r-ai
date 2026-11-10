@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Revised 9 November, after this plan was built.** The JSON grammar named below (`createGrammarForJsonSchema`, `CARD_SCHEMA`, `grammar:` on the prompt) was built and then taken out: it crashed the whole app at random on the target laptop. Cards now come from a plain prompt that shows the shape, read by `completeCards()`. The spec's *Constraints* has the story; the rest of this plan stands as written.
+
 **Goal:** Each tutor gets a deck of flashcards, made by the local model from a topic or pasted notes, kept or edited from a draft list, reviewed with Leitner boxes, and explained on request.
 
 **Architecture:** Two new pure modules hold every decision: `study.js` for scheduling, decks, prompts and partial-JSON reading, and `src/cards.js` for the review session. Both are unit-tested without Electron. `main.js` stores decks per profile and runs generation and explanation on the tutor's model. It borrows the one chat session the same way a reply does: it saves the history, prompts, and restores the history afterwards. `src/renderer.js` shows the deck in place of the transcript, opened from the tutor bar.
