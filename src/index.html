@@ -99,6 +99,11 @@
     --line-strong: color-mix(in srgb, var(--text-color) 58%, var(--bg-color));
     --quiet: color-mix(in srgb, var(--text-color) 70%, #a7aea9);
     --ease: cubic-bezier(.2, .7, .2, 1);
+    /* how wide the conversation and the box under it ever get */
+    --column: 860px;
+    /* the bloom round a lit frame, and the faint light inside it */
+    --frame-glow: 0 0 16px color-mix(in srgb, var(--text-color) 18%, transparent),
+                  inset 0 0 70px color-mix(in srgb, var(--text-color) 4%, transparent);
     /* the browser's own sliders, checkboxes and scrollbars take the accent
        instead of Chromium's blue on white */
     accent-color: var(--text-color);
@@ -223,25 +228,32 @@ pre{
     text-shadow:none;
 }
 
+/* The hero: a chat with nothing in it is the salamander and the name, large, in
+   the middle of the screen, and the place to start typing under them. */
 #pet{
-    border:1px solid var(--text-color);
-    padding:24px;
-    margin-bottom:12px;
+    flex:1;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:56px 24px 8px;
     text-align:center;
-    transition: padding .3s ease, max-height .3s ease;
     overflow:hidden;
 }
 
-/* While you chat the header steps down to one row, and keeps who she is in it:
-   the salamander with its fire still moving, the wordmark in miniature, her
-   face and mood on the right. It used to fold away to the face alone, which
-   took the creature and the name off the screen for the whole conversation. */
+/* Once there is a conversation they step up into the title line, as one group
+   in the middle of it: the salamander with its fire still moving, the name,
+   her face and mood. Nothing moves again until the next empty chat. */
 #pet.compact{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    padding:6px 16px;
+    flex:0 0 auto;
+    flex-direction:row;
+    flex-wrap:wrap;
+    gap:0 22px;
+    /* the title line's light on the left and buttons on the right sit level
+       with this row, so it keeps clear of them */
+    padding:8px 112px;
+    border-bottom:1px solid var(--line);
 }
 
 #pet.compact #logoWrap{
@@ -249,22 +261,49 @@ pre{
     opacity:1;
     margin-bottom:0;
     gap:12px;
-    justify-content:flex-start;
 }
 
-#pet.compact #logoMark{ width:46px; }
+#pet.compact #logoMark{ width:48px; }
 
-#pet.compact #logo{ font-size:7.2px; }
+#pet.compact #logo{ font-size:8px; }
 
 #pet.compact #face{
-    font-size:22px;
+    font-size:24px;
     margin-bottom:0;
 }
 
 #pet.compact #stats{
-    font-size:13px;
+    font-size:14px;
     line-height:1.3;
     gap:14px;
+}
+
+/* a tutor's empty chat: the tutor, large, where the salamander would be */
+#tutorHero{ display:none; }
+
+#app.tutorChat.emptyChat #logoWrap,
+#app.tutorChat.emptyChat #stats{ display:none; }
+
+#app.tutorChat.emptyChat #tutorHero{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+}
+
+#tutorHero .tutorArt{ width:128px; height:128px; }
+
+#tutorHeroName{
+    font-size:32px;
+    line-height:1;
+    color:var(--tutor);
+    text-shadow:0 0 var(--glow-big) var(--tutor);
+}
+
+[data-theme="light"] #tutorHeroName,
+[data-theme="contrast"] #tutorHeroName{
+    color:var(--text-color);
+    text-shadow:none;
 }
 
 #logoWrap{
@@ -467,8 +506,9 @@ pre{
 
 #chat{
     flex:1;
-    border:1px solid var(--text-color);
-    padding:14px 16px;
+    min-height:0;
+    /* one column of conversation, centred; the scrollbar stays at the edge */
+    padding:16px max(18px, calc((100% - var(--column)) / 2));
     overflow-y:auto;
     white-space:pre-wrap;
     word-break:break-word;
@@ -623,7 +663,10 @@ pre{
     display:flex;
     align-items:center;
     gap:8px;
-    margin-top:8px;
+    flex:none;
+    box-sizing:border-box;
+    width:min(100% - 36px, var(--column));
+    margin:8px auto 0;
     padding:5px 8px;
     border:1px solid var(--line);
     font-size:15px;
@@ -770,7 +813,10 @@ pre{
     display:flex;
     align-items:stretch;
     gap:8px;
-    margin-top:10px;
+    flex:none;
+    box-sizing:border-box;
+    width:min(100% - 36px, var(--column));
+    margin:10px auto 0;
 }
 
 /* The prompt line as it always was - prompt, box, the two tools, [ send ] -
@@ -865,22 +911,34 @@ pre{
 /* the generation meter reuses the download bar's glyphs, so it needs the same
    font - VT323 lacks the block characters and the bar would jitter */
 #genStats{
+    flex:none;
+    box-sizing:border-box;
+    width:min(100% - 36px, var(--column));
+    margin:4px auto 8px;
     font-family:"JetBrains Mono", monospace;
     font-size:12px;
     min-height:1.2em;
-    margin-top:4px;
     color:#8fd6ff;
     text-shadow:0 0 4px #8fd6ff;
     white-space:pre;
 }
 
+/* The title line of the screen: the promise about the network on the left, the
+   two buttons on the right, level with the name in the middle. */
 #topbar{
+    position:absolute;
+    z-index:20;
+    top:14px;
+    left:14px;
+    right:12px;
     display:flex;
     justify-content:flex-end;
     align-items:center;
     gap:4px;
-    margin-bottom:10px;
+    pointer-events:none;
 }
+
+#topbar > *{ pointer-events:auto; }
 
 #netIndicator{
     display:flex;
@@ -1338,7 +1396,7 @@ pre{
     flex:1;
     min-height:0; /* required for overflow-y:auto to work inside a flex column */
     gap:14px;
-    padding:4px 4px 16px;
+    padding:12px 18px 16px;
     overflow-y:auto;
 }
 
@@ -1346,7 +1404,9 @@ pre{
     display:flex;
 }
 
-#app.settingsOpen #pet,
+/* the name stays in the title line, above the page */
+#app.settingsOpen #pet{ order:-1; }
+
 #app.settingsOpen #chat,
 #app.settingsOpen #row,
 #app.settingsOpen #genStats{
@@ -1600,10 +1660,13 @@ pre{
     align-items:center;
     justify-content:center;
     gap:clamp(14px, 3vh, 30px);
-    /* fills what is left below the topbar, so the face is centred in the
-       window rather than sitting under it */
-    min-height:calc(100vh - 90px);
+    /* the whole screen, so the koi or the face is centred in it */
+    flex:1;
+    min-height:0;
     text-align:center;
+    /* said here, not inherited from body: body's colour was computed in the
+       accent, and the blue room re-declares --text-color below it */
+    color:var(--text-color);
 }
 
 /* Poster scale. The face is the entire interface here, not a 26px line beside
@@ -1647,7 +1710,10 @@ pre{
 #faceKoi{
     margin:0;
     font-family:inherit;
-    font-size:clamp(8px, 1.15vw, 19px);
+    /* 28 rows, one line high each. As large as the window is wide, but never
+       so tall that the meter, the words and the button under it are pushed
+       off a short window: those need about 420px between them. */
+    font-size:clamp(8px, min(1.45vw, calc((100vh - 420px) / 28)), 19px);
     line-height:1;
     white-space:pre;
 }
@@ -1655,53 +1721,123 @@ pre{
 #app.talkFace #faceKoi,
 #app:not(.talkFace) #faceBig{ display:none; }
 
-#faceHeard{
-    max-width:44ch;
-    font-size:clamp(14px, 1.5vw, 17px);
-    opacity:0.55;
-    min-height:1.4em;
+/* ---- Talk: the meter, the line that says what is happening, the exchange and
+   one button. All of it in the terminal's own shapes - square frames, a //
+   line, the chat's prompts - so Talk reads as the same conversation spoken,
+   not as a different app. Three groups under the koi, so the gaps between
+   them are the layout and nothing has to be nudged. */
+#talkNow,
+#talkDo{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
 }
 
-#faceHeard::before{ content:"you said  "; opacity:0.6; }
-#faceHeard:empty::before{ content:none; }
+#talkNow{ gap:6px; }
+#talkDo{ gap:10px; }
 
-/* Big, round, and obviously a thing you hold down. Sized for a pointer that is
-   not being aimed carefully, because in this view nobody is looking at it. */
-#faceMic{
-    width:auto;
+/* The meter. Bars drawn like the icons, square and lit - not a font's block
+   characters, which VT323 does not have and a borrowed face would misalign.
+   Flat at rest, like a scope with nothing on it. */
+#talkMeter{
     display:flex;
     align-items:center;
-    gap:10px;
-    padding:12px 26px;
-    border:1px solid var(--text-color);
-    border-radius:999px;
-    background:transparent;
-    font-size:15px;
-    letter-spacing:0.1em;
-    text-transform:uppercase;
-    cursor:pointer;
-    user-select:none;
+    justify-content:center;
+    gap:3px;
+    height:34px;
+    color:var(--line-strong);
 }
 
-#faceMic:hover{ background:var(--hover-color); }
+#talkMeter i{
+    display:block;
+    flex:none;
+    width:4px;
+    height:2px;
+    background:currentColor;
+}
 
+/* lit while someone is making sound: you, or her */
+#app.listening #talkMeter,
+#app.talkSpeaking #talkMeter{ color:var(--text-color); }
+
+#app.listening #talkMeter i,
+#app.talkSpeaking #talkMeter i{ box-shadow:0 0 var(--glow-big) currentColor; }
+
+#talkState{
+    min-height:1.3em;
+    font-size:clamp(17px, 1.45vw, 22px);
+    color:var(--quiet);
+}
+
+#app.listening #talkState{ color:var(--text-color); }
+
+#talkLines{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    box-sizing:border-box;
+    width:min(62ch, 92%);
+    /* room for a question and the start of an answer, so the button under
+       them does not jump when the words arrive */
+    min-height:5.6em;
+    max-height:34vh;
+    overflow-y:auto;
+    text-align:left;
+    font-size:clamp(18px, 1.55vw, 24px);
+    line-height:1.45;
+}
+
+#faceHeard{ color:var(--user-text-color); }
+
+#faceHeard::before,
+#faceSaid::before{ color:var(--quiet); }
+
+#faceHeard::before{ content:"you >  "; }
+#faceSaid::before{ content:"ember >  "; }
+#faceHeard:empty::before,
+#faceSaid:empty::before{ content:none; }
+
+/* The one control, in the frame every other button has. Sized for a pointer
+   that is not being aimed carefully: in this view nobody is looking at it. */
+#faceMic{
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    height:50px;
+    box-sizing:border-box;
+    padding:0 24px;
+    font-size:clamp(20px, 1.6vw, 24px);
+    white-space:nowrap;
+    user-select:none;
+    /* the corners [ send ] has */
+    border-radius:0;
+    box-shadow:0 0 14px color-mix(in srgb, var(--text-color) 22%, transparent);
+}
+
+#faceMic .icon{ width:18px; height:18px; }
+
+/* open: the whole button is lit, as the terminal's microphone is */
 #app.listening #faceMic{
     background:var(--text-color);
     color:var(--bg-color);
+    text-shadow:none;
 }
 
-#faceMicDot{
-    width:9px;
-    height:9px;
-    border-radius:50%;
-    background:currentColor;
-    opacity:0.4;
+/* while she is working on an answer the button stops her, in the colour stop
+   has everywhere else */
+#faceMic[data-act="stop"]{
+    color:#ffb020;
+    border-color:#ffb020;
+    text-shadow:0 0 4px #ff6a00;
+    box-shadow:0 0 14px rgba(255, 128, 0, .2);
 }
 
-#app.listening #faceMicDot{
-    opacity:1;
-    animation:micPulse 1.1s ease-in-out infinite;
-}
+[data-theme="light"] #faceMic[data-act="stop"]{ color:#b45309; border-color:#b45309; text-shadow:none; }
+[data-theme="contrast"] #faceMic[data-act="stop"]{ color:var(--user-text-color); border-color:var(--user-text-color); text-shadow:none; box-shadow:none; }
+
+/* nothing to press for a moment: the microphone is opening, or her ears are
+   working out what was said */
+#faceMic[data-act="none"]{ opacity:.55; cursor:default; }
 
 @keyframes micPulse{
     0%,100%{ transform:scale(1); opacity:1 }
@@ -1741,16 +1877,7 @@ pre{
 }
 
 @media (prefers-reduced-motion: reduce){
-    #faceMicDot,
     #micDot{ animation:none; }
-}
-
-#faceSaid{
-    max-width:44ch;
-    font-size:clamp(15px, 1.7vw, 19px);
-    line-height:1.5;
-    opacity:0.85;
-    min-height:3em;
 }
 
 /* Why she could not say it, set under the words rather than in place of them:
@@ -1771,14 +1898,51 @@ pre{
     color:var(--quiet);
 }
 
-/* the way back sits top left, where a way back is looked for */
+/* the way back sits top left, under the network light */
 #faceExit{
     position:absolute;
-    top:0;
-    left:0;
+    top:46px;
+    left:10px;
 }
 
 #faceMode{ position:relative; }
+
+/* ---- Talk is the blue room --------------------------------------------------
+   The voice chat has a colour of its own, the way each tutor does: whatever
+   accent the terminal wears, Talk opens in blue phosphor - frame, meter, words
+   and button - and the accent is back the moment you leave. The koi keep their
+   own colours; they are a picture, not an accent. High contrast is exempt,
+   because black, white and gold were chosen to be read, and a room's colour
+   does not get to overrule that.
+
+   The variables are re-declared here because the mixes and the body's glow were
+   resolved at :root in the old colour; declaring them on #app.faceMode makes
+   every var() under it - the frame's border, --quiet, the button's bloom -
+   resolve again in blue. */
+:root:not([data-theme="contrast"]) #app.faceMode{
+    --text-color:#5fb2ff;
+    --user-text-color:#cfe6ff;
+    --hover-color:#101d2b;
+    --line: color-mix(in srgb, var(--text-color) 30%, var(--bg-color));
+    --line-strong: color-mix(in srgb, var(--text-color) 58%, var(--bg-color));
+    --quiet: color-mix(in srgb, var(--text-color) 70%, #a7b0bc);
+    --frame-glow: 0 0 16px color-mix(in srgb, var(--text-color) 18%, transparent),
+                  inset 0 0 70px color-mix(in srgb, var(--text-color) 4%, transparent);
+    accent-color: var(--text-color);
+    /* the phosphor glow is inherited from body, where it was computed in the
+       accent - said again here so it glows blue too */
+    text-shadow:
+        0 0 var(--glow-small) var(--text-color),
+        0 0 var(--glow-big) var(--text-color);
+}
+
+/* on white the blue goes dark instead of pale, as the light theme's green does */
+[data-theme="light"] #app.faceMode{
+    --text-color:#155bd4;
+    --user-text-color:#113f94;
+    --hover-color:#e2eeff;
+    --quiet: color-mix(in srgb, var(--text-color) 72%, #3a4350);
+}
 
 /* Someone who has asked for less movement gets a face that changes on state
    and not on a timer. The mouth still opens while Ember speaks - that is
@@ -2728,7 +2892,7 @@ canvas:focus-visible,
 #app{
     display:none;
     flex-direction:row;
-    gap:14px;
+    width:100%;
     height:100%;
     min-height:0;
 }
@@ -2737,37 +2901,112 @@ canvas:focus-visible,
     display:flex;
 }
 
-/* everything that was the whole window is now the right-hand column */
+/* the screen: the title line, the conversation and the box to type in, in one
+   frame rather than a stack of separate boxes */
 #main{
+    position:relative;
     flex:1;
     min-width:0;
     min-height:0;
     display:flex;
     flex-direction:column;
+    box-sizing:border-box;
+    border:1px solid var(--text-color);
+    box-shadow:var(--frame-glow);
+    overflow:hidden;
+}
+
+/* an empty chat's one line sits under the hero, not at the top of an empty box */
+#app.emptyChat #chat{
+    flex:0 0 auto;
+    overflow:visible;
+    padding-block:0 12px;
+    text-align:center;
+    /* a hint that needs two lines gets two even ones, never one word alone */
+    text-wrap:balance;
 }
 
 /* ---- the sidebar: tutors pinned at the top, chats under them --------------- */
+/* Out of the way until it is wanted: it slides over the screen when the pointer
+   reaches the left edge, or the keyboard tabs into it, and goes when the pointer
+   leaves - after a moment's grace, so a wobble does not shut it. Ctrl+B pins it. */
 #sidebar{
-    flex:0 0 236px;
-    /* a long chat title is cut with an ellipsis, never allowed to widen this */
-    min-width:0;
-    max-width:236px;
+    position:fixed;
+    z-index:1200;
+    top:16px;
+    bottom:16px;
+    left:16px;
+    width:252px;
     display:flex;
     flex-direction:column;
     gap:12px;
     min-height:0;
     box-sizing:border-box;
-    padding:10px 10px 8px;
+    padding:12px 12px 8px;
     border:1px solid var(--text-color);
+    background:var(--bg-color);
+    box-shadow:0 0 44px rgba(0, 0, 0, .75), var(--frame-glow);
+    transform:translateX(calc(-100% - 24px));
+    transition:transform .2s var(--ease) .25s;
 }
 
-/* Talk is a view for not looking at the screen; Settings is a page of its own.
-   Neither needs the list beside it. A window too narrow for both columns
-   keeps the conversation. */
-#app.faceMode #sidebar{ display:none; }
+#sideEdge:hover ~ #sidebar,
+#sidebar:hover,
+#sidebar:has(:focus-visible),
+#app.sideOpen #sidebar{
+    transform:none;
+    transition-delay:0s;
+}
 
-@media (max-width: 720px){
-    #sidebar{ display:none; }
+/* something was picked: out of the way at once, whatever the pointer is doing */
+#app.sideAway #sidebar{
+    transform:translateX(calc(-100% - 24px));
+    transition-delay:0s;
+}
+
+/* The way to it: the whole left edge, and a small prompt on the edge to say so. */
+#sideEdge{
+    position:fixed;
+    z-index:1100;
+    top:0;
+    bottom:0;
+    left:0;
+    width:24px;
+}
+
+#sideEdge::after{
+    content:">";
+    position:absolute;
+    top:50%;
+    left:3px;
+    transform:translateY(-50%);
+    font-size:20px;
+    line-height:1;
+    color:var(--text-color);
+    text-shadow:0 0 var(--glow-big) var(--text-color);
+}
+
+@media (prefers-reduced-motion: reduce){
+    #sidebar{ transition:none; }
+}
+
+/* Talk is a view for not looking at the screen. */
+#app.faceMode #sidebar,
+#app.faceMode #sideEdge{ display:none; }
+
+/* In a small window the title line keeps the name and the light; the words
+   beside the light come back whenever something is actually leaving. */
+@media (max-width: 1080px){
+    #netIndicator:not(.active):not(.locked) #netLabel{ display:none; }
+    #pet.compact{ padding-inline:44px 96px; }
+    #pet.compact #logo{ font-size:7px; }
+}
+
+/* On a big screen the conversation is read from further away. */
+@media (min-width: 1200px){
+    #chat{ font-size:1.15rem; }
+    #pet:not(.compact) #logo{ font-size:22px; }
+    #pet:not(.compact) #logoMark{ width:134px; }
 }
 
 /* A section's name, written the way the transcript writes a note to itself. */
@@ -2816,7 +3055,8 @@ canvas:focus-visible,
     transition:background-color .15s var(--ease), border-color .15s var(--ease);
 }
 
-.tutorBtn img{
+.tutorBtn .tutorArt,
+.tutorBtn .coilGlyph{
     display:block;
     width:64px;
     height:64px;
@@ -2824,18 +3064,25 @@ canvas:focus-visible,
     transition:transform .15s var(--ease);
 }
 
+/* Ember in the middle of her family: the same mark as the header, standing
+   still, and a new ordinary chat when she is chosen. */
+.tutorBtn.ember .coilGlyph{ padding:6px; box-sizing:border-box; }
+
 .tutorBtn:hover,
 .tutorBtn:focus-visible{
     background:color-mix(in srgb, var(--tutor) 16%, transparent);
     border-color:var(--tutor);
 }
 
-.tutorBtn:hover img,
-.tutorBtn:focus-visible img{ transform:translateY(-2px); }
+.tutorBtn:hover .tutorArt,
+.tutorBtn:focus-visible .tutorArt,
+.tutorBtn:hover .coilGlyph,
+.tutorBtn:focus-visible .coilGlyph{ transform:translateY(-2px); }
 
 @media (prefers-reduced-motion: reduce){
-    .tutorBtn img{ transition:none; }
-    .tutorBtn:hover img, .tutorBtn:focus-visible img{ transform:none; }
+    .tutorBtn .tutorArt, .tutorBtn .coilGlyph{ transition:none; }
+    .tutorBtn:hover .tutorArt, .tutorBtn:focus-visible .tutorArt,
+    .tutorBtn:hover .coilGlyph, .tutorBtn:focus-visible .coilGlyph{ transform:none; }
 }
 
 #chatsSection{
@@ -2882,7 +3129,7 @@ canvas:focus-visible,
     background:color-mix(in srgb, var(--tutor) 12%, transparent);
 }
 
-.historyTutor{
+.historyRow .tutorArt{
     flex:none;
     width:16px;
     height:16px;
@@ -2892,20 +3139,33 @@ canvas:focus-visible,
 /* A tutor's chat says so above the transcript: its picture, its name in its
    colour, and where it answers. */
 #tutorBar{
+    flex:none;
     display:flex;
     align-items:center;
     gap:10px;
-    margin-bottom:8px;
-    padding:4px 10px;
-    border:1px solid var(--tutor);
-    background:color-mix(in srgb, var(--tutor) 10%, transparent);
+    padding:4px max(18px, calc((100% - var(--column)) / 2));
+    border-bottom:1px solid color-mix(in srgb, var(--tutor) 60%, transparent);
+    background:color-mix(in srgb, var(--tutor) 9%, transparent);
 }
 
 #tutorBar[hidden],
 #app.faceMode #tutorBar,
 #app.settingsOpen #tutorBar{ display:none; }
 
-#tutorBar img{ width:32px; height:32px; }
+#tutorBar .tutorArt{ width:32px; height:32px; }
+
+/* under the large tutor of an empty chat the bar is just where it answers and
+   its cards, centred: the picture and the name are already there, bigger */
+#app.emptyChat #tutorBar{
+    justify-content:center;
+    background:none;
+    border-bottom:none;
+}
+
+#app.emptyChat #tutorBar .tutorArt,
+#app.emptyChat .tutorBarName{ display:none; }
+
+#app.emptyChat .tutorBarWhere{ margin-left:0; }
 
 .tutorBarName{
     font-size:20px;
@@ -2928,6 +3188,194 @@ canvas:focus-visible,
 }
 
 .tutorHint{ margin-top:6px; }
+
+/* ---- the cards panel: a tutor's deck, in place of the transcript ----------
+   The same glowing frame as the conversation it replaces; the card itself in
+   the tutor's colour. Swapped in by a class on #app, like Settings. */
+#cardsPanel{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    box-sizing:border-box;
+    padding:14px max(18px, calc((100% - var(--column)) / 2));
+}
+
+#app.cardsOpen #chat,
+#app.cardsOpen #row,
+#app.cardsOpen #attachBar,
+#app.cardsOpen #genStats{ display:none; }
+
+#cardsPanel[hidden],
+#app.faceMode #cardsPanel,
+#app.settingsOpen #cardsPanel,
+#cardsDeck[hidden],
+#cardsReview[hidden],
+#cardsDrafts[hidden],
+#cardsExplanation[hidden],
+#cardsLanguageRow[hidden],
+#cardsRateRow[hidden],
+#cardsFlipRow[hidden],
+#cardBack[hidden],
+#cardsStop[hidden]{ display:none; }
+
+#cardsDeck,
+#cardsReview{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    min-height:100%;
+}
+
+.cardsHeadRow{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.cardsRow{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+.cardsQuiet{
+    color:var(--quiet);
+    font-size:16px;
+}
+
+#cardsSource,
+#cardsLanguage,
+#cardsAnswer,
+.draft textarea{
+    box-sizing:border-box;
+    background:var(--bg-color);
+    color:var(--text-color);
+    border:1px solid var(--text-color);
+    font-family:inherit;
+    font-size:18px;
+    padding:6px 10px;
+    text-shadow:0 0 var(--glow-small) var(--text-color);
+}
+
+#cardsSource{ resize:vertical; min-height:4.5em; }
+
+#cardsLanguageRow{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+#cardsLanguage{ width:14ch; }
+
+#cardsStudy{ align-self:flex-start; }
+
+/* in line with the box above it: the rows are a grid, so the list's numbers
+   never drew, and the space kept for them was only an indent */
+#cardsDraftList{
+    margin:0;
+    padding-left:0;
+    list-style:none;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+
+.draft{
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap:8px;
+    align-items:start;
+}
+
+.draft textarea{
+    width:100%;
+    font-size:17px;
+    resize:vertical;
+}
+
+.draft.dropped textarea{
+    opacity:.35;
+    text-decoration:line-through;
+}
+
+.draft button{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:32px;
+    height:32px;
+    padding:0;
+    line-height:0;
+}
+
+.draft button .icon{ width:12px; height:12px; }
+
+/* the card: the tutor's colour round it, the question large, the answer
+   under a dashed rule once it is turned over */
+#cardFace{
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:16px;
+    min-height:170px;
+    padding:20px 24px;
+    border:1px solid var(--tutor, var(--text-color));
+    background:color-mix(in srgb, var(--tutor, var(--text-color)) 7%, transparent);
+}
+
+#cardFront{
+    font-size:26px;
+    line-height:1.3;
+}
+
+#cardBack{
+    font-size:21px;
+    line-height:1.4;
+    color:var(--user-text-color);
+    border-top:1px dashed var(--line-strong);
+    padding-top:14px;
+}
+
+#cardsPanel kbd{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px;
+    margin-right:6px;
+    padding:0 4px;
+    border:1px solid var(--line-strong);
+    text-shadow:none;
+}
+
+#cardsExplainText{
+    white-space:pre-wrap;
+    font-size:18px;
+    line-height:1.45;
+    padding-left:12px;
+    border-left:2px solid var(--tutor, var(--line-strong));
+}
+
+#cardsAnswer{ flex:1; min-width:14ch; }
+
+/* While an explanation is open the card steps down to a strip, so the
+   explanation fits under it in a 650px window instead of below the fold. */
+#cardsReview.explaining #cardFace{
+    min-height:0;
+    gap:6px;
+    padding:8px 14px;
+}
+
+#cardsReview.explaining #cardFront{ font-size:19px; }
+#cardsReview.explaining #cardBack{ font-size:16px; padding-top:6px; }
+
+.cardsHint{
+    margin-top:auto;
+    padding-top:6px;
+    text-align:center;
+}
 
 .tutorGet{
     margin-left:4px;
@@ -3182,6 +3630,18 @@ kbd.shortcutKeys{
     margin-top:6px;
 }
 
+#setupTutorRow{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    margin-top:10px;
+    font-size:16px;
+}
+
+#setupTutorRow[hidden]{ display:none; }
+
+#setupTutorRow input{ margin-top:4px; }
+
 #globalKeysRow,
 #easyReadRow,
 #contrastRow{
@@ -3325,6 +3785,12 @@ kbd.shortcutKeys{
         <p>emb3r runs a language model on your own machine — nothing is sent to a server. It needs to download one first.</p>
         <div id="setupHardware"></div>
         <div id="setupPick"></div>
+        <!-- the tutors' models, fetched after the one above so every tutor is
+             ready from the start; filled in by maybeRunFirstTimeSetup() -->
+        <div id="setupTutorRow" hidden>
+            <input type="checkbox" id="setupTutorModels" checked>
+            <label for="setupTutorModels" id="setupTutorLabel">also get the tutors' models</label>
+        </div>
         <div id="setupProgress"></div>
         <div id="setupButtons">
             <button id="setupSkip">I'll choose later</button>
@@ -3333,11 +3799,11 @@ kbd.shortcutKeys{
     </div>
 </div>
 
-<div id="app">
+<div id="app" class="emptyChat">
 
-<!-- The left side: the tutors, pinned, then your chats. Both used to be out of
-     sight - the chats behind the menu, the tutors nowhere - and they are the
-     two things a student comes back to. -->
+<!-- The tutors and your chats, on the left, out of the way until the pointer
+     reaches the edge of the window. -->
+<div id="sideEdge" aria-hidden="true"></div>
 <aside id="sidebar" aria-label="Tutors and chats">
     <section id="tutorDock" aria-labelledby="tutorDockTitle">
         <h2 class="sideLabel" id="tutorDockTitle">tutors</h2>
@@ -3771,6 +4237,9 @@ kbd.shortcutKeys{
 
 <div id="pet">
 
+<!-- an empty chat with a tutor: that tutor, large -->
+<div id="tutorHero"><span id="tutorHeroArt"></span><span id="tutorHeroName"></span></div>
+
 <div id="logoWrap">
 <!-- Inline rather than an <img> so the flames can follow the accent colour.
      Each rect carries a class and the stylesheet decides what it looks like;
@@ -3852,27 +4321,105 @@ kbd.shortcutKeys{
          choice, in Settings > Display. -->
     <pre id="faceKoi" aria-hidden="true"></pre>
     <pre id="faceBig" aria-hidden="true">( ^_^ )</pre>
-    <!-- what Ember is saying, in text, for anyone who cannot hear it and for
-         anyone whose speakers are off. aria-live so a screen reader gets the
-         reply rather than a face made of brackets. -->
-    <div id="faceSaid" aria-live="polite"></div>
-    <!-- what Ember heard. Kept separate from what she said and shown as soon as
-         it exists, because the one thing that goes wrong with speech is being
-         misheard, and you should not have to guess whether that happened. -->
-    <div id="faceHeard"></div>
 
-    <!-- Push to talk, not always-on listening. A microphone that opens itself
-         is not something to add quietly to an app whose whole claim is about
-         what does and does not leave your machine. -->
-    <button id="faceMic" type="button">
-        <span id="faceMicDot"></span><span id="faceMicLabel">hold to talk</span>
-    </button>
-    <div id="faceHint">hold the button or the spacebar, or press Ctrl+T to start and stop · Esc to go back</div>
+    <!-- The loudness of whoever is making sound - you while the microphone is
+         open, her while she speaks - and under it one line that always says
+         what is happening. Seeing your own voice move is the answer to "can it
+         hear me?", and a flat line at rest is a scope waiting. -->
+    <div id="talkNow">
+        <div id="talkMeter" aria-hidden="true"></div>
+        <div id="talkState">// your turn. press space, or tap talk</div>
+    </div>
+
+    <!-- The exchange, in the shapes the chat uses. What she heard comes first
+         and is shown as soon as it exists: being misheard is the one thing that
+         goes wrong with speech, and it should never be a mystery why she
+         answered the question she answered. Then what she says, in text, for
+         anyone who cannot hear it. Not live regions: the reply is said to a
+         screen reader once, whole, by announce(), and these fill as it is
+         written. -->
+    <div id="talkLines">
+        <div id="faceHeard"></div>
+        <div id="faceSaid"></div>
+    </div>
+
+    <!-- A tap opens the microphone and it closes when you stop talking; held
+         down, it is open for exactly as long as it is held. Never open on its
+         own: a microphone that opens itself is not something to add quietly to
+         an app whose whole claim is about what does and does not leave your
+         machine. The words on it are what pressing it will do. -->
+    <div id="talkDo">
+        <button id="faceMic" type="button"><span class="icon" data-icon="mic"></span><span id="faceMicLabel">[ talk ]</span></button>
+        <div id="faceHint">or hold it down, and let go to send · esc goes back</div>
+    </div>
     <button id="faceExit" class="iconBtn" data-tip="Back to the chat" data-tip-keys="Esc" aria-label="Back to the chat"><span class="icon" data-icon="back"></span></button>
 </div>
 
 <!-- whose chat this is, when it is a tutor's: filled by showTutorBar() -->
 <div id="tutorBar" hidden></div>
+
+<!-- A tutor's flashcards, in place of the transcript while open: the deck,
+     the drafts the model makes, a review session, an explanation. Built by
+     renderer.js ("the cards panel"); Esc steps back out one layer at a time. -->
+<section id="cardsPanel" hidden aria-label="Flashcards">
+    <div id="cardsDeck">
+        <div class="cardsHeadRow">
+            <h2 class="sideLabel" id="cardsTitle">cards</h2>
+            <span id="cardsCount" class="cardsQuiet"></span>
+        </div>
+        <div id="cardsLanguageRow" hidden>
+            <label for="cardsLanguage">Language</label>
+            <input id="cardsLanguage" list="cardsLanguages" maxlength="24" autocomplete="off" value="French">
+            <datalist id="cardsLanguages">
+                <option value="French"></option>
+                <option value="Spanish"></option>
+                <option value="Hindi"></option>
+                <option value="German"></option>
+            </datalist>
+        </div>
+        <button id="cardsStudy">[ study now ]</button>
+        <label for="cardsSource" class="cardsQuiet">make cards from a topic, or paste your notes</label>
+        <textarea id="cardsSource" rows="3" placeholder="e.g. osmosis - or paste a page of your notes"></textarea>
+        <div class="cardsRow">
+            <button id="cardsMake">[ make cards ]</button>
+            <button id="cardsStop" hidden>[ stop ]</button>
+            <span id="cardsStatus" class="cardsQuiet" aria-live="polite"></span>
+        </div>
+        <div id="cardsDrafts" hidden>
+            <div class="cardsHeadRow"><h2 class="sideLabel">drafts - read each one before you keep it. a small model can be wrong</h2></div>
+            <ol id="cardsDraftList"></ol>
+            <button id="cardsKeep">[ add to the deck ]</button>
+        </div>
+    </div>
+    <div id="cardsReview" hidden>
+        <div class="cardsHeadRow">
+            <h2 class="sideLabel">review</h2>
+            <span id="cardsLeft" class="cardsQuiet"></span>
+        </div>
+        <div id="cardFace" aria-live="polite">
+            <div id="cardFront"></div>
+            <div id="cardBack" hidden></div>
+        </div>
+        <div id="cardsFlipRow" class="cardsRow">
+            <button id="cardsFlip"><kbd>Space</kbd> show the answer</button>
+        </div>
+        <div id="cardsRateRow" class="cardsRow" hidden>
+            <button data-rate="again"><kbd>1</kbd> again <span class="cardsQuiet">this session</span></button>
+            <button data-rate="good"><kbd>2</kbd> good <span class="cardsQuiet" data-when="good"></span></button>
+            <button data-rate="easy"><kbd>3</kbd> easy <span class="cardsQuiet" data-when="easy"></span></button>
+            <button id="cardsExplain"><kbd>E</kbd> explain</button>
+        </div>
+        <div id="cardsExplanation" hidden>
+            <div id="cardsExplainText" aria-live="polite"></div>
+            <div class="cardsRow">
+                <input id="cardsAnswer" maxlength="500" autocomplete="off" aria-label="Your answer to the question" placeholder="answer the question...">
+                <button id="cardsAnswerSend">[ check ]</button>
+                <button id="cardsDifferently">[ explain it differently ]</button>
+            </div>
+        </div>
+        <div class="cardsHint cardsQuiet">Space turns the card · 1 again · 2 good · 3 easy · E explain · Esc back</div>
+    </div>
+</section>
 
 <div id="chat" role="log" aria-live="off" aria-label="Conversation">
 <span class="dim">// ember terminal ready. type below and hit enter · ctrl+/ for every key</span>
@@ -3930,7 +4477,10 @@ kbd.shortcutKeys{
 
 <script src="./keys.js"></script>
 <script src="./icons.js"></script>
+<script src="./tutor-art.js"></script>
 <script src="./koi.js"></script>
+<script src="./cards.js"></script>
+<script src="./talk.js"></script>
 <script src="./renderer.js"></script>
 
 </body>

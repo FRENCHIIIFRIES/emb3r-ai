@@ -45,6 +45,19 @@ test("every key a hover label or a menu row names is a real shortcut", () => {
   for (const id of named) assert.ok(ids.has(id), `no shortcut called ${id}`);
 });
 
+test("every tutor is drawn, in its own colours", () => {
+  const { ART } = load("../src/tutor-art.js").emb3rTutorArt;
+  const ids = ["maths", "biology", "chemistry", "physics", "history", "geography", "english", "languages"];
+  assert.deepEqual(Object.keys(ART).sort(), [...ids].sort());
+  for (const id of ids) {
+    assert.ok(ART[id].length >= 5, `${id} has too few colours`);
+    for (const [colour, d] of ART[id]) {
+      assert.match(colour, /^#[0-9a-f]{6}$/, id);
+      assert.ok(d.startsWith("M"), id);
+    }
+  }
+});
+
 test("no control is left with an emoji for a face", () => {
   // the paperclip was the one glyph on screen drawn by somebody else's font
   const controls = html.slice(html.indexOf('<div id="row">'), html.indexOf('<div id="genStats"'));

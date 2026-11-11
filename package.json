@@ -61,6 +61,7 @@
       "access.js",
       "downloads.js",
       "tutors.js",
+      "study.js",
       "preload.cjs",
       "src/**/*",
       "build/icon.png",
@@ -80,7 +81,7 @@
       "!**/node_modules/@img/sharp-linux*/**",
       "!**/node_modules/@img/sharp-wasm32/**",
       "!**/node_modules/kokoro-js/voices/*.bin",
-      "**/node_modules/kokoro-js/voices/af_heart.bin"
+      "**/node_modules/kokoro-js/voices/bf_lily.bin"
     ],
     "win": {
       "target": [

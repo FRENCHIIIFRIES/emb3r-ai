@@ -65,6 +65,24 @@ contextBridge.exposeInMainWorld("emb3r", {
     opts && typeof opts.tutor === "string" ? { tutor: opts.tutor } : undefined),
   loadConversation: (id) => ipcRenderer.invoke("emb3r:load-conversation", id),
   deleteConversation: (id) => ipcRenderer.invoke("emb3r:delete-conversation", id),
+
+  // a tutor's flashcards: decks, the drafts the model makes, review, explain
+  study: {
+    deck: (deckId) => ipcRenderer.invoke("emb3r:study-deck", deckId),
+    add: (deckId, drafts, profileId) => ipcRenderer.invoke("emb3r:study-add", deckId, drafts, profileId),
+    rate: (deckId, cardId, rating) => ipcRenderer.invoke("emb3r:study-rate", deckId, cardId, rating),
+    edit: (deckId, cardId, change) => ipcRenderer.invoke("emb3r:study-edit", deckId, cardId, change),
+    remove: (deckId, cardId) => ipcRenderer.invoke("emb3r:study-delete", deckId, cardId),
+    generate: (deckId, request) => ipcRenderer.invoke("emb3r:study-generate", deckId, request),
+    explain: (deckId, cardId, request) => ipcRenderer.invoke("emb3r:study-explain", deckId, cardId, request),
+    stop: () => ipcRenderer.invoke("emb3r:study-stop"),
+    onProgress: (callback) => {
+      ipcRenderer.on("emb3r:study-progress", (_event, data) => callback(data));
+    },
+    onExplain: (callback) => {
+      ipcRenderer.on("emb3r:study-explain-token", (_event, data) => callback(data));
+    },
+  },
   onModelReady: (callback) => {
     ipcRenderer.on("emb3r:model-ready", (_event, data) => callback(data));
   },

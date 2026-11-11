@@ -17,7 +17,12 @@ import {
 import { DEFAULT_GLOBALS, prepareClipboard, isUsableAccelerator } from "./access.js";
 import { DOWNLOAD_ATTEMPTS, RETRY_DELAYS_MS, describeDownloadError, isRetryableConnectionError } from "./downloads.js";
 // the eight subject tutors: their prompts and which model suits each
-import { TUTORS, isTutor, tutorPrompt, preferredModelFor, bestModelFor } from "./tutors.js";
+import { TUTORS, TUTOR_MODELS, isTutor, tutorPrompt, preferredModelFor, bestModelFor } from "./tutors.js";
+// a tutor's flashcards: decks, Leitner boxes, prompts, cards read as they come
+import {
+  isDeckId, tutorOfDeck, parseDeck, addCards, schedule, dueCards, cutNotes,
+  MAX_CARDS, cardsPrompt, cardsSystemPrompt, explainPrompt, answerPrompt, completeCards,
+} from "./study.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
 // assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
@@ -2438,8 +2443,22 @@ ipcMain.handle("emb3r:setup-state", async () => {
     recommended: best,
     why: explainRecommendation(best, ram, gpu),
     speedNote: best ? modelSpeedNote(best, ram, gpu) : null,
+    tutorModels: tutorModelsToFetch(ram, best),
   };
 });
+
+// The tutors' models a fresh install could fetch during setup, after the one it
+// recommends: those the tutors use (tutors.js), not on this computer yet, not
+// the recommended one itself, and only where this machine has the memory for
+// them. They cannot come inside the installer - GitHub limits a file to 2 GB.
+function tutorModelsToFetch(ram, recommended) {
+  const files = [...new Set([...TUTOR_MODELS.stem, ...TUTOR_MODELS.general])];
+  const installed = installedModelFiles();
+  return files
+    .map((file) => MODEL_CATALOG.find((m) => m.file === file))
+    .filter((m) => m && !installed.includes(m.file) && m.minRamGB <= ram && (!recommended || m.id !== recommended.id))
+    .map((m) => ({ id: m.id, name: m.name, sizeGB: m.sizeGB }));
+}
 
 // Deliberately cheap and synchronous-feeling (no GPU probe, no disk-space
 // check) - the boot screen calls this once to find out whether it needs to
@@ -3253,6 +3272,15 @@ const VOICE_PLAYBACK_RATE = 1.11;
 // second is still being made. Kept generous enough that ordinary punctuation
 // does not chop a sentence into fragments that lose their intonation.
 const MAX_SPEECH_CHARS = 600;
+
+// What a question asked out loud is sent with. A written answer - four
+// paragraphs, a list, a block of code - is a minute of waiting and then a
+// minute of being read to. Three sentences are a conversation, and on a laptop
+// that writes five words a second they are also the difference between an
+// answer that starts in a few seconds and one that starts in twenty.
+const SPOKEN_REPLY_PROMPT = "(This was said out loud, and your answer will be read aloud by a voice. "
+  + "Answer the way a person talks: one to three short sentences in plain words, "
+  + "with no lists, no headings, no code and no emoji.)";
 
 function voiceWeightsPresent(dir) {
   try {
@@ -4644,7 +4672,10 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // the user is listening to stays here. A web answer will not know which song
   // "this" is; that is the price, and it is the right way round.
   const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContextWithin(MUSIC_LOOKUP_MS) : null;
-  const extras = [memories, music, attachmentContext].filter(Boolean).join("\n\n");
+  // Said aloud in Talk, and answered aloud: for this one turn she is told so,
+  // and like the other extras it is not kept in the conversation.
+  const spoken = opts.spoken === true ? SPOKEN_REPLY_PROMPT : null;
+  const extras = [memories, music, attachmentContext, spoken].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();
@@ -4860,4 +4891,195 @@ ipcMain.handle("emb3r:delete-conversation", async (_e, convId) => {
     attachConversation(profile.id, index[0] ? index[0].id : null);
   }
   return { success: true, activeId: activeConversation ? activeConversation.id : null };
+});
+
+// ---- Study: a tutor's flashcards ----
+//
+// One deck per tutor - and per language for Languages - per profile, at
+// userData/study/<profile>/<deck>.json. What a deck holds and when a card comes
+// back is decided in study.js; this keeps decks on disk and runs the model for
+// them. Like a tutor's chat, it never leaves this computer.
+
+function deckPath(profileId, deckId) {
+  return path.join(app.getPath("userData"), "study", profileId, `${deckId}.json`);
+}
+
+function readDeck(profileId, deckId) {
+  try {
+    return parseDeck(fs.readFileSync(deckPath(profileId, deckId), "utf8"));
+  } catch {
+    return { version: 1, cards: [] };
+  }
+}
+
+// written whole to a temporary file and moved into place, so a crash halfway
+// through leaves the old deck rather than half of a new one
+function writeDeck(profileId, deckId, deck) {
+  const file = deckPath(profileId, deckId);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(deck, null, 2));
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+// The profile a deck operation is for: the active one, or - for cards made
+// before a profile switch - the one they were made in, if it still exists.
+function deckProfile(asked) {
+  if (typeof asked === "string" && config.profiles.some((p) => p.id === asked)) return asked;
+  const p = activeProfile();
+  return p ? p.id : null;
+}
+
+const NO_DECK = { success: false, error: "There is no such deck." };
+
+ipcMain.handle("emb3r:study-deck", (_e, deckId) => {
+  const profileId = deckProfile();
+  if (!profileId || !isDeckId(deckId)) return NO_DECK;
+  const deck = readDeck(profileId, deckId);
+  return { success: true, deck, due: dueCards(deck, Date.now()).length, profileId };
+});
+
+ipcMain.handle("emb3r:study-add", (_e, deckId, drafts, profileId) => {
+  const owner = deckProfile(profileId);
+  if (!owner || !isDeckId(deckId) || !Array.isArray(drafts)) return NO_DECK;
+  const kept = drafts.slice(0, 50).map((d) => ({
+    front: d && typeof d.front === "string" ? d.front : "",
+    back: d && typeof d.back === "string" ? d.back : "",
+    source: d && (d.source === "notes" || d.source === "topic") ? d.source : "topic",
+  }));
+  const r = addCards(readDeck(owner, deckId), kept, Date.now(), () => crypto.randomUUID());
+  writeDeck(owner, deckId, r.deck);
+  return { success: true, added: r.added, skipped: r.skipped, total: r.deck.cards.length };
+});
+
+// one card changed and written back, or an error in words
+function changeCard(deckId, cardId, change) {
+  const profileId = deckProfile();
+  if (!profileId || !isDeckId(deckId)) return NO_DECK;
+  const deck = readDeck(profileId, deckId);
+  const i = deck.cards.findIndex((c) => c.id === cardId);
+  if (i < 0) return { success: false, error: "That card is no longer in the deck." };
+  const next = change(deck.cards[i]);
+  if (next && next.error) return { success: false, error: next.error };
+  if (next) deck.cards[i] = next;
+  else deck.cards.splice(i, 1);
+  writeDeck(profileId, deckId, deck);
+  return { success: true, card: next || null, total: deck.cards.length };
+}
+
+ipcMain.handle("emb3r:study-rate", (_e, deckId, cardId, rating) => {
+  if (!["again", "good", "easy"].includes(rating)) return { success: false, error: "Not a rating." };
+  return changeCard(deckId, cardId, (card) => schedule(card, rating, Date.now()));
+});
+
+ipcMain.handle("emb3r:study-edit", (_e, deckId, cardId, edit) => changeCard(deckId, cardId, (card) => {
+  const front = String((edit && edit.front) || "").trim().slice(0, 300);
+  const back = String((edit && edit.back) || "").trim().slice(0, 600);
+  if (!front || !back) return { error: "A card needs a front and a back." };
+  return { ...card, front, back };
+}));
+
+ipcMain.handle("emb3r:study-delete", (_e, deckId, cardId) => changeCard(deckId, cardId, () => null));
+
+// The model is borrowed the way a reply uses it: one at a time (the same
+// activeGeneration, so Esc and a profile switch stop it), on the tutor's own
+// model, with the chat's history put back exactly as it was afterwards. The
+// session is the one there at the start; if a model switch replaced it
+// meanwhile, the new one already holds the right chat and is left alone.
+async function withStudySession(tutorId, run, { system } = {}) {
+  if (activeGeneration) return { success: false, error: "Ember is busy - wait for her to finish, or press Esc." };
+  if (everLoaded || modelSwitch) {
+    await ensureModelFor({ ...(activeConversation || {}), tutor: tutorId });
+  }
+  const session = chatSession;
+  if (!session) {
+    return { success: false, error: modelLoadError ? `The model could not load: ${modelLoadError}` : "The model is still loading. Try again in a moment." };
+  }
+  if (activeGeneration) return { success: false, error: "Ember is busy - wait for her to finish, or press Esc." };
+  const controller = new AbortController();
+  activeGeneration = controller;
+  let over;
+  activeGenerationDone = new Promise((resolve) => { over = resolve; });
+  const saved = session.getChatHistory();
+  try {
+    session.setChatHistory([{ type: "system", text: system || conversationPrompt({ tutor: tutorId }) }]);
+    return await run(session, controller.signal, controller);
+  } catch (err) {
+    console.error("Study:", err);
+    return { success: false, error: err && err.message ? err.message : String(err) };
+  } finally {
+    try {
+      if (chatSession === session) session.setChatHistory(saved);
+    } catch (err) {
+      console.error("Study: could not put the chat back:", err);
+    }
+    activeGeneration = null;
+    activeGenerationDone = null;
+    over();
+  }
+}
+
+ipcMain.handle("emb3r:study-generate", async (_e, deckId, request = {}) => {
+  const tutorId = tutorOfDeck(deckId);
+  const profileId = deckProfile();
+  if (!tutorId || !profileId) return NO_DECK;
+  const topic = typeof request.topic === "string" ? request.topic.trim().slice(0, 200) : "";
+  const notes = cutNotes(typeof request.notes === "string" ? request.notes : "");
+  const hasNotes = Boolean(notes.text.trim());
+  if (!topic && !hasNotes) return { success: false, error: "Type a topic, or paste your notes." };
+  const source = hasNotes ? "notes" : "topic";
+  const language = deckId.startsWith("languages-") ? deckId.slice("languages-".length).replace(/-/g, " ") : undefined;
+  const prompt = cardsPrompt(tutorId, hasNotes ? { notes: notes.text, language } : { topic, language });
+  const system = cardsSystemPrompt(tutorId, { safe: config.safeMode ? SAFE_MODE_PROMPT : "" });
+  return withStudySession(tutorId, async (session, signal, controller) => {
+    let text = "";
+    let shown = 0;
+    let enough = false;
+    await session.prompt(prompt, {
+      signal,
+      stopOnAbortSignal: true,
+      maxTokens: 900,
+      onTextChunk: (chunk) => {
+        text += chunk;
+        const drafts = completeCards(text).slice(0, MAX_CARDS);
+        if (drafts.length > shown && mainWindow) {
+          shown = drafts.length;
+          mainWindow.webContents.send("emb3r:study-progress", { deckId, drafts: drafts.map((d) => ({ ...d, source })) });
+        }
+        // ten is what was asked for; anything after them is not a card
+        if (drafts.length >= MAX_CARDS && !enough) { enough = true; controller.abort(); }
+      },
+    });
+    const drafts = completeCards(text).slice(0, MAX_CARDS).map((d) => ({ ...d, source }));
+    const stopped = signal.aborted && !enough;
+    console.log(`Study: ${drafts.length} cards from ${text.length} characters${stopped ? ", stopped" : ""}`);
+    return { success: true, drafts, stopped, cut: notes.cut, profileId };
+  }, { system });
+});
+
+ipcMain.handle("emb3r:study-explain", async (_e, deckId, cardId, request = {}) => {
+  const tutorId = tutorOfDeck(deckId);
+  const profileId = deckProfile();
+  if (!tutorId || !profileId) return NO_DECK;
+  const card = readDeck(profileId, deckId).cards.find((c) => c.id === cardId);
+  if (!card) return { success: false, error: "That card is no longer in the deck." };
+  const mode = request && request.mode;
+  const prompt = mode === "answer"
+    ? answerPrompt(card, String(request.explanation || "").slice(0, 4000), String(request.answer || "").slice(0, 500))
+    : explainPrompt(card, { differently: mode === "differently" });
+  return withStudySession(tutorId, async (session, signal) => {
+    const text = await session.prompt(prompt, {
+      signal,
+      stopOnAbortSignal: true,
+      maxTokens: 600,
+      onTextChunk: (chunk) => {
+        if (mainWindow) mainWindow.webContents.send("emb3r:study-explain-token", { text: chunk });
+      },
+    });
+    return { success: true, text, stopped: signal.aborted };
+  });
+});
+
+ipcMain.handle("emb3r:study-stop", () => {
+  if (activeGeneration) activeGeneration.abort();
+  return { success: true };
 });
