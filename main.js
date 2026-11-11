@@ -145,6 +145,18 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.41.0",
+    added: [
+      "Every tutor keeps a deck of flashcards. Press [ cards ] in a tutor's chat, type a topic or paste your notes, and the tutor writes three to ten cards on this computer. They arrive as drafts you read, fix or drop before they join the deck - a small model can be wrong - and review takes one key at a time: Space turns the card, 1 again, 2 good, 3 easy, and the gaps grow as you keep getting it right. E explains a card step by step. Languages keeps a deck per language.",
+      "Talk listens with one tap and sends by itself when you stop talking - or hold the button like a walkie-talkie and let go. A meter shows your voice while it listens and hers while she speaks, a line always says what is happening, and the button always says what pressing it will do: talk, send or stop. Questions asked out loud get spoken-size answers, a few short sentences.",
+      "Talk is the blue room: whatever colour your terminal wears, talking happens in blue phosphor, and your colour is back the moment you leave. High contrast stays black and white.",
+      "A fresh install offers the tutors' models on the first-run screen, ticked, and fetches them after the one it recommends - so every tutor is ready from the start.",
+      "One screen. The tutors and your chats wait off the left edge and slide in when the pointer reaches it; Ctrl+B keeps them open.",
+    ],
+    fixed: [
+      "Ember's voice works in the installed app. The installer has been packing the wrong voice file since v1.34.0, so every installed copy failed every sentence with a file-not-found note under the reply - while every test from source spoke fine. The build now packs the voice she actually speaks with, and a test keeps the two from ever drifting apart.",
+      "A flashcard you fix or drop while the rest are still being written stays as you left it, and your caret stays where it was.",
+    ] },
   { version: "1.40.0",
     added: [
       "Eight tutors, pinned on the left: Maths, Biology, Chemistry, Physics, History, Geography, English and Languages. Click one to start a chat with it. A tutor answers only on this computer - never on the web, whatever web access is set to - on the installed model that suits its subject, and it sticks to its subject. If that model is missing, the tutor offers it with one press.",
