@@ -1664,6 +1664,9 @@ pre{
     flex:1;
     min-height:0;
     text-align:center;
+    /* said here, not inherited from body: body's colour was computed in the
+       accent, and the blue room re-declares --text-color below it */
+    color:var(--text-color);
 }
 
 /* Poster scale. The face is the entire interface here, not a 26px line beside
@@ -1903,6 +1906,43 @@ pre{
 }
 
 #faceMode{ position:relative; }
+
+/* ---- Talk is the blue room --------------------------------------------------
+   The voice chat has a colour of its own, the way each tutor does: whatever
+   accent the terminal wears, Talk opens in blue phosphor - frame, meter, words
+   and button - and the accent is back the moment you leave. The koi keep their
+   own colours; they are a picture, not an accent. High contrast is exempt,
+   because black, white and gold were chosen to be read, and a room's colour
+   does not get to overrule that.
+
+   The variables are re-declared here because the mixes and the body's glow were
+   resolved at :root in the old colour; declaring them on #app.faceMode makes
+   every var() under it - the frame's border, --quiet, the button's bloom -
+   resolve again in blue. */
+:root:not([data-theme="contrast"]) #app.faceMode{
+    --text-color:#5fb2ff;
+    --user-text-color:#cfe6ff;
+    --hover-color:#101d2b;
+    --line: color-mix(in srgb, var(--text-color) 30%, var(--bg-color));
+    --line-strong: color-mix(in srgb, var(--text-color) 58%, var(--bg-color));
+    --quiet: color-mix(in srgb, var(--text-color) 70%, #a7b0bc);
+    --frame-glow: 0 0 16px color-mix(in srgb, var(--text-color) 18%, transparent),
+                  inset 0 0 70px color-mix(in srgb, var(--text-color) 4%, transparent);
+    accent-color: var(--text-color);
+    /* the phosphor glow is inherited from body, where it was computed in the
+       accent - said again here so it glows blue too */
+    text-shadow:
+        0 0 var(--glow-small) var(--text-color),
+        0 0 var(--glow-big) var(--text-color);
+}
+
+/* on white the blue goes dark instead of pale, as the light theme's green does */
+[data-theme="light"] #app.faceMode{
+    --text-color:#155bd4;
+    --user-text-color:#113f94;
+    --hover-color:#e2eeff;
+    --quiet: color-mix(in srgb, var(--text-color) 72%, #3a4350);
+}
 
 /* Someone who has asked for less movement gets a face that changes on state
    and not on a timer. The mouth still opens while Ember speaks - that is
