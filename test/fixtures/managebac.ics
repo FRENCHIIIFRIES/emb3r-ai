@@ -1,0 +1,126 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//emb3r tests//ManageBac-style fixture//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:ManageBac
+X-WR-TIMEZONE:Asia/Kolkata
+BEGIN:VTIMEZONE
+TZID:Asia/Kolkata
+BEGIN:STANDARD
+DTSTART:19700101T000000
+TZOFFSETFROM:+0530
+TZOFFSETTO:+0530
+TZNAME:IST
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:task-20001@riverside.managebac.example
+DTSTART;VALUE=DATE:20261113
+DTEND;VALUE=DATE:20261114
+SUMMARY:Biology HL: Osmosis lab report
+DESCRIPTION:Write up the potato osmosis practical\, max 1500 words.\nSubmi
+ t on ManageBac as a PDF\; include your raw data table.\nhttps://riverside.
+ managebac.example/student/classes/10001/core_tasks/20001
+CATEGORIES:Biology HL,Summative
+URL:https://riverside.managebac.example/student/classes/10001/core_tasks/2
+ 0001
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:task-20002@riverside.managebac.example
+DTSTART:20261116T033000Z
+DTEND:20261116T050000Z
+SUMMARY:Mathematics AA HL: Paper 1 mock
+LOCATION:Exam Hall B
+DESCRIPTION:Calculator-free. Bring a black pen.
+CATEGORIES:Mathematics AA HL,Assessment
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:task-20003@riverside.managebac.example
+DTSTART;TZID=Asia/Kolkata:20261118T235900
+DTEND;TZID=Asia/Kolkata:20261118T235900
+SUMMARY:History HL: IA first draft due
+DESCRIPTION:<p>Upload the draft to <b>Turnitin</b> and to ManageBac.</p>
+CATEGORIES:History HL
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:event-30001@riverside.managebac.example
+DTSTART;VALUE=DATE:20261123
+DTEND;VALUE=DATE:20261126
+SUMMARY:Grade 11 field trip: Western Ghats
+LOCATION:Meet at the main gate\, 07:00
+DESCRIPTION:Geography fieldwork for the IA. Packed lunch and water.
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:task-20004@riverside.managebac.example
+DTSTART;TZID=Asia/Kolkata:20261120T101500
+DTEND;TZID=Asia/Kolkata:20261120T110000
+SUMMARY:Chemistry SL: Titration quiz
+LOCATION:Lab 3
+DESCRIPTION:Topic 1 and topic 8 (acids and bases).
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-PT15M
+DESCRIPTION:Reminder
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:event-30002@riverside.managebac.example
+DTSTART;TZID=Asia/Kolkata:20261117T153000
+DTEND;TZID=Asia/Kolkata:20261117T163000
+RRULE:FREQ=WEEKLY;COUNT=10
+SUMMARY:CAS reflection check-in
+LOCATION:Room 2.14
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261020T081500Z
+UID:task-19001@riverside.managebac.example
+DTSTART;VALUE=DATE:20261030
+DTEND;VALUE=DATE:20261031
+SUMMARY:English A: Paper 2 practice essay
+CATEGORIES:English A Lang & Lit HL
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261101T081500Z
+UID:task-19002@riverside.managebac.example
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:TOK: exhibition commentary
+CATEGORIES:Theory of Knowledge
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:event-30003@riverside.managebac.example
+DTSTART;VALUE=DATE:20270430
+DTEND;VALUE=DATE:20270501
+SUMMARY:IB May 2027 examinations begin
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:task-20005@riverside.managebac.example
+DTSTART;VALUE=DATE:20261202
+DTEND;VALUE=DATE:20261203
+SUMMARY:Extended Essay: second reflection (RPPF) due
+CATEGORIES:Extended Essay
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:event-30004@riverside.managebac.example
+DTSTART;VALUE=DATE:20261112
+SUMMARY:Spirit week: wear your house colours
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20261110T081500Z
+UID:task-20006@riverside.managebac.example
+DTSTART:20261119T090000Z
+DTEND:20261119T090000Z
+SUMMARY:Computer Science SL: C:\\temp file-handling exercise
+CATEGORIES:Computer Science SL
+END:VEVENT
+END:VCALENDAR

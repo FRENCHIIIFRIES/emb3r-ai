@@ -62,6 +62,7 @@
       "downloads.js",
       "tutors.js",
       "study.js",
+      "calendar.js",
       "preload.cjs",
       "src/**/*",
       "build/icon.png",
