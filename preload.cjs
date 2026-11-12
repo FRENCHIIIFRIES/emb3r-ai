@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("emb3r", {
   checkForUpdates: () => ipcRenderer.invoke("emb3r:check-for-updates"),
   downloadUpdate: () => ipcRenderer.invoke("emb3r:download-update"),
   installUpdate: () => ipcRenderer.invoke("emb3r:install-update"),
+  setAutoUpdate: (on) => ipcRenderer.invoke("emb3r:set-auto-update", on),
   openReleasesPage: () => ipcRenderer.invoke("emb3r:open-releases-page"),
   onUpdateStatus: (callback) => {
     ipcRenderer.on("emb3r:update-status", (_event, data) => callback(data));

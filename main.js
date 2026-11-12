@@ -1627,9 +1627,17 @@ function clearPartialDownloads() {
 
 // ---- Auto-update ----
 //
-// Checking is automatic; downloading is not. The button in Settings is what
-// starts a download, matching "let them download the update from the app"
-// rather than a silent background install the user never asked for.
+// Updates arrive by themselves now: the user asked for it on 12 November
+// ("make it so when a new update happens it auto updates"). Checked a few
+// seconds after launch and every few hours while emb3r is open, downloaded in
+// the background, and installed the next time it closes - or straight away,
+// from the note in the chat that says one is ready. Settings > Updates can turn
+// it off, which brings back the old way: checked, then downloaded only from the
+// button. The offline lock stops all of it, checking included.
+//
+// The first version of this only checked, and left downloading to a button in
+// Settings, "rather than a silent background install the user never asked
+// for". Now it has been asked for.
 //
 // macOS needs a channel split that Windows does not. electron-builder names
 // the update feed file the same regardless of mac architecture - both the
@@ -1643,7 +1651,32 @@ function clearPartialDownloads() {
 if (process.platform === "darwin" && process.arch === "arm64") {
   autoUpdater.channel = "arm64";
 }
+// set again before every check, from the setting, so turning it off in
+// Settings takes effect without a restart
 autoUpdater.autoDownload = false;
+// a downloaded update goes in when emb3r closes, without asking again
+autoUpdater.autoInstallOnAppQuit = true;
+
+const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+
+function autoUpdatesOn() {
+  return config.autoUpdate !== false;
+}
+
+// The one way any check starts, so every check reads the setting and the lock.
+// A Mac does not go through electron-updater's download (see stageMacUpdate),
+// so there the download is started from update-available instead.
+function checkForUpdatesNow() {
+  if (!app.isPackaged) return Promise.resolve({ success: false, error: "Updates are only available in the packaged app." });
+  if (config.offlineLock) return Promise.resolve({ success: false, error: "The offline lock is on, so emb3r does not look for updates." });
+  autoUpdater.autoDownload = autoUpdatesOn() && process.platform !== "darwin";
+  return autoUpdater.checkForUpdates()
+    .then(() => ({ success: true }))
+    .catch((err) => {
+      console.error("Update check failed:", err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
 
 function sendUpdateStatus(payload) {
   if (mainWindow) mainWindow.webContents.send("emb3r:update-status", payload);
@@ -1652,10 +1685,15 @@ function sendUpdateStatus(payload) {
 autoUpdater.on("checking-for-update", () => sendUpdateStatus({ state: "checking" }));
 // macOS does not go through Squirrel at all - see stageMacUpdate below - so
 // there is nothing platform-specific to say here any more.
-autoUpdater.on("update-available", (info) => sendUpdateStatus({
-  state: "available",
-  version: info.version,
-}));
+autoUpdater.on("update-available", (info) => {
+  const auto = autoUpdatesOn();
+  sendUpdateStatus({ state: "available", version: info.version, auto });
+  // a Mac stages its own copy, checked against the published hash, instead of
+  // handing the job to Squirrel - started here when updates are automatic
+  if (auto && process.platform === "darwin") {
+    stageMacUpdate().catch((err) => sendUpdateStatus({ state: "error", message: err.message || String(err), releasesUrl: RELEASES_URL }));
+  }
+});
 autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ state: "not-available", version: info.version }));
 autoUpdater.on("download-progress", (p) => {
   sendUpdateStatus({ state: "downloading", percent: p.percent, transferred: p.transferred, total: p.total });
@@ -1730,14 +1768,13 @@ ipcMain.handle("emb3r:set-profile-name", (_e, name) => {
   return { success: true, profiles: config.profiles, activeProfileId: config.activeProfileId };
 });
 
-ipcMain.handle("emb3r:check-for-updates", async () => {
-  if (!app.isPackaged) return { success: false, error: "Updates are only available in the packaged app." };
-  try {
-    await autoUpdater.checkForUpdates();
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message || String(err) };
-  }
+ipcMain.handle("emb3r:check-for-updates", () => checkForUpdatesNow());
+
+// Settings > Updates: whether updates download and install by themselves
+ipcMain.handle("emb3r:set-auto-update", (_e, on) => {
+  config.autoUpdate = Boolean(on);
+  saveConfig(config);
+  return { success: true, autoUpdate: config.autoUpdate };
 });
 
 ipcMain.handle("emb3r:download-update", async () => {
@@ -1940,10 +1977,10 @@ ipcMain.handle("emb3r:install-update", () => {
   // macOS replaces its own bundle rather than asking Squirrel, which would
   // refuse for want of a Developer ID
   if (process.platform === "darwin") return installStagedMacUpdate();
-  // isSilent defaults to false, which on Windows shows the same assisted
-  // installer UI a first-time install would - deliberately not overridden,
-  // matching the oneClick:false choice already made for a fresh install
-  autoUpdater.quitAndInstall();
+  // Silently, and opened again afterwards. This used to show the installer's
+  // own screens, as a first install does; an update that installs itself
+  // should not then ask where to put itself.
+  autoUpdater.quitAndInstall(true, true);
   return { success: true };
 });
 
@@ -2075,13 +2112,14 @@ app.whenReady().then(async () => {
   if (!config.gpuInfo) detectGpu();
 
   // a few seconds after launch, not competing with model loading for
-  // attention, and not the very first thing a user sees
-  // the guard would block this anyway, but asking at all when locked just
-  // writes a "blocked" row every launch for something the user already said no to
-  if (app.isPackaged && !config.offlineLock) {
-    setTimeout(() => {
-      autoUpdater.checkForUpdates().catch((err) => console.error("Startup update check failed:", err));
-    }, 5000);
+  // attention, and not the very first thing a user sees - and then every few
+  // hours, since emb3r is the kind of app that stays open for days. Both go
+  // through checkForUpdatesNow, which reads the setting and the offline lock
+  // every time: asking at all when locked would only write a "blocked" row
+  // for something the user already said no to.
+  if (app.isPackaged) {
+    setTimeout(() => { checkForUpdatesNow(); }, 5000);
+    setInterval(() => { checkForUpdatesNow(); }, UPDATE_CHECK_EVERY_MS);
   }
 });
 

@@ -77,6 +77,12 @@ const FACES = {
   talking:   "( ^o^ )",          // mid-reply, before the mouth starts cycling
   deaf:      "( ×_· )",          // the microphone was refused or is missing
   offline:   "( ·_· )",          // offline lock engaged: calm, deliberately shut
+
+  // The dragon on the logo can take a punch (src/dragon.js). ASCII and Latin-1
+  // only, for the reason given above the voice faces.
+  bonked:    "( >_< )",          // just been hit
+  angry:     "( ò_ó )",          // had enough: about to breathe fire
+  smug:      "( ¬_¬ )",          // dodged that one
 };
 // first name wins: happy and talking are the same characters, and a face painted
 // from its text alone is more often happy than mid-sentence. setFace, which knows
@@ -213,7 +219,7 @@ function flashFace(state, ms = 1100) {
   if (thinkTimer) return;
   setFace(state);
   setTimeout(() => {
-    if (!thinkTimer) setFace(restingFace());
+    dragonFace(restingFace());
   }, ms);
 }
 
@@ -529,6 +535,351 @@ function playBootChime() {
 
 input.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") playKeyClick();
+});
+
+// =============================
+// The dragon on the logo
+// =============================
+//
+// He can take a punch: src/dragon.js decides what each one does, and this
+// draws it. Click him and he flinches and says so; fast and he sees stars; low
+// and he breathes fire back over the wordmark; at zero he is out, then up
+// again. Stroke him and he purrs. The konami code, the three in the wordmark
+// and a few achievements are the rest.
+//
+// Everything is drawn on one layer over the window, because #pet clips what
+// leaves it. Words and faces always come; the movement steps aside for the
+// Animations setting and the system's reduced motion, like every reaction here.
+
+const DRAGON = window.emb3rDragon;
+const fxLayer = document.getElementById("fxLayer");
+const wordmarkEl = document.getElementById("logo");
+const dragonHpEl = document.getElementById("dragonHp");
+// where on the drawing his head and mouth are, as fractions of its box
+const DRAGON_HEAD = { x: 0.84, y: 0.42 };
+const DRAGON_MOUTH = { x: 0.95, y: 0.5 };
+
+let dragon = DRAGON.createDragon();
+const petting = DRAGON.createPetting();
+const konami = DRAGON.createKonami();
+let dragonTimer = null;
+let lastPetAt = 0;
+let lateNightSaid = false;
+
+// lifetime totals and the achievements they unlocked, on this computer only
+function loadDragonStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem("emb3rDragon") || "{}");
+    return s && typeof s === "object" ? s : {};
+  } catch (e) {
+    return {};
+  }
+}
+let dragonStats = loadDragonStats();
+
+function countDragon(key) {
+  dragonStats[key] = (dragonStats[key] || 0) + 1;
+  const fresh = DRAGON.newAchievements(dragonStats, dragonStats.unlocked);
+  if (fresh.length) {
+    dragonStats.unlocked = [...(dragonStats.unlocked || []), ...fresh];
+    fresh.forEach((id, i) => setTimeout(() => achievement(DRAGON.ACHIEVEMENTS[id].title), 700 + 1100 * i));
+  }
+  try { localStorage.setItem("emb3rDragon", JSON.stringify(dragonStats)); } catch (e) {}
+}
+
+function dragonPoint(at) {
+  const r = logoMarkEl.getBoundingClientRect();
+  return { x: r.left + r.width * at.x, y: r.top + r.height * at.y, r };
+}
+
+// His faces during a fight, on one timer of their own. flashFace's timers are
+// independent of each other, so the flinch's would land in the middle of the
+// angry face that followed it and put him back to calm (caught by the shoot).
+let dragonFaceTimer = null;
+function dragonFace(state, ms) {
+  if (thinkTimer) return;
+  clearTimeout(dragonFaceTimer);
+  setFace(state);
+  if (!ms) return;
+  dragonFaceTimer = setTimeout(() => {
+    if (!thinkTimer && !dragon.koUntil) setFace(restingFace());
+  }, ms);
+}
+
+// A word that rises off the window and fades. animationend never comes under
+// reduced motion, so a timer is the floor for taking it away.
+function fxPop(text, x, y, kind) {
+  const el = document.createElement("span");
+  el.className = "fxPop" + (kind ? ` ${kind}` : "");
+  el.textContent = text;
+  el.style.left = `${Math.round(x)}px`;
+  el.style.top = `${Math.round(y)}px`;
+  el.style.setProperty("--dx", `${Math.round(Math.random() * 40 - 20)}px`);
+  fxLayer.appendChild(el);
+  const gone = () => el.remove();
+  el.addEventListener("animationend", gone, { once: true });
+  setTimeout(gone, kind === "note" ? 3200 : 2400);
+  return el;
+}
+
+// restarts a one-shot animation class, and takes it off again when it is done
+function jolt(el, cls, ms = 400) {
+  if (!reactionsAllowed()) return;
+  el.classList.remove(cls);
+  void el.getBoundingClientRect();
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), ms);
+}
+
+function achievement(title) {
+  const el = document.createElement("div");
+  el.className = "fxAchievement";
+  el.textContent = `[ achievement ]  ${title}`;
+  fxLayer.appendChild(el);
+  announce(`Achievement: ${title}`);
+  setTimeout(() => el.classList.add("leaving"), 2600);
+  setTimeout(() => el.remove(), 3200);
+}
+
+// his hit points, over his head - or under it in the title line, where there
+// is no room above
+function paintDragonHp() {
+  const full = dragon.hp >= DRAGON.MAX_HP && !dragon.koUntil;
+  dragonHpEl.hidden = full;
+  if (full) return;
+  const r = logoMarkEl.getBoundingClientRect();
+  dragonHpEl.textContent = `hp ${"█".repeat(dragon.hp)}${"░".repeat(DRAGON.MAX_HP - dragon.hp)}`;
+  const below = r.top < 64;
+  dragonHpEl.classList.toggle("below", below);
+  dragonHpEl.classList.toggle("low", dragon.hp <= DRAGON.ANGRY_AT);
+  dragonHpEl.style.left = `${Math.round(r.left + r.width / 2)}px`;
+  dragonHpEl.style.top = `${Math.round(below ? r.bottom + 4 : r.top - 4)}px`;
+}
+
+// time passing: hp coming back, and getting up after a knock-out
+function runDragonClock() {
+  if (dragonTimer) return;
+  dragonTimer = setInterval(() => {
+    const t = DRAGON.tick(dragon, Date.now());
+    dragon = t.state;
+    if (t.events.some((e) => e.type === "up")) dragonGetsUp();
+    paintDragonHp();
+    if (dragon.hp >= DRAGON.MAX_HP && !dragon.koUntil) {
+      clearInterval(dragonTimer);
+      dragonTimer = null;
+    }
+  }, 250);
+}
+
+// the sounds, all through beep(), so the Sound setting silences them too
+function bonkSound(hp) {
+  beep(150 + hp * 12, 0.06, "square", 0.05);
+  setTimeout(() => beep(90, 0.05, "square", 0.04), 45);
+}
+function starSound() {
+  [880, 760, 880, 660].forEach((f, i) => setTimeout(() => beep(f, 0.05, "triangle", 0.03), i * 70));
+}
+function fireSound() {
+  for (let i = 0; i < 8; i++) setTimeout(() => beep(300 - i * 25 + Math.random() * 40, 0.07, "sawtooth", 0.03), i * 45);
+}
+function koSound() {
+  [392, 330, 262, 196].forEach((f, i) => setTimeout(() => beep(f, 0.12, "square", 0.045), i * 120));
+}
+function purrSound() {
+  for (let i = 0; i < 6; i++) setTimeout(() => beep(70 + (i % 2) * 8, 0.09, "triangle", 0.05), i * 80);
+}
+function cheatSound() {
+  [523, 659, 784, 1047, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.09, "square", 0.04), i * 90));
+}
+
+function seeStars() {
+  starSound();
+  dragonFace("dizzy", DRAGON.DIZZY_MS);
+  const p = dragonPoint({ x: 0.78, y: 0.22 });
+  if (!reactionsAllowed()) { fxPop("✦ ✧ ✦", p.x, p.y, "stars"); return; }
+  const ring = document.createElement("span");
+  ring.className = "fxStars";
+  ring.style.left = `${Math.round(p.x)}px`;
+  ring.style.top = `${Math.round(p.y)}px`;
+  ["✦", "✧", "⋆", "✧"].forEach((ch, i) => {
+    const s = document.createElement("span");
+    s.className = "fxStar";
+    s.textContent = ch;
+    s.style.setProperty("--i", String(i));
+    ring.appendChild(s);
+  });
+  fxLayer.appendChild(ring);
+  setTimeout(() => ring.remove(), DRAGON.DIZZY_MS);
+}
+
+// He has had enough. Flames from his mouth across the wordmark, which catches
+// the way it does on the loading screen.
+function breatheFire() {
+  fireSound();
+  dragonFace("angry", 1800);
+  const head = dragonPoint({ x: 0.5, y: 0 });
+  fxPop("( ò_ó ) enough.", head.x, head.y - 6, "word");
+  wordmarkEl.classList.add("scorched");
+  logoMarkEl.classList.add("raging");
+  setTimeout(() => { wordmarkEl.classList.remove("scorched"); logoMarkEl.classList.remove("raging"); }, 1600);
+  if (!reactionsAllowed()) return;
+  jolt(document.getElementById("main"), "shake", 360);
+  const mouth = dragonPoint(DRAGON_MOUTH);
+  const reach = Math.max(160, wordmarkEl.getBoundingClientRect().right - mouth.x + 30);
+  const chars = ["≈", "~", "▒", "░", "*", "~", "▒"];
+  for (let i = 0; i < 18; i++) {
+    setTimeout(() => {
+      const f = document.createElement("span");
+      f.className = `fxFlame c${(i % 3) + 1}`;
+      f.textContent = chars[i % chars.length];
+      f.style.left = `${Math.round(mouth.x)}px`;
+      f.style.top = `${Math.round(mouth.y)}px`;
+      f.style.setProperty("--reach", `${Math.round(reach * (0.55 + Math.random() * 0.45))}px`);
+      f.style.setProperty("--rise", `${Math.round(Math.random() * 28 - 14)}px`);
+      fxLayer.appendChild(f);
+      f.addEventListener("animationend", () => f.remove(), { once: true });
+      setTimeout(() => f.remove(), 1500);
+    }, i * 36);
+  }
+}
+
+function knockOut() {
+  koSound();
+  countDragon("kos");
+  // beating him up is not good for his mood
+  mood = Math.max(0, mood - 1);
+  renderStats();
+  dragonFace("error");
+  setTimeout(() => logoMarkEl.classList.add("ko"), 260);
+  const top = dragonPoint({ x: 0.5, y: 0.05 });
+  fxPop("K.O.", top.x, top.y, "ko");
+}
+
+function dragonGetsUp() {
+  logoMarkEl.classList.remove("ko");
+  dragonFace(restingFace());
+  const p = dragonPoint({ x: 0.5, y: 0.1 });
+  fxPop("...i'm fine", p.x, p.y, "word");
+}
+
+function dragonReacts(ev, at) {
+  switch (ev.type) {
+    case "bonk": {
+      countDragon("bonks");
+      // the first punch after midnight gets told off instead
+      const hour = new Date().getHours();
+      const word = DRAGON.isLateNight(hour) && !lateNightSaid ? "( u_u ) it's late. go to sleep" : ev.word;
+      if (word !== ev.word) lateNightSaid = true;
+      fxPop(word, at.clientX, at.clientY, "word");
+      jolt(logoMarkEl, "bonked", 300);
+      if (ev.hp > 0) dragonFace("bonked", 650);
+      bonkSound(ev.hp);
+      break;
+    }
+    case "dizzy": seeStars(); break;
+    case "fire": breatheFire(); break;
+    case "ko": knockOut(); break;
+    case "dodge": {
+      const p = dragonPoint(DRAGON_HEAD);
+      fxPop("( ¬_¬ ) nope", p.x, p.y, "word");
+      jolt(logoMarkEl, "dodged", 380);
+      dragonFace("smug", 900);
+      break;
+    }
+    case "down": {
+      const p = dragonPoint({ x: 0.5, y: 0.1 });
+      fxPop("he's down. have a heart", p.x, p.y, "word");
+      break;
+    }
+    case "up": dragonGetsUp(); break;
+  }
+}
+
+logoMarkEl.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  petting.reset();
+  // asleep, the first punch only wakes him
+  if (currentFace === "sleeping") {
+    resetIdleTimers();
+    dragonFace("surprised", 1400);
+    fxPop("*snort* wha-", e.clientX, e.clientY, "word");
+    return;
+  }
+  const r = DRAGON.hit(dragon, Date.now());
+  dragon = r.state;
+  for (const ev of r.events) dragonReacts(ev, e);
+  paintDragonHp();
+  runDragonClock();
+});
+
+// Stroking him: the pointer back and forth across him, no button held.
+function petDragon() {
+  const r = DRAGON.pet(dragon, Date.now());
+  dragon = r.state;
+  countDragon("pets");
+  mood = Math.min(5, mood + 1);
+  renderStats();
+  logoMarkEl.classList.remove("ko");
+  purrSound();
+  dragonFace("delighted", 1800);
+  const p = dragonPoint({ x: 0.55, y: 0.1 });
+  fxPop(r.events[0].type === "revive" ? "revived. aw." : "*purr*", p.x, p.y, "word");
+  if (reactionsAllowed()) {
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => fxPop("♥", p.x + Math.random() * 50 - 25, p.y + 18, "heart"), i * 120);
+    }
+  }
+  paintDragonHp();
+}
+
+logoMarkEl.addEventListener("pointermove", (e) => {
+  if (e.buttons) return;
+  if (!petting.move(e.clientX, Date.now())) return;
+  // one purr per stroking, not one per stroke
+  if (Date.now() - lastPetAt < 2000) return;
+  lastPetAt = Date.now();
+  petDragon();
+});
+logoMarkEl.addEventListener("pointerleave", () => petting.reset());
+
+// The three in the wordmark. Click the letters and it is spelled with an E for
+// a moment - built from the loading screen's own letters, so the two can never
+// disagree - and then it is a three again, as it has always been.
+const WORDMARK_TEXT = wordmarkEl.textContent;
+const LETTER_BLOCKS = [...document.querySelectorAll("#bootLogo .bootLetter")].map((p) => p.textContent.split("\n"));
+let threeTimer = null;
+
+function swapWordmark(text) {
+  const swap = () => { wordmarkEl.textContent = text; };
+  if (!reactionsAllowed()) { swap(); return; }
+  jolt(wordmarkEl, "glitch", 280);
+  setTimeout(swap, 120);
+}
+
+wordmarkEl.addEventListener("click", () => {
+  if (threeTimer || LETTER_BLOCKS.length !== 5) return;
+  const rows = DRAGON.wordmarkRows(DRAGON.emberSpelling(LETTER_BLOCKS));
+  swapWordmark(`\n${rows.join("\n")}\n`);
+  countDragon("threes");
+  const r = wordmarkEl.getBoundingClientRect();
+  fxPop("// it's a three. it has always been a three.", r.left + r.width / 2, r.bottom + 14, "note");
+  threeTimer = setTimeout(() => {
+    swapWordmark(WORDMARK_TEXT);
+    threeTimer = null;
+  }, 2200);
+});
+
+// ↑ ↑ ↓ ↓ ← → ← → b a, anywhere that is not a text field
+document.addEventListener("keydown", (e) => {
+  const t = e.target;
+  if (t && t.closest && t.closest("input, textarea, select, [contenteditable='true']")) return;
+  if (!konami.push(e.key)) return;
+  countDragon("konami");
+  cheatSound();
+  fxPop("+30 lives", window.innerWidth / 2, window.innerHeight / 3, "big");
+  if (!reactionsAllowed()) return;
+  appEl.classList.add("cheat");
+  setTimeout(() => appEl.classList.remove("cheat"), 6000);
 });
 
 // =============================
@@ -2182,7 +2533,8 @@ function runBoot() {
 }
 
 async function finishBoot() {
-  bootScreen.remove();
+  // put away, not removed: it comes back for the first model's load
+  bootScreen.hidden = true;
   appEl.classList.add("visible");
   renderStats();
   setFace("idle");
@@ -2290,6 +2642,7 @@ const EASTER_EGGS = [
   "no telemetry. not even the good kind. there is no good kind",
   "if you are reading this, the model is still loading. sorry",
   "the three in emb3r is a three, not an E. it has always been a three",
+  "the dragon on the logo can take a punch. he would rather be stroked",
 ];
 
 // roughly how often the themed line changes while a phase is running
@@ -2522,6 +2875,64 @@ async function waitForModelThenReveal() {
   startWarmupCreep();
   scheduleFidget();
   startSpiritFlicker();
+}
+
+// ---- after first-run setup: back to the fire --------------------------------
+//
+// The model chosen on the first-run screen used to load with nothing on screen.
+// The loading screen had already been put away - there had been no model to
+// wait for - so the chat came up first and answered "still loading" to
+// anything typed in the half-minute the load took, which looked like a glitch
+// (12 November: "once the model is done downloading it moves back onto the
+// loading screen loads the model and then allows u to run the model"). Now the
+// fire screen comes back for that load, its torches follow the real progress,
+// and the chat is handed over only once there is a model behind it.
+async function loadBehindTheFire(filename) {
+  bootFinished = false;
+  bootOverall = 0;
+  phrasePhase = null;
+  torchFlameEls.forEach((el) => el.classList.remove("lit"));
+  bootLetterEls.forEach((el) => el.classList.remove("caught"));
+  if (bootBrazierEl) bootBrazierEl.classList.remove("lit");
+  if (bootFirstRunEl) bootFirstRunEl.hidden = true;
+  bootThree.classList.remove("glowing");
+  // shown at nothing, then faded up by the screen's own transition
+  bootScreen.classList.add("fade-out");
+  bootScreen.hidden = false;
+  void bootScreen.offsetWidth;
+  bootScreen.classList.remove("fade-out");
+  bootProgressEl.classList.add("visible");
+  updateBootProgress(0, "warming up", "starting up");
+  startWarmupCreep();
+  scheduleFidget();
+  startSpiritFlicker();
+  runBoot();
+
+  let result;
+  try {
+    result = await window.emb3r.selectModel(filename);
+  } catch (err) {
+    result = { success: false, error: String((err && err.message) || err) };
+  }
+  stopWarmupCreep();
+  stopFidget();
+  stopPhraseRotation();
+  stopSpiritFlicker();
+  if (result && result.success) {
+    // the brazier's flare needs a beat of its own, as at start-up
+    updateBootProgress(1, "ready", "model loaded");
+    await new Promise((r) => setTimeout(r, 650));
+  } else {
+    // said on the fire screen first, where the eyes are, before handing back
+    bootStatusEl.textContent = "the fire would not catch";
+    bootDetailEl.textContent = (result && result.error) || "the model did not load";
+    await new Promise((r) => setTimeout(r, 2600));
+  }
+  bootFinished = true;
+  bootScreen.classList.add("fade-out");
+  await new Promise((r) => setTimeout(r, 500));
+  bootScreen.hidden = true;
+  return result;
 }
 
 runBoot();
@@ -3629,10 +4040,26 @@ const downloadUpdateButton = document.getElementById("downloadUpdateButton");
 const installUpdateButton  = document.getElementById("installUpdateButton");
 const openReleasesButton   = document.getElementById("openReleasesButton");
 
+const autoUpdateToggle  = document.getElementById("autoUpdateToggle");
+const updateNoteEl      = document.getElementById("updateNote");
+const updateNoteTextEl  = document.getElementById("updateNoteText");
+
 async function initUpdateUI() {
   const version = await window.emb3r.getAppVersion();
   updateVersionEl.textContent = `Current version: v${version}`;
+  try {
+    const config = await window.emb3r.getConfig();
+    autoUpdateToggle.checked = config.autoUpdate !== false;
+  } catch (e) {}
 }
+
+autoUpdateToggle.addEventListener("change", async () => {
+  await window.emb3r.setAutoUpdate(autoUpdateToggle.checked);
+});
+
+document.getElementById("updateNoteRestart").addEventListener("click", () => {
+  window.emb3r.installUpdate();
+});
 
 // only one of download / install / open-releases is ever relevant at a time
 function showUpdateButtons({ download = false, install = false, openReleases = false } = {}) {
@@ -3680,8 +4107,11 @@ window.emb3r.onUpdateStatus((status) => {
       showUpdateButtons();
       break;
     case "available":
-      updateStatusEl.textContent = `update available: v${status.version}`;
-      showUpdateButtons({ download: true });
+      // downloading by itself already, unless updates are set to wait
+      updateStatusEl.textContent = status.auto
+        ? `v${status.version} is out - downloading it in the background`
+        : `update available: v${status.version}`;
+      showUpdateButtons({ download: !status.auto });
       break;
     case "downloading": {
       const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";
@@ -3693,8 +4123,11 @@ window.emb3r.onUpdateStatus((status) => {
     }
     case "downloaded":
       updateProgressEl.textContent = "";
-      updateStatusEl.textContent = `v${status.version} downloaded - restart to install`;
+      updateStatusEl.textContent = `v${status.version} downloaded - it installs when you close emb3r`;
       showUpdateButtons({ install: true });
+      // and said where it will be seen, not only in Settings
+      updateNoteTextEl.textContent = `// emb3r v${status.version} is ready. it installs when you close the app`;
+      updateNoteEl.hidden = false;
       break;
     case "error":
       updateProgressEl.textContent = "";
@@ -4545,41 +4978,72 @@ async function startDownload(modelId) {
   if (result.success) {
     await refreshModelList();
     setProgressText(modelId, `${progressBar(100)}  done`);
-    if (setupModal.classList.contains("open")) {
-      if (modelId === setupModelId) {
-        // the model chosen on this screen is the one Ember answers on; the
-        // tutors' models are only fetched, never selected
-        await selectModel(modelsCache.find((m) => m.id === modelId).file);
-        setupTutorQueue = setupTutorBox.checked && !setupTutorRow.hidden
-          ? setupTutorModels.map((m) => m.id).filter((id) => id !== modelId)
-          : [];
-      }
-      if (nextSetupDownload()) return;
-      setupProgressEl.textContent = "ready.";
-      setTimeout(() => setupModal.classList.remove("open"), 900);
+    if (setupModal.classList.contains("open") && modelId === setupModelId) {
+      await firstModelArrived(modelId);
+      return;
+    }
+    // the tutors' models, fetched one after another behind the chat
+    if (setupFetching && !nextSetupDownload()) {
+      setupFetching = false;
+      setupHint("the tutors' models are in. every tutor is ready.");
     }
   } else {
     renderModelList();
     setProgressText(modelId, result.cancelled ? "cancelled" : `failed: ${result.error}`);
     // a tutor's model that would not come is not a failed setup: Ember already
     // has hers, and the tutor offers its model again in its chat
-    if (setupModal.classList.contains("open") && modelId !== setupModelId) {
+    if (setupFetching && modelId !== setupModelId) {
       const m = setupTutorModels.find((x) => x.id === modelId);
-      setupProgressEl.textContent = `${m ? m.name : modelId} did not download${result.error ? ` (${result.error})` : ""} - its tutors will offer it again.`;
-      if (nextSetupDownload()) return;
-      setTimeout(() => setupModal.classList.remove("open"), 2500);
+      setupHint(`${m ? m.name : modelId} did not download${result.error ? ` (${result.error})` : ""} - its tutors will offer it again.`);
+      if (!nextSetupDownload()) setupFetching = false;
       return;
     }
     setSetupButtonsEnabled(true);
   }
 }
 
-// the next of the tutors' models during setup, if any are left
+// The model picked on the first-run screen is in. The screen closes, the fire
+// comes back for its load (loadBehindTheFire), and the chat is handed over with
+// a model behind it. The tutors' models - only fetched, never selected - come
+// after that, behind the chat, rather than holding this screen open through
+// four more gigabytes before anyone can say a word.
+let setupFetching = false;
+
+async function firstModelArrived(modelId) {
+  setupTutorQueue = setupTutorBox.checked && !setupTutorRow.hidden
+    ? setupTutorModels.map((m) => m.id).filter((id) => id !== modelId)
+    : [];
+  const chosen = modelsCache.find((m) => m.id === modelId);
+  setupModal.classList.remove("open");
+  const loaded = await loadBehindTheFire(chosen.file);
+  await refreshModelList();
+  // the active chat repaints when a model finishes loading; the notes go in
+  // after that, or the repaint would take them away again
+  await renderActiveConversationHistory();
+  if (!loaded || !loaded.success) {
+    append("err", "err", `${chosen.name} downloaded, but would not load: ${(loaded && loaded.error) || "unknown error"}. Settings > Models can try another.`);
+  }
+  input.focus();
+  if (setupTutorQueue.length) {
+    setupFetching = true;
+    const names = setupTutorQueue.map((id) => (setupTutorModels.find((m) => m.id === id) || { name: id }).name);
+    setupHint(`getting the tutors' models in the background - ${names.join(", then ")}. Settings > Models shows how far.`);
+    nextSetupDownload();
+  }
+}
+
+// a quiet line under the chat's own hint, the way a tutor's model offer reads
+function setupHint(text) {
+  const line = document.createElement("div");
+  line.className = "dim tutorHint setupHint";
+  line.textContent = `// ${text}`;
+  chat.appendChild(line);
+}
+
+// the next of the tutors' models, if any are left
 function nextSetupDownload() {
   const next = setupTutorQueue.shift();
   if (!next) return false;
-  const m = setupTutorModels.find((x) => x.id === next);
-  setupProgressEl.textContent = `now ${m ? m.name : next}, for the tutors...`;
   startDownload(next);
   return true;
 }
