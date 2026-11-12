@@ -1654,6 +1654,10 @@ pre{
 #app.faceMode #row,
 #app.faceMode #genStats{ display:none; }
 
+/* Settings and Talk never share the screen. The scripts keep the two states
+   exclusive; this is the belt, so a stray class can still not mix them. */
+#app.settingsOpen #faceMode{ display:none; }
+
 #app.faceMode #faceMode{
     display:flex;
     flex-direction:column;
@@ -2549,6 +2553,33 @@ canvas:focus-visible,
 #setupPick .pickName{
     font-weight:bold;
 }
+
+/* the picker: every model this machine can hold, a row each, the picked one
+   framed in the accent. The radio is the control; the whole row is its label. */
+#setupPick .pickChoice{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    padding:7px 10px;
+    margin-bottom:6px;
+    border:1px solid var(--line-strong);
+    cursor:pointer;
+}
+
+#setupPick .pickChoice.picked{
+    border-color:var(--text-color);
+    background:color-mix(in srgb, var(--text-color) 7%, transparent);
+}
+
+#setupPick .pickChoice input{ margin-top:4px; }
+
+#setupPick .pickWords{
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+}
+
+#setupPick .pickChoice .pickMeta{ margin-top:1px; }
 
 #setupPick .pickMeta{
     font-size:15px;

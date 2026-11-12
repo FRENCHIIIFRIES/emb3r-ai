@@ -2456,6 +2456,13 @@ ipcMain.handle("emb3r:setup-state", async () => {
     why: explainRecommendation(best, ram, gpu),
     speedNote: best ? modelSpeedNote(best, ram, gpu) : null,
     tutorModels: tutorModelsToFetch(ram, best),
+    // every model this machine can hold, for the first-run picker: the
+    // recommendation leads, and the choice is the user's (asked 11 November)
+    choices: best
+      ? MODEL_CATALOG
+          .filter((m) => m.minRamGB <= ram)
+          .map((m) => ({ id: m.id, name: m.name, sizeGB: m.sizeGB, strength: m.strength, recommended: m.id === best.id }))
+      : [],
   };
 });
 

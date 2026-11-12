@@ -1028,6 +1028,8 @@ applyTalkAvatar();
 
 function setFaceMode(on) {
   faceModeOn = on;
+  // the other way round: Talk takes the whole window, so Settings closes first
+  if (on) appEl.classList.remove("settingsOpen");
   appEl.classList.toggle("faceMode", on);
   paintFace(FACES[currentFace] || FACES.idle);
   if (on) startKoi();
@@ -2547,6 +2549,10 @@ const settingsTabs   = document.querySelectorAll(".settingsTab");
 
 settingsButton.addEventListener("click", () => {
   historyWrap.classList.remove("open");
+  // Settings and Talk are different rooms: walking into one leaves the other.
+  // Opened over Talk, the panel and the blue room drew over each other
+  // (seen 11 November, "the ui mix into each other").
+  if (faceModeOn) setFaceMode(false);
   appEl.classList.add("settingsOpen");
   // a saved accent sets the lightness slider without an input event
   showSliderValues();
@@ -3783,30 +3789,65 @@ function describeDownloadTime(sizeGB, mbps) {
   return `roughly ${hours < 2 ? hours.toFixed(1) : Math.round(hours)} hr`;
 }
 
+// true once the user has picked a model themselves: a hardware probe landing
+// afterwards must not yank their choice back to the recommendation
+let setupPickTouched = false;
+
 function describePick(state) {
   const { recommended, totalRamGB, why, speedNote } = state;
-  const title = document.createElement("div");
-  title.className = "pickName";
-  const meta = document.createElement("div");
-  meta.className = "pickMeta";
 
   if (!recommended) {
     // nothing in the catalog fits, so say that plainly instead of offering a
     // download that could only ever fail to load
+    const title = document.createElement("div");
+    title.className = "pickName";
+    const meta = document.createElement("div");
+    meta.className = "pickMeta";
     title.textContent = "No model fits this machine";
     meta.textContent = `${totalRamGB}GB of RAM is below what the smallest model needs. You can still browse the full list in Settings.`;
     setupPickEl.replaceChildren(title, meta);
     return;
   }
 
-  title.textContent = `${recommended.name}  ★ recommended`;
+  // Every model this machine can hold, as a row each: the recommendation leads
+  // and is picked already, and the choice is the user's. Whatever is picked is
+  // what downloads, becomes the model Ember answers on, and loads on opening.
+  const choices = state.choices && state.choices.length
+    ? state.choices
+    : [{ ...recommended, recommended: true }];
+  const rows = choices.map((m) => {
+    const row = document.createElement("label");
+    row.className = "pickChoice";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "setupModel";
+    radio.value = m.id;
+    radio.checked = m.id === setupModelId;
+    radio.addEventListener("change", () => {
+      setupPickTouched = true;
+      setupModelId = m.id;
+      for (const r of setupPickEl.querySelectorAll(".pickChoice")) r.classList.toggle("picked", r === row);
+      setSetupButtonsEnabled(true);
+      fillDownloadEstimate(m.sizeGB);
+    });
+    const name = document.createElement("span");
+    name.className = "pickName";
+    name.textContent = m.recommended ? `${m.name}  ★ recommended` : m.name;
+    const meta = document.createElement("span");
+    meta.className = "pickMeta";
+    meta.textContent = [`${m.sizeGB}GB`, m.strength].filter(Boolean).join(" • ");
+    const words = document.createElement("span");
+    words.className = "pickWords";
+    words.append(name, meta);
+    row.append(radio, words);
+    row.classList.toggle("picked", m.id === setupModelId);
+    return row;
+  });
 
-  const lines = [
-    `${recommended.sizeGB}GB download${speedNote ? ` • ${speedNote}` : ""}`,
-    why,
-    recommended.strength,
-  ].filter(Boolean);
-  meta.textContent = lines.join("\n");
+  // why the starred one is starred, under the rows rather than inside one
+  const whyLine = document.createElement("div");
+  whyLine.className = "pickMeta";
+  whyLine.textContent = [why, speedNote].filter(Boolean).join("\n");
 
   // filled in asynchronously once the speed probe returns
   const timing = document.createElement("div");
@@ -3814,7 +3855,7 @@ function describePick(state) {
   timing.id = "setupTiming";
   timing.textContent = "estimating download time...";
 
-  setupPickEl.replaceChildren(title, meta, timing);
+  setupPickEl.replaceChildren(...rows, whyLine, timing);
 }
 
 // runs after the modal is already visible, so a slow or blocked probe never
@@ -4009,10 +4050,14 @@ window.emb3r.onHardwareUpdated(async () => {
     `${state.cpuModel}\n${state.cpuCores} cores • ${state.totalRamGB}GB RAM • ${state.platform}` +
     (state.freeDiskGB === null ? "" : ` • ${state.freeDiskGB.toFixed(0)}GB free`) + "\n" +
     describeGpu(state.gpu);
-  setupModelId = state.recommended ? state.recommended.id : null;
+  // a pick the user made with their own hands survives the better probe,
+  // as long as the machine can still hold it
+  const kept = setupPickTouched && (state.choices || []).some((m) => m.id === setupModelId);
+  if (!kept) setupModelId = state.recommended ? state.recommended.id : null;
   describePick(state);
   describeTutorModels(state.recommended ? state.tutorModels : []);
-  if (state.recommended) fillDownloadEstimate(state.recommended.sizeGB);
+  const chosen = (state.choices || []).find((m) => m.id === setupModelId) || state.recommended;
+  if (chosen) fillDownloadEstimate(chosen.sizeGB);
 });
 
 setupDownloadBtn.addEventListener("click", () => {
