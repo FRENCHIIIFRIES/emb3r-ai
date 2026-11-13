@@ -5016,6 +5016,9 @@ async function firstModelArrived(modelId) {
   const chosen = modelsCache.find((m) => m.id === modelId);
   setupModal.classList.remove("open");
   const loaded = await loadBehindTheFire(chosen.file);
+  // the keyboard is handed over with the chat, in the same moment the fire goes:
+  // waiting for the two round trips below left the first keys typed nowhere
+  input.focus();
   await refreshModelList();
   // the active chat repaints when a model finishes loading; the notes go in
   // after that, or the repaint would take them away again
