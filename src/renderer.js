@@ -4248,10 +4248,14 @@ function renderCalendar(status, note) {
     const when = document.createElement("span");
     when.className = "calWhen";
     when.textContent = ev.when;
+    // the two lines are one sentence to a screen reader, not "all dayBiology"
+    const pause = document.createElement("span");
+    pause.className = "srOnly";
+    pause.textContent = ": ";
     const what = document.createElement("span");
     what.className = "calWhat";
     what.textContent = ev.where ? `${ev.title} (at ${ev.where})` : ev.title;
-    li.append(when, what);
+    li.append(when, pause, what);
     return li;
   });
   if (!items.length) {
