@@ -2998,6 +2998,9 @@ const SETTINGS_KEYWORDS = {
                "classroom appropriate block swearing profanity supervision",
   personality: "prompt system character instructions behaviour behavior tone persona",
   spotify:     "music now playing track integration",
+  // not "school": a search for it goes straight to Student mode, which is tucked away
+  calendar:    "managebac ical ics webcal subscribe link deadline deadlines homework assignment " +
+               "assignments assessment assessments due dates schedule timetable tasks events",
   web:         "gemini internet search online api key current information lookup "
              + "provider endpoint openai compatible groq openrouter together deepseek "
              + "mistral base url custom model anthropic claude gpt local server",
@@ -3483,6 +3486,7 @@ async function loadConfigIntoUI() {
   // rather than reduced to a configured/not-configured state
   geminiModelInput.value = currentConfig.geminiModel || "";
   renderNetStatus(await window.emb3r.netStatus());
+  await refreshCalendarStatus();
 }
 
 // =============================
@@ -4145,6 +4149,12 @@ consentAllow.addEventListener("click", async () => {
   await window.emb3r.setInternetConsent(true);
   currentConfig.internetConsent = true;
   consentModal.classList.remove("open");
+  consentText.textContent = CONSENT_TEXT;
+  if (pendingCalendarLink) {
+    const link = pendingCalendarLink;
+    pendingCalendarLink = null;
+    linkCalendar(link);
+  }
   if (pendingDownloadId) {
     const idToDownload = pendingDownloadId;
     pendingDownloadId = null;
@@ -4165,6 +4175,11 @@ consentDeny.addEventListener("click", () => {
   pendingDownloadId = null;
   window.__pendingSpotifyConnect = false;
   consentModal.classList.remove("open");
+  consentText.textContent = CONSENT_TEXT;
+  if (pendingCalendarLink) {
+    pendingCalendarLink = null;
+    renderCalendar(calendarLast, { text: "Not linked: fetching the calendar needs internet access.", bad: true });
+  }
   setSetupButtonsEnabled(true);
   if (pendingWebMessage) {
     // declining "use the internet for this" should not just drop the
@@ -4174,6 +4189,143 @@ consentDeny.addEventListener("click", () => {
     submitToModel(message, { forceLocal: true });
   }
 });
+
+// =============================
+// Calendar: the student's ManageBac calendar
+// =============================
+//
+// The link is pasted here and handed to main, which fetches the calendar and
+// keeps it, and never gives the link back: this page is told the host, when
+// the calendar was fetched, how many events were kept, why a fetch failed, and
+// the next seven days. Linking asks for internet access first, with the same
+// question a model download asks - in words about the calendar.
+
+const calendarLinkInput = document.getElementById("calendarLinkInput");
+const calendarLinkButton = document.getElementById("calendarLinkButton");
+const calendarStatusEl = document.getElementById("calendarStatus");
+const calendarButtons = document.getElementById("calendarButtons");
+const calendarRefreshButton = document.getElementById("calendarRefresh");
+const calendarUnlinkButton = document.getElementById("calendarUnlink");
+const calendarComingUp = document.getElementById("calendarComingUp");
+const calendarUpcomingEl = document.getElementById("calendarUpcoming");
+// the consent question's own words are about models; put back when it closes
+const consentText = document.getElementById("consentText");
+const CONSENT_TEXT = consentText.textContent;
+
+let calendarLast = { linked: false };
+// a link waiting on the answer to "allow internet access?"
+let pendingCalendarLink = null;
+
+function calendarLine(text, kind) {
+  const line = document.createElement("div");
+  line.className = kind ? `calLine ${kind}` : "calLine";
+  line.textContent = text;
+  return line;
+}
+
+// `note`, { text, bad }, is something to say under the status for the moment
+function renderCalendar(status, note) {
+  const s = status && typeof status === "object" ? status : { linked: false };
+  calendarLast = s;
+  const next = Array.isArray(s.upcoming) ? s.upcoming : [];
+  const lines = [];
+  if (!s.linked) {
+    lines.push(calendarLine("not linked", "quiet"));
+  } else {
+    lines.push(calendarLine(`linked: ${s.host || "your calendar"}`));
+    lines.push(calendarLine(s.fetchedAt
+      ? `fetched ${s.fetched} · ${s.kept} ${s.kept === 1 ? "event" : "events"} kept · ${next.length} in the next 7 days`
+      : "not fetched yet", "quiet"));
+  }
+  if (s.error) lines.push(calendarLine(s.linked && s.fetchedAt ? `couldn't refresh: ${s.error}` : s.error, "bad"));
+  if (note && note.text) lines.push(calendarLine(note.text, note.bad ? "bad" : "quiet"));
+  calendarStatusEl.replaceChildren(...lines);
+
+  calendarButtons.hidden = !s.linked;
+  calendarComingUp.hidden = !s.linked;
+  const items = next.map((ev) => {
+    const li = document.createElement("li");
+    const when = document.createElement("span");
+    when.className = "calWhen";
+    when.textContent = ev.when;
+    const what = document.createElement("span");
+    what.className = "calWhat";
+    what.textContent = ev.where ? `${ev.title} (at ${ev.where})` : ev.title;
+    li.append(when, what);
+    return li;
+  });
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "calWhen";
+    li.textContent = "nothing in the next 7 days";
+    items.push(li);
+  }
+  calendarUpcomingEl.replaceChildren(...items);
+}
+
+async function refreshCalendarStatus() {
+  renderCalendar(await window.emb3r.calendar.status());
+}
+
+function askCalendarConsent(link) {
+  pendingCalendarLink = link;
+  consentText.textContent = "Linking your calendar fetches it from ManageBac over the internet: now, when emb3r opens, and once an hour while it is open. Nothing else is sent, and questions about it are answered on this computer.";
+  consentModal.classList.add("open");
+}
+
+async function linkCalendar(link) {
+  calendarLinkButton.disabled = true;
+  renderCalendar(calendarLast, { text: "fetching your calendar..." });
+  const r = await window.emb3r.calendar.link(link);
+  calendarLinkButton.disabled = false;
+  if (r && r.needsConsent) {
+    currentConfig.internetConsent = false;
+    askCalendarConsent(link);
+    return;
+  }
+  // handed over, so not kept on this page any longer than that
+  if (r && r.success) calendarLinkInput.value = "";
+  renderCalendar(r && r.status, r && !r.success ? { text: r.error, bad: true } : null);
+}
+
+calendarLinkButton.addEventListener("click", () => {
+  const link = calendarLinkInput.value.trim();
+  if (!link) {
+    renderCalendar(calendarLast, { text: "Paste the link from ManageBac first.", bad: true });
+    calendarLinkInput.focus();
+    return;
+  }
+  if (!currentConfig.internetConsent) {
+    askCalendarConsent(link);
+    return;
+  }
+  linkCalendar(link);
+});
+
+calendarLinkInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    calendarLinkButton.click();
+  }
+});
+
+calendarRefreshButton.addEventListener("click", async () => {
+  calendarRefreshButton.disabled = true;
+  renderCalendar(calendarLast, { text: "fetching..." });
+  const status = await window.emb3r.calendar.refresh();
+  calendarRefreshButton.disabled = false;
+  renderCalendar(status);
+});
+
+calendarUnlinkButton.addEventListener("click", async () => {
+  renderCalendar(await window.emb3r.calendar.unlink(),
+    { text: "unlinked. the link and the saved calendar are gone from this computer" });
+});
+
+// the fetch at launch, or an hourly one, came back
+window.emb3r.calendar.onChanged((status) => renderCalendar(status));
+// "fetched today at 19:20" and "tomorrow" are worked out again whenever the page is opened
+document.querySelector('.settingsTab[data-tab="calendar"]').addEventListener("click", () => { refreshCalendarStatus(); });
 
 // =============================
 // First run setup

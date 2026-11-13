@@ -2391,6 +2391,76 @@ pre{
 }
 #customApiStatus.bad{ color:#ff8c66; }
 
+/* Settings > Calendar, in the terminal's own look: the glowing frame the
+   screen has, // labels, bracketed buttons, and status written as the notes
+   the terminal leaves itself. */
+.calFrame{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-top:12px;
+    padding:12px 14px;
+    border:1px solid var(--text-color);
+    box-shadow:var(--frame-glow);
+}
+
+.calFrame[hidden],
+#calendarButtons[hidden]{ display:none; }
+
+.calSteps{
+    margin:0;
+    padding-left:1.6em;
+    font-size:17px;
+    line-height:1.4;
+}
+
+.calRow{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+#settingsPanel .calRow input{
+    flex:1 1 18ch;
+    width:auto;
+    min-width:0;
+}
+
+.calLine{
+    font-size:17px;
+    line-height:1.35;
+}
+
+.calLine::before{ content:"// "; color:var(--quiet); }
+.calLine.quiet{ color:var(--quiet); }
+/* an error glows in its own colour, as the transcript's do, not in the accent */
+.calLine.bad{ color:#ff8c66; text-shadow:0 0 var(--glow-small) #ff8c66; }
+[data-theme="light"] .calLine.bad{ color:#b45309; text-shadow:none; }
+
+#calendarUpcoming{
+    margin:0;
+    padding:0;
+    list-style:none;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+
+#calendarUpcoming li{
+    display:flex;
+    flex-direction:column;
+    padding-left:10px;
+    border-left:2px solid var(--line-strong);
+}
+
+.calWhen{
+    font-size:15px;
+    color:var(--quiet);
+}
+
+.calWhat{ font-size:18px; }
+
 #accentHexRow{
     display:flex;
     align-items:center;
@@ -3947,7 +4017,7 @@ kbd.shortcutKeys{
 <div id="consentModal" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
     <div id="consentBox">
         <h3 id="consentTitle">Allow internet access?</h3>
-        <p>Downloading a model pulls a file from Hugging Face over the internet. Your local model still runs fully offline once downloaded — this permission only covers fetching new model files.</p>
+        <p id="consentText">Downloading a model pulls a file from Hugging Face over the internet. Your local model still runs fully offline once downloaded — this permission only covers fetching new model files.</p>
         <div id="consentButtons">
             <button id="consentDeny">Not Now</button>
             <button id="consentAllow">Allow</button>
@@ -4108,6 +4178,7 @@ kbd.shortcutKeys{
             <button class="settingsTab" data-tab="personality">Personality</button>
             <button class="settingsTab" data-tab="memory">Memory</button>
             <button class="settingsTab" data-tab="spotify">Spotify</button>
+            <button class="settingsTab" data-tab="calendar">Calendar</button>
             <button class="settingsTab" data-tab="web">Web access</button>
             <button class="settingsTab" data-tab="models">Models</button>
             <button class="settingsTab" data-tab="hardware">Hardware</button>
@@ -4137,7 +4208,7 @@ kbd.shortcutKeys{
         </div>
         <div id="offlineLockStatus"></div>
 
-        <p class="settingsNote">While this is on, emb3r refuses every connection it would otherwise make: model downloads, update checks, Gemini web access and Spotify all stop working until you turn it off. It is enforced in the place the connections are actually made, so it holds even for code inside the app's dependencies — not just hidden in this interface.</p>
+        <p class="settingsNote">While this is on, emb3r refuses every connection it would otherwise make: model downloads, update checks, Gemini web access, Spotify and your calendar all stop working until you turn it off. It is enforced in the place the connections are actually made, so it holds even for code inside the app's dependencies — not just hidden in this interface.</p>
         <p class="settingsNote">It does not firewall the rest of your computer. Your operating system and other apps are unaffected.</p>
 
         <label>Connections since launch</label>
@@ -4224,6 +4295,44 @@ kbd.shortcutKeys{
         <p class="settingsNote">While Spotify is connected, emb3r asks it what is playing every 10 seconds while this window is open, and every 30 seconds while it is hidden. The song goes into Ember's prompt only when your question is about music, and only when this computer is answering - never to Gemini or another provider.</p>
         <p class="settingsNote">Say "pause", "play", "skip", "next song" or "go back" and she does it, without the model. So do <b>Ctrl+Alt+P</b>, <b>Ctrl+Alt+&rarr;</b> and <b>Ctrl+Alt+&larr;</b>. Spotify only allows this with Premium, and it needs the control permission: if you connected before this version, disconnect and connect once more.</p>
         <p class="settingsNote">Since March 2026 Spotify requires the account that owns the Client ID to have Premium. Without it Spotify refuses every request, and this page says so rather than showing nothing.</p>
+    </div>
+
+    <!-- The link is a secret, so it is typed into a password box, handed to
+         main and never shown again: what comes back is its host. Filled in by
+         renderer.js ("Calendar"). -->
+    <div class="settingsSection" data-tab="calendar">
+        <h3>Calendar</h3>
+        <p class="settingsNote">Link your ManageBac calendar and Ember can answer "what's due this week?" or "when is my bio test?" from it.</p>
+
+        <div class="calFrame">
+            <h4 class="sideLabel">how to link it</h4>
+            <ol class="calSteps">
+                <li>In ManageBac, open <b>Calendar</b>.</li>
+                <li>Choose <b>subscribe</b> and copy the link it gives you. It starts with <code>webcal://</code> or <code>https://</code>.</li>
+                <li>Paste it here and press <b>[ link ]</b>.</li>
+            </ol>
+            <label for="calendarLinkInput">Calendar link</label>
+            <div class="calRow">
+                <input type="password" id="calendarLinkInput" autocomplete="off" spellcheck="false" placeholder="webcal://...">
+                <button id="calendarLinkButton">[ link ]</button>
+            </div>
+        </div>
+
+        <div class="calFrame">
+            <h4 class="sideLabel">status</h4>
+            <div id="calendarStatus" aria-live="polite"></div>
+            <div class="calRow" id="calendarButtons" hidden>
+                <button id="calendarRefresh">[ refresh ]</button>
+                <button id="calendarUnlink">[ unlink ]</button>
+            </div>
+        </div>
+
+        <div class="calFrame" id="calendarComingUp" hidden>
+            <h4 class="sideLabel">coming up</h4>
+            <ol id="calendarUpcoming"></ol>
+        </div>
+
+        <p class="settingsNote">The link stays on this computer. emb3r fetches the calendar from ManageBac and sends nothing else.</p>
     </div>
 
     <div class="settingsSection" data-tab="web">
