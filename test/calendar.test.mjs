@@ -4,7 +4,7 @@ import fs from "node:fs";
 import {
   calendarFetchUrl, unfold, parseIcs, readFeed, keepWindow, upcoming, eventSpan, parseCache,
   whenLabel, fetchedLabel, longDate, isCalendarQuestion, calendarContext, describeCalendarError,
-  KEEP_PAST_DAYS, KEEP_AHEAD_DAYS, MAX_EVENTS, CONTEXT_DAYS,
+  KEEP_PAST_DAYS, KEEP_AHEAD_DAYS, MAX_EVENTS, CONTEXT_DAYS, CONTEXT_CHARS,
 } from "../calendar.js";
 
 // A ManageBac-style feed for an invented school, its dates around Thursday 12
@@ -262,11 +262,21 @@ test("what the model is told: the next fortnight, as information to answer from"
   assert.ok(!ctx.includes("TOK: exhibition"), "over already");
   // nothing on is said, so a small model does not invent homework
   assert.match(calendarContext([], NOW), /\nNothing is on it for the next 14 days\.$/);
-  // a crowded fortnight is capped
+  // a crowded fortnight is capped at 25 entries
   const busy = Array.from({ length: 40 }, (_, i) => ({ title: `Task ${i}`, allDay: true, start: "2026-11-13", end: "2026-11-14" }));
   const capped = calendarContext(busy, NOW).split("\n");
   assert.equal(capped.length, 1 + 25 + 1);
   assert.equal(capped[capped.length - 1], "- and 15 more after these");
+  // and a wordy one at about 600 tokens, whatever the teachers wrote
+  const wordy = Array.from({ length: 30 }, (_, i) => ({
+    title: `Unit ${i} summative assessment: ${"long title words ".repeat(8)}`, allDay: true, start: "2026-11-13", end: "2026-11-14",
+    description: "A long description of what to revise. ".repeat(10), categories: ["Biology HL", "Summative"],
+  }));
+  const [, ...entries] = calendarContext(wordy, NOW).split("\n");
+  const shown = entries.slice(0, -1);
+  assert.ok(shown.length > 3 && shown.length < 30, `${shown.length} entries`);
+  assert.ok(shown.join("\n").length <= CONTEXT_CHARS, `${shown.join("\n").length} characters`);
+  assert.equal(entries[entries.length - 1], `- and ${30 - shown.length} more after these`);
 });
 
 test("the cache is read back as it was written, and a damaged one is no cache", () => {

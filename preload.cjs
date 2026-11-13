@@ -84,6 +84,17 @@ contextBridge.exposeInMainWorld("emb3r", {
       ipcRenderer.on("emb3r:study-explain-token", (_event, data) => callback(data));
     },
   },
+  // the student's ManageBac calendar. The link goes to main and never comes
+  // back: status says its host, when it was fetched, and what is coming up.
+  calendar: {
+    status: () => ipcRenderer.invoke("emb3r:calendar-status"),
+    link: (link) => ipcRenderer.invoke("emb3r:calendar-link", typeof link === "string" ? link : ""),
+    refresh: () => ipcRenderer.invoke("emb3r:calendar-refresh"),
+    unlink: () => ipcRenderer.invoke("emb3r:calendar-unlink"),
+    onChanged: (callback) => {
+      ipcRenderer.on("emb3r:calendar-changed", (_event, data) => callback(data));
+    },
+  },
   onModelReady: (callback) => {
     ipcRenderer.on("emb3r:model-ready", (_event, data) => callback(data));
   },

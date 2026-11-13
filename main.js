@@ -23,6 +23,12 @@ import {
   isDeckId, tutorOfDeck, parseDeck, addCards, schedule, dueCards, cutNotes,
   MAX_CARDS, cardsPrompt, cardsSystemPrompt, explainPrompt, answerPrompt, completeCards,
 } from "./study.js";
+// the student's ManageBac calendar: which links are fetched, what a feed says,
+// which questions are about it and what Ember is told
+import {
+  calendarFetchUrl, readFeed, parseCache, upcoming, whenLabel, fetchedLabel,
+  isCalendarQuestion, calendarContext, describeCalendarError,
+} from "./calendar.js";
 // electron-updater is CommonJS, and it defines `autoUpdater` via a lazy
 // Object.defineProperty getter rather than a plain `exports.autoUpdater = `
 // assignment. Node's static CJS-export scanner (cjs-module-lexer) does not
@@ -138,6 +144,12 @@ function defaultConfig() {
     // models added by the user, either downloaded from a pasted link or
     // pointed at where they already sit on disk. See the custom models section.
     customModels: [],
+    // The private link ManageBac gives a student to subscribe to their
+    // calendar, kept as the https address it is fetched from. A secret, handled
+    // like the keys above: written from the renderer, never read back to it,
+    // stripped out of emb3r:get-config, and never logged except as its host.
+    // Empty means no calendar. See the calendar section.
+    calendarLink: "",
   };
 }
 
@@ -478,6 +490,11 @@ function describeHost(host) {
   // message actually went rather than a generic "network activity"
   const custom = customApiHost();
   if (custom && h.includes(custom.toLowerCase())) return `asking ${custom}`;
+  // the calendar the student linked, named by what it is - its address is a
+  // secret. ManageBac's own hosts are named from the first fetch, before the
+  // link is kept; emb3r asks ManageBac for nothing else.
+  const calendar = calendarHost();
+  if ((calendar && h === calendar.toLowerCase()) || /(^|\.)managebac\.(com|cn)$/.test(h)) return "reading your calendar";
   if (h.includes("scdn.co")) return "Spotify cover art";
   if (h.includes("spotify.com")) return "Spotify now-playing";
   return h || "unknown";
@@ -2095,6 +2112,13 @@ app.whenReady().then(async () => {
   mainWindow = createWindow();
   registerGlobalShortcuts();
 
+  // The calendar, a few seconds after launch and every hour while emb3r is
+  // open. Set before the model loads, which can take a minute, so "at launch"
+  // means at launch. refreshCalendar reads the link, the consent and the offline
+  // lock every time, and does nothing at all without a link.
+  setTimeout(() => { refreshCalendar({ quiet: true }); }, CALENDAR_FIRST_MS);
+  setInterval(() => { refreshCalendar({ quiet: true }); }, CALENDAR_EVERY_MS);
+
   try {
     await loadLocalModel();
   } catch (err) {
@@ -2135,12 +2159,13 @@ app.on("activate", () => {
 // ---- Config / consent IPC ----
 
 ipcMain.handle("emb3r:get-config", () => {
-  // never leak spotify tokens, the gemini key, or the safe-mode PIN hash to the
-  // renderer. The PIN hash is here for the obvious reason: the renderer is the
-  // side a student can reach, and handing it the hash to check would let the
-  // check be skipped.
+  // never leak spotify tokens, the API keys, the calendar link or the safe-mode
+  // PIN hash to the renderer. The PIN hash is here for the obvious reason: the
+  // renderer is the side a student can reach, and handing it the hash to check
+  // would let the check be skipped. The calendar's host and state come from
+  // emb3r:calendar-status instead.
   const { spotifyAccessToken, spotifyRefreshToken, geminiApiKey, customApiKey,
-          safeModePin, ...safe } = config;
+          calendarLink, safeModePin, ...safe } = config;
   // a boolean is enough for the UI to know whether to ask for one
   safe.safeModePinSet = Boolean(safeModePin);
   return safe;
@@ -4708,7 +4733,13 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // A tutor's chat never leaves this computer, whatever web access is set to:
   // a student's notes and the cards they struggle with stay here.
   const tutorChat = Boolean(activeConversation && isTutor(activeConversation.tutor));
-  const remote = tutorChat ? null : remoteFor(userMessage, opts);
+  // And a question about the student's own calendar is answered here, where
+  // the calendar is. Sent to Gemini or a provider it would arrive without the
+  // entries - they never leave this computer - and be answered from nothing;
+  // and "what's due this week?" says "this week", which on its own sends a
+  // question to the web.
+  const calendarAsk = calendarReadable() && isCalendarQuestion(userMessage);
+  const remote = tutorChat || calendarAsk ? null : remoteFor(userMessage, opts);
   if (remote && !config.internetConsent) {
     return { success: false, needsConsent: true, error: "This looks like it needs current information from the web." };
   }
@@ -4729,10 +4760,21 @@ ipcMain.handle("emb3r:send-message", async (_event, userMessage, opts = {}) => {
   // the user is listening to stays here. A web answer will not know which song
   // "this" is; that is the price, and it is the right way round.
   const music = !remote && isMusicQuestion(userMessage) ? await currentMusicContextWithin(MUSIC_LOOKUP_MS) : null;
+  // What is on the student's calendar travels the same way as the song: beside
+  // this one question, not kept in the conversation, and only ever to the model
+  // on this computer - checked here as well as in the routing above, so a change
+  // there cannot send it anywhere. A tutor's chat gets it too; it is local anyway.
+  const calendar = !remote && calendarAsk
+    ? calendarContext(calendarCache.events, Date.now(), { fetchedAt: calendarCache.fetchedAt })
+    : null;
+  if (calendar) {
+    const entries = calendar.split("\n").filter((l) => l.startsWith("- ")).length;
+    console.log(`Calendar: ${entries} ${entries === 1 ? "line" : "lines"} of it beside this question`);
+  }
   // Said aloud in Talk, and answered aloud: for this one turn she is told so,
   // and like the other extras it is not kept in the conversation.
   const spoken = opts.spoken === true ? SPOKEN_REPLY_PROMPT : null;
-  const extras = [memories, music, attachmentContext, spoken].filter(Boolean).join("\n\n");
+  const extras = [memories, music, calendar, attachmentContext, spoken].filter(Boolean).join("\n\n");
   const promptText = extras ? `${extras}\n\n${userMessage}` : userMessage;
 
   const controller = new AbortController();
@@ -5139,4 +5181,242 @@ ipcMain.handle("emb3r:study-explain", async (_e, deckId, cardId, request = {}) =
 ipcMain.handle("emb3r:study-stop", () => {
   if (activeGeneration) activeGeneration.abort();
   return { success: true };
+});
+
+// ---- Calendar: the student's ManageBac calendar ----
+//
+// ManageBac gives each student a private link to subscribe to their calendar
+// with. Pasted into Settings > Calendar, it is fetched here - through the same
+// guarded https as everything else, so it shows in the connections log and the
+// offline lock refuses it - when it is linked, a few seconds after launch,
+// every hour while emb3r is open, and on [ refresh ]. What came back is kept at
+// userData/calendar.json, so a question about it is still answered offline.
+// What a feed means and what Ember is told is decided in calendar.js.
+
+const CALENDAR_PATH = path.join(app.getPath("userData"), "calendar.json");
+const CALENDAR_FIRST_MS = 8000;
+const CALENDAR_EVERY_MS = 60 * 60 * 1000;
+const CALENDAR_MAX_BYTES = 5 * 1024 * 1024;
+const CALENDAR_TIMEOUT_MS = 20_000;
+// how far ahead Settings lists; Ember is told the next fortnight
+const CALENDAR_LIST_DAYS = 7;
+
+// The real-app check in the evidence folder serves a made-up feed over plain
+// http from 127.0.0.1 and names that origin here. Nothing else sets it, and
+// without it a calendar is fetched over https or not at all (calendarFetchUrl).
+const CALENDAR_TEST_ORIGIN = process.env.EMB3R_CALENDAR_TEST_ORIGIN || null;
+
+let calendarCache = null; // { version, fetchedAt, total, events }, as on disk
+let calendarError = null; // why the last fetch failed, in words
+let calendarFetching = null; // the fetch under way, so two never run at once
+
+function calendarTarget(link = config.calendarLink) {
+  return link ? calendarFetchUrl(link, { testOrigin: CALENDAR_TEST_ORIGIN }) : null;
+}
+
+function calendarHost() {
+  const t = calendarTarget();
+  return t && t.ok ? t.host : "";
+}
+
+// linked, and fetched at least once: something to answer from
+function calendarReadable() {
+  return Boolean(config.calendarLink && calendarCache);
+}
+
+function readCalendarCache() {
+  try {
+    return parseCache(fs.readFileSync(CALENDAR_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+// written whole to a temporary file and moved into place, like a deck, so a
+// crash halfway through leaves the old calendar rather than half a new one
+function writeCalendarCache(cache) {
+  fs.writeFileSync(`${CALENDAR_PATH}.tmp`, JSON.stringify(cache));
+  fs.renameSync(`${CALENDAR_PATH}.tmp`, CALENDAR_PATH);
+}
+
+function forgetCalendarCache() {
+  calendarCache = null;
+  for (const file of [CALENDAR_PATH, `${CALENDAR_PATH}.tmp`]) {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch (err) {
+      console.error("Calendar: could not delete the saved calendar:", err.message);
+    }
+  }
+}
+
+// a cache with no link is what an unlink that crashed would leave behind
+if (config.calendarLink) calendarCache = readCalendarCache();
+else forgetCalendarCache();
+
+const calendarFailure = (kind) => Object.assign(new Error(kind), { calendar: kind });
+
+// One GET of the feed: https.get, which the network guard wraps, or http.get
+// for the test origin alone. A few redirects are followed, each one held to the
+// same rule as a pasted link, and no more than 5 MB is read.
+function fetchCalendarBytes(target, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    let req;
+    try {
+      req = (target.http ? http : https).get(target.url, {
+        headers: { "User-Agent": "emb3r-app", Accept: "text/calendar, */*;q=0.5" },
+      }, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          res.resume();
+          if (redirects >= 5) return reject(calendarFailure("redirects"));
+          let next = null;
+          try { next = calendarTarget(new URL(res.headers.location, target.url).toString()); } catch { /* not an address */ }
+          if (!next || !next.ok) return reject(calendarFailure("not-https"));
+          return fetchCalendarBytes(next, redirects + 1).then(resolve, reject);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(Object.assign(new Error(`answered ${res.statusCode}`), { status: res.statusCode }));
+        }
+        const chunks = [];
+        let size = 0;
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > CALENDAR_MAX_BYTES) {
+            reject(calendarFailure("too-large"));
+            req.destroy();
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => resolve(Buffer.concat(chunks)));
+        res.on("error", reject);
+      });
+    } catch (err) {
+      // the offline lock refuses from inside https.get itself
+      reject(err);
+      return;
+    }
+    req.on("error", reject);
+    req.setTimeout(CALENDAR_TIMEOUT_MS, () => req.destroy(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })));
+  });
+}
+
+// fetched and read, or an error that already says what went wrong in words
+async function fetchCalendar(target) {
+  try {
+    const cache = readFeed(await fetchCalendarBytes(target), Date.now());
+    if (!cache) throw calendarFailure("not-calendar");
+    return { cache };
+  } catch (err) {
+    return { error: describeCalendarError({ status: err.status, error: err.status ? null : err, host: target.host }) };
+  }
+}
+
+// What Settings shows: the host and never the link, when it was fetched, how
+// many events were kept, why the last fetch failed, and the next seven days.
+function calendarStatus() {
+  const now = Date.now();
+  const linked = Boolean(config.calendarLink);
+  const cache = linked ? calendarCache : null;
+  return {
+    linked,
+    host: linked ? calendarHost() : "",
+    fetching: Boolean(calendarFetching),
+    fetchedAt: cache ? cache.fetchedAt : 0,
+    fetched: cache ? fetchedLabel(cache.fetchedAt, now) : "never",
+    total: cache ? cache.total : 0,
+    kept: cache ? cache.events.length : 0,
+    error: linked ? calendarError : null,
+    upcoming: cache
+      ? upcoming(cache.events, now, CALENDAR_LIST_DAYS).slice(0, 40).map((ev) => ({
+        when: whenLabel(ev, now), title: ev.title, where: ev.location || "",
+      }))
+      : [],
+  };
+}
+
+function sendCalendarStatus() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("emb3r:calendar-changed", calendarStatus());
+}
+
+// The linked calendar fetched again. `quiet` is for the launch and hourly
+// fetches: under the offline lock they do not try at all - trying would only
+// write a "blocked" row for something already refused - and without consent
+// they wait for it instead of complaining. A fetch that fails keeps the
+// calendar fetched before it, and says why beside it.
+function refreshCalendar({ quiet = false } = {}) {
+  const link = config.calendarLink;
+  const target = calendarTarget(link);
+  if (!target || !target.ok) return Promise.resolve(calendarStatus());
+  if (config.offlineLock || !config.internetConsent) {
+    if (!quiet) {
+      calendarError = config.offlineLock
+        ? describeCalendarError({ error: { isOfflineLock: true } })
+        : "Internet access hasn't been granted yet.";
+    }
+    return Promise.resolve(calendarStatus());
+  }
+  if (calendarFetching) return calendarFetching;
+  calendarFetching = (async () => {
+    const got = await fetchCalendar(target);
+    // unlinked, or linked to another calendar, while this one was on its way
+    if (config.calendarLink === link) {
+      if (got.cache) {
+        writeCalendarCache(got.cache);
+        calendarCache = got.cache;
+        calendarError = null;
+        console.log(`Calendar: ${got.cache.events.length} of ${got.cache.total} events kept, from ${target.host}`);
+      } else {
+        calendarError = got.error;
+        console.error(`Calendar: could not fetch it from ${target.host}: ${got.error}`);
+      }
+    }
+    calendarFetching = null;
+    sendCalendarStatus();
+    return calendarStatus();
+  })();
+  return calendarFetching;
+}
+
+ipcMain.handle("emb3r:calendar-status", () => calendarStatus());
+
+ipcMain.handle("emb3r:calendar-refresh", () => refreshCalendar());
+
+// Linking is a fetch: the link is kept only once a calendar has come back from
+// it, so a mistyped one is never stored. A new link replaces the old one only
+// when it works.
+ipcMain.handle("emb3r:calendar-link", async (_e, link) => {
+  const target = calendarTarget(typeof link === "string" ? link.slice(0, 2000) : "");
+  if (!target || !target.ok) return { success: false, error: (target && target.error) || "Paste the link from ManageBac first.", status: calendarStatus() };
+  if (config.offlineLock) {
+    return { success: false, error: "The offline lock is on, so emb3r cannot fetch your calendar. Turn it off under Privacy first.", status: calendarStatus() };
+  }
+  if (!config.internetConsent) {
+    return { success: false, needsConsent: true, error: "Internet access hasn't been granted yet.", status: calendarStatus() };
+  }
+  // a refresh of the calendar being replaced finishes first, and is then discarded
+  if (calendarFetching) await calendarFetching;
+  const got = await fetchCalendar(target);
+  if (!got.cache) {
+    console.error(`Calendar: could not link ${target.host}: ${got.error}`);
+    return { success: false, error: got.error, status: calendarStatus() };
+  }
+  config.calendarLink = target.url;
+  saveConfig(config);
+  writeCalendarCache(got.cache);
+  calendarCache = got.cache;
+  calendarError = null;
+  console.log(`Calendar: linked ${target.host}, ${got.cache.events.length} of ${got.cache.total} events kept`);
+  return { success: true, status: calendarStatus() };
+});
+
+// The link and everything fetched with it, gone from this computer.
+ipcMain.handle("emb3r:calendar-unlink", () => {
+  config.calendarLink = "";
+  saveConfig(config);
+  calendarError = null;
+  forgetCalendarCache();
+  console.log("Calendar: unlinked");
+  return calendarStatus();
 });
