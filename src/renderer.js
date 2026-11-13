@@ -648,7 +648,18 @@ function paintDragonHp() {
   dragonHpEl.hidden = full;
   if (full) return;
   const r = logoMarkEl.getBoundingClientRect();
-  dragonHpEl.textContent = `hp ${"█".repeat(dragon.hp)}${"░".repeat(DRAGON.MAX_HP - dragon.hp)}`;
+  // Drawn as cells rather than block glyphs: neither bundled face has U+2588 or
+  // U+2591, so the bar came from two fallback fonts and its empty half stood
+  // twice as tall as its full half (seen in the shoot's pictures).
+  const cells = document.createElement("span");
+  cells.className = "hpCells";
+  for (let i = 0; i < DRAGON.MAX_HP; i++) {
+    const c = document.createElement("i");
+    if (i < dragon.hp) c.className = "on";
+    cells.appendChild(c);
+  }
+  dragonHpEl.replaceChildren("hp ", cells);
+  dragonHpEl.dataset.hp = String(dragon.hp);
   const below = r.top < 64;
   dragonHpEl.classList.toggle("below", below);
   dragonHpEl.classList.toggle("low", dragon.hp <= DRAGON.ANGRY_AT);

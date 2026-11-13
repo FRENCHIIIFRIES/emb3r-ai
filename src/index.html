@@ -641,6 +641,16 @@ pre{
     white-space:nowrap;
     color:var(--text-color);
 }
+/* ten cells, full ones lit: no glyphs, so no fallback font to disagree */
+#dragonHp .hpCells{ display:inline-flex; gap:1px; vertical-align:-1px; }
+#dragonHp .hpCells i{
+    width:5px;
+    height:9px;
+    box-sizing:border-box;
+    border:1px solid currentColor;
+    opacity:.55;
+}
+#dragonHp .hpCells i.on{ background:currentColor; opacity:1; box-shadow:0 0 4px currentColor; }
 #dragonHp.below{ transform:translate(-50%,0); }
 #dragonHp.low{ color:var(--boot-flame); }
 #dragonHp[hidden]{ display:none; }
@@ -661,12 +671,14 @@ pre{
 .fxAchievement.leaving{ opacity:0; transform:translate(-50%,-10px); }
 
 /* ↑ ↑ ↓ ↓ ← → ← → b a */
-#app.cheat{ animation:cheatHue 1.6s linear infinite; }
+/* on the frame, not #app: a filter on #app made it the containing block for the
+   fixed sidebar, whose border then showed at the left edge while it cycled */
+#app.cheat #main{ animation:cheatHue 1.6s linear infinite; }
 @keyframes cheatHue{ to{ filter:hue-rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce){
     #logoMark{ transition:none; }
-    #logoMark.bonked, #logoMark.dodged, #logo.glitch, #main.shake, .fxStars, #app.cheat{ animation:none; }
+    #logoMark.bonked, #logoMark.dodged, #logo.glitch, #main.shake, .fxStars, #app.cheat #main{ animation:none; }
     .fxPop, .fxPop.note{ animation:fxFade 1.6s ease forwards; }
 }
 @keyframes fxFade{ 0%{ opacity:1; } 100%{ opacity:0; } }
