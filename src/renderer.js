@@ -555,6 +555,10 @@ const DRAGON = window.emb3rDragon;
 const fxLayer = document.getElementById("fxLayer");
 const wordmarkEl = document.getElementById("logo");
 const dragonHpEl = document.getElementById("dragonHp");
+// the hat he wears on a few days of the year, drawn over him, never in him
+const dragonHatEl = document.getElementById("dragonHat");
+const trophyShelf = document.getElementById("trophyShelf");
+const trophyCount = document.getElementById("trophyCount");
 // where on the drawing his head and mouth are, as fractions of its box
 const DRAGON_HEAD = { x: 0.84, y: 0.42 };
 const DRAGON_MOUTH = { x: 0.95, y: 0.5 };
@@ -577,14 +581,21 @@ function loadDragonStats() {
 }
 let dragonStats = loadDragonStats();
 
-function countDragon(key) {
-  dragonStats[key] = (dragonStats[key] || 0) + 1;
+// every change to the lifetime numbers comes through here: anything newly
+// earned is toasted, the shelf in Settings follows, and it is kept
+function keepDragonStats(next) {
+  dragonStats = next;
   const fresh = DRAGON.newAchievements(dragonStats, dragonStats.unlocked);
   if (fresh.length) {
     dragonStats.unlocked = [...(dragonStats.unlocked || []), ...fresh];
     fresh.forEach((id, i) => setTimeout(() => achievement(DRAGON.ACHIEVEMENTS[id].title), 700 + 1100 * i));
   }
   try { localStorage.setItem("emb3rDragon", JSON.stringify(dragonStats)); } catch (e) {}
+  paintTrophies();
+}
+
+function countDragon(key) {
+  keepDragonStats({ ...dragonStats, [key]: (dragonStats[key] || 0) + 1 });
 }
 
 function dragonPoint(at) {
@@ -629,6 +640,12 @@ function jolt(el, cls, ms = 400) {
   void el.getBoundingClientRect();
   el.classList.add(cls);
   setTimeout(() => el.classList.remove(cls), ms);
+}
+
+// the hat, when he wears one, moves with him
+function joltDragon(cls, ms) {
+  jolt(logoMarkEl, cls, ms);
+  if (hatShown) jolt(dragonHatEl, cls, ms);
 }
 
 function achievement(title) {
@@ -691,6 +708,27 @@ function purrSound() {
 function cheatSound() {
   [523, 659, 784, 1047, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.09, "square", 0.04), i * 90));
 }
+// each combo a step higher than the last
+function comboSound(n) {
+  beep(440 * Math.pow(2, Math.min(n - 3, 12) / 12), 0.06, "square", 0.035);
+}
+function chargeStartSound() {
+  [220, 262, 330].forEach((f, i) => setTimeout(() => beep(f, 0.07, "triangle", 0.03), i * 70));
+}
+function chargeFullSound() {
+  beep(988, 0.08, "square", 0.035);
+  setTimeout(() => beep(1319, 0.12, "square", 0.035), 80);
+}
+function fireballSound() {
+  for (let i = 0; i < 10; i++) setTimeout(() => beep(520 - i * 38 + Math.random() * 30, 0.06, "sawtooth", 0.035), i * 35);
+}
+function fizzleSound() {
+  beep(160, 0.08, "triangle", 0.04);
+  setTimeout(() => beep(110, 0.12, "triangle", 0.03), 70);
+}
+function dragonFileSound() {
+  [330, 392, 523].forEach((f, i) => setTimeout(() => beep(f, 0.05, "square", 0.03), i * 60));
+}
 
 function seeStars() {
   starSound();
@@ -719,9 +757,9 @@ function breatheFire() {
   dragonFace("angry", 1800);
   const head = dragonPoint({ x: 0.5, y: 0 });
   fxPop("( ò_ó ) enough.", head.x, head.y - 6, "word");
-  wordmarkEl.classList.add("scorched");
+  scorchWordmark(1600);
   logoMarkEl.classList.add("raging");
-  setTimeout(() => { wordmarkEl.classList.remove("scorched"); logoMarkEl.classList.remove("raging"); }, 1600);
+  setTimeout(() => logoMarkEl.classList.remove("raging"), 1600);
   if (!reactionsAllowed()) return;
   jolt(document.getElementById("main"), "shake", 360);
   const mouth = dragonPoint(DRAGON_MOUTH);
@@ -750,13 +788,14 @@ function knockOut() {
   mood = Math.max(0, mood - 1);
   renderStats();
   dragonFace("error");
-  setTimeout(() => logoMarkEl.classList.add("ko"), 260);
+  setTimeout(() => { logoMarkEl.classList.add("ko"); dragonHatEl.classList.add("ko"); }, 260);
   const top = dragonPoint({ x: 0.5, y: 0.05 });
   fxPop("K.O.", top.x, top.y, "ko");
 }
 
 function dragonGetsUp() {
   logoMarkEl.classList.remove("ko");
+  dragonHatEl.classList.remove("ko");
   dragonFace(restingFace());
   const p = dragonPoint({ x: 0.5, y: 0.1 });
   fxPop("...i'm fine", p.x, p.y, "word");
@@ -771,7 +810,7 @@ function dragonReacts(ev, at) {
       const word = DRAGON.isLateNight(hour) && !lateNightSaid ? "( u_u ) it's late. go to sleep" : ev.word;
       if (word !== ev.word) lateNightSaid = true;
       fxPop(word, at.clientX, at.clientY, "word");
-      jolt(logoMarkEl, "bonked", 300);
+      joltDragon("bonked", 300);
       if (ev.hp > 0) dragonFace("bonked", 650);
       bonkSound(ev.hp);
       break;
@@ -782,7 +821,7 @@ function dragonReacts(ev, at) {
     case "dodge": {
       const p = dragonPoint(DRAGON_HEAD);
       fxPop("( ¬_¬ ) nope", p.x, p.y, "word");
-      jolt(logoMarkEl, "dodged", 380);
+      joltDragon("dodged", 380);
       dragonFace("smug", 900);
       break;
     }
@@ -792,12 +831,95 @@ function dragonReacts(ev, at) {
       break;
     }
     case "up": dragonGetsUp(); break;
+    case "combo": {
+      keepDragonStats(DRAGON.recordCombo(dragonStats, ev.n));
+      showCombo(ev.n);
+      comboSound(ev.n);
+      break;
+    }
   }
+}
+
+// "x3 combo", "x4 combo"... one at a time, beside his hit points: over his
+// head in the hero, under him in the title line where there is no room above
+let comboEl = null;
+function showCombo(n) {
+  if (comboEl) comboEl.remove();
+  const r = logoMarkEl.getBoundingClientRect();
+  const below = r.top < 64;
+  const el = document.createElement("span");
+  el.className = "fxCombo" + (n >= 10 ? " ten" : "");
+  el.textContent = `x${n} combo`;
+  el.style.left = `${Math.round(r.left + r.width / 2)}px`;
+  // clear of the hp bar, which takes the 16 px nearest him
+  el.style.top = `${Math.round(below ? r.bottom + 30 : r.top - 32)}px`;
+  fxLayer.appendChild(el);
+  comboEl = el;
+  setTimeout(() => { el.remove(); if (comboEl === el) comboEl = null; }, 1100);
+}
+
+function landPunch(at) {
+  const r = DRAGON.hit(dragon, Date.now());
+  dragon = r.state;
+  for (const ev of r.events) dragonReacts(ev, at);
+  paintDragonHp();
+  runDragonClock();
+}
+
+// ---- the charged fireball ----------------------------------------------------
+// The press is decided when it is let go (DRAGON.release): a click is a punch,
+// a hold is a charge, and a charge is never also a punch. While he charges his
+// back flames grow and a meter fills under him; let go when it is full and he
+// shoots toward the pointer, before and it fizzles.
+const chargeEl = document.getElementById("dragonCharge");
+let press = null;
+
+function paintCharge(level) {
+  const r = logoMarkEl.getBoundingClientRect();
+  const full = level >= 1;
+  chargeEl.hidden = false;
+  chargeEl.textContent = full ? `ready ${DRAGON.chargeMeter(1)} let go` : `charging... ${DRAGON.chargeMeter(level)}`;
+  chargeEl.classList.toggle("full", full);
+  chargeEl.style.left = `${Math.round(r.left + r.width / 2)}px`;
+  // under him; in the title line his hit points are already there, so lower
+  chargeEl.style.top = `${Math.round(r.bottom + (r.top < 64 ? 20 : 6))}px`;
+  logoMarkEl.style.setProperty("--charge", level.toFixed(2));
+}
+
+function chargeTick() {
+  if (!press) return;
+  const now = Date.now();
+  const held = now - press.at;
+  if (!press.charging) {
+    if (held < DRAGON.CHARGE_DELAY_MS || !DRAGON.canCharge(dragon, now)) return;
+    press.charging = true;
+    chargeStartSound();
+    if (reactionsAllowed()) logoMarkEl.classList.add("charging");
+  }
+  const level = DRAGON.chargeLevel(held);
+  if (level >= 1 && !press.full) {
+    press.full = true;
+    chargeFullSound();
+    logoMarkEl.classList.add("charged");
+    announce("Charged. Let go to shoot.");
+  }
+  paintCharge(level);
+}
+
+function endCharge() {
+  if (!press) return;
+  clearInterval(press.timer);
+  press = null;
+  chargeEl.hidden = true;
+  chargeEl.classList.remove("full");
+  logoMarkEl.classList.remove("charging", "charged");
+  logoMarkEl.style.removeProperty("--charge");
 }
 
 logoMarkEl.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   petting.reset();
+  endCharge();
   // asleep, the first punch only wakes him
   if (currentFace === "sleeping") {
     resetIdleTimers();
@@ -805,12 +927,99 @@ logoMarkEl.addEventListener("pointerdown", (e) => {
     fxPop("*snort* wha-", e.clientX, e.clientY, "word");
     return;
   }
-  const r = DRAGON.hit(dragon, Date.now());
-  dragon = r.state;
-  for (const ev of r.events) dragonReacts(ev, e);
-  paintDragonHp();
-  runDragonClock();
+  // captured, so letting go anywhere in the window - aimed - is the release
+  try { logoMarkEl.setPointerCapture(e.pointerId); } catch (err) {}
+  press = { at: Date.now(), x: e.clientX, y: e.clientY, charging: false, full: false, timer: setInterval(chargeTick, 50) };
 });
+
+logoMarkEl.addEventListener("pointerup", (e) => {
+  if (!press || e.button !== 0) return;
+  const { at, x, y } = press;
+  const now = Date.now();
+  const what = DRAGON.release(now - at, dragon, now);
+  endCharge();
+  if (what === "punch") landPunch({ clientX: x, clientY: y });
+  else if (what === "fizzle") fizzle();
+  else shootFireball({ x: e.clientX, y: e.clientY });
+});
+
+// the press taken away from under us (the window lost focus, a touch became a
+// scroll): nothing happens, not even a punch
+logoMarkEl.addEventListener("pointercancel", endCharge);
+logoMarkEl.addEventListener("lostpointercapture", () => { if (press) endCharge(); });
+
+function fizzle() {
+  fizzleSound();
+  dragonFace("puzzled", 1100);
+  const p = dragonPoint(DRAGON_MOUTH);
+  fxPop("pff", p.x + 8, p.y, "word");
+  if (reactionsAllowed()) {
+    ["˚", "°", "·"].forEach((ch, i) => setTimeout(() => fxPop(ch, p.x + 14 + i * 6, p.y - 4, "puff"), i * 90));
+  }
+}
+
+let scorchTimer = null;
+function scorchWordmark(ms = 1400) {
+  wordmarkEl.classList.add("scorched");
+  clearTimeout(scorchTimer);
+  scorchTimer = setTimeout(() => wordmarkEl.classList.remove("scorched"), ms);
+}
+
+// From his mouth toward where the pointer was let go, to the edge of the
+// window. If that line crosses the wordmark the letters catch as it passes.
+const FIREBALL_GLYPHS = ["░", "▒", "≈", "*"];
+function shootFireball(toward) {
+  countDragon("fireballs");
+  fireballSound();
+  dragonFace("smug", 1400);
+  const mouth = dragonPoint(DRAGON_MOUTH);
+  const end = DRAGON.fireballPath(mouth, toward, { width: window.innerWidth, height: window.innerHeight });
+  const w = wordmarkEl.getBoundingClientRect();
+  const through = DRAGON.crossesRect(mouth, end, { left: w.left, top: w.top, right: w.right, bottom: w.bottom });
+  // above his hit points, or below them in the title line
+  const over = dragonPoint({ x: 0.7, y: 0 });
+  fxPop("*fwoosh*", over.x, over.r.top < 64 ? over.r.bottom + 46 : over.y - 38, "word");
+  const scorch = () => { scorchWordmark(); countDragon("scorches"); };
+  if (!reactionsAllowed()) {
+    // no flight to watch; the letters still catch, which is a colour, not a movement
+    if (through >= 0) scorch();
+    return;
+  }
+  const dx = end.x - mouth.x;
+  const dy = end.y - mouth.y;
+  const ms = Math.max(380, Math.min(950, Math.hypot(dx, dy) / 1.1));
+  const angle = Math.atan2(dy, dx);
+  const ball = document.createElement("span");
+  ball.className = "fxFireball";
+  FIREBALL_GLYPHS.forEach((ch, i) => {
+    const g = document.createElement("span");
+    g.className = `c${(i % 3) + 1}`;
+    g.textContent = ch;
+    ball.appendChild(g);
+  });
+  ball.style.left = `${Math.round(mouth.x)}px`;
+  ball.style.top = `${Math.round(mouth.y)}px`;
+  fxLayer.appendChild(ball);
+  const turn = `rotate(${angle.toFixed(3)}rad)`;
+  const flight = ball.animate(
+    [
+      { transform: `translate(0px, 0px) translate(-80%, -50%) ${turn} scale(.6)` },
+      { transform: `translate(${(dx * 0.08).toFixed(1)}px, ${(dy * 0.08).toFixed(1)}px) translate(-80%, -50%) ${turn} scale(1.15)`, offset: 0.08 },
+      { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) translate(-80%, -50%) ${turn} scale(1)` },
+    ],
+    { duration: ms, easing: "linear", fill: "forwards" });
+  flight.onfinish = () => ball.remove();
+  setTimeout(() => ball.remove(), ms + 200);
+  // embers left along the way
+  const embers = Math.floor(ms / 70);
+  for (let i = 1; i < embers; i++) {
+    setTimeout(() => {
+      const k = i / embers;
+      fxPop(["·", "*", "˚"][i % 3], mouth.x + dx * k, mouth.y + dy * k, "ember");
+    }, Math.round(ms * (i / embers)));
+  }
+  if (through >= 0) setTimeout(scorch, Math.round(ms * through));
+}
 
 // Stroking him: the pointer back and forth across him, no button held.
 function petDragon() {
@@ -820,6 +1029,7 @@ function petDragon() {
   mood = Math.min(5, mood + 1);
   renderStats();
   logoMarkEl.classList.remove("ko");
+  dragonHatEl.classList.remove("ko");
   purrSound();
   dragonFace("delighted", 1800);
   const p = dragonPoint({ x: 0.55, y: 0.1 });
@@ -881,6 +1091,174 @@ document.addEventListener("keydown", (e) => {
   appEl.classList.add("cheat");
   setTimeout(() => appEl.classList.remove("cheat"), 6000);
 });
+
+// ---- hats ----------------------------------------------------------------------
+// A pumpkin on Halloween, Santa's hat for Christmas week, a party hat on emb3r's
+// birthday and sparkles for the new year: DRAGON.hatFor decides by the local
+// date. Each is drawn on the mark's own 40x40 grid, in an SVG laid exactly over
+// his, so the logo underneath is the same drawing to the pixel. Rows are read
+// from `top`, columns from `left`; a space is nothing, the letters are classes
+// in index.html ("#dragonHat").
+const HATS = {
+  party: { left: 27, top: 0, rows: [
+    "     w     ",
+    "    www    ",
+    "    opo    ",
+    "   opypo   ",
+    "   oypyo   ",
+    "  oppyppo  ",
+    "  oyppyyo  ",
+    " oppyyppyo ",
+    "oyyppyyppyo",
+  ] },
+  santa: { left: 26, top: 1, rows: [
+    "   ooooo    ",
+    "  orrrrroo  ",
+    " orrrrrrrro ",
+    " orrrrroorrow",
+    "orrrrrro  oww",
+    "orrrrrro   w ",
+    "wwwwwwwww    ",
+    "wwwwwwwww    ",
+  ] },
+  pumpkin: { left: 27, top: 0, rows: [
+    "    s    ",
+    "    ss   ",
+    "  ooooo  ",
+    " oqqhqqo ",
+    "oqyqhqyqo",
+    "oqqqhqqqo",
+    "oqyyyyyqo",
+    " oqqhqqo ",
+    "  ooooo  ",
+  ] },
+  sparkles: { left: 30, top: 0, rows: [
+    "     y    ",
+    "     y    ",
+    "   yywyy  ",
+    "     y    ",
+    "     y   w",
+    "          ",
+    "  w       ",
+    "       y  ",
+    "      ywy ",
+    "       y  ",
+  ] },
+};
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+let hatShown = null;
+let hatCounted = false;
+
+function drawHat(name) {
+  const hat = HATS[name];
+  const cells = {};
+  hat.rows.forEach((row, y) => {
+    [...row].forEach((ch, x) => {
+      if (ch === " ") return;
+      (cells[ch] = cells[ch] || []).push(`M${hat.left + x} ${hat.top + y}h1v1h-1z`);
+    });
+  });
+  dragonHatEl.replaceChildren(...Object.entries(cells).map(([ch, d]) => {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("class", `h${ch}`);
+    path.setAttribute("d", d.join(""));
+    return path;
+  }));
+}
+
+// on today's date unless told another (the shoot fakes one)
+function paintHat(date = new Date()) {
+  const name = DRAGON.hatFor(date);
+  if (name !== hatShown) {
+    hatShown = name;
+    // an <svg> has no .hidden property, only the attribute
+    dragonHatEl.toggleAttribute("hidden", !name);
+    dragonHatEl.dataset.hat = name || "";
+    if (name) drawHat(name); else dragonHatEl.replaceChildren();
+  }
+  if (name && !hatCounted) {
+    hatCounted = true;
+    countDragon("hats");
+  }
+  return name;
+}
+paintHat();
+// a window left open past midnight puts the hat on, or takes it off
+setInterval(() => paintHat(), 10 * 60 * 1000);
+
+// ---- /dragon: his file, in the chat ------------------------------------------------
+// Typed exactly into the message box. Never sent to the model and never saved
+// in the conversation: it is drawn into the transcript on this screen and is
+// gone when the chat is opened again.
+function showDragonFile() {
+  countDragon("dragonFile");
+  dragonFileSound();
+  setHero(false);
+  const card = document.createElement("div");
+  card.className = "dragonCard";
+  card.setAttribute("role", "group");
+  card.setAttribute("aria-label", "The dragon's file");
+  const head = document.createElement("div");
+  head.className = "dragonCardHead";
+  head.textContent = "// dragon.stats  -  lifetime, this computer";
+  const list = document.createElement("ul");
+  const rows = DRAGON.statsCard(dragonStats);
+  for (const { label, value } of rows) {
+    const li = document.createElement("li");
+    const k = document.createElement("span");
+    k.className = "k";
+    k.textContent = label;
+    const dots = document.createElement("span");
+    dots.className = "dots";
+    dots.setAttribute("aria-hidden", "true");
+    const v = document.createElement("span");
+    v.className = "v";
+    v.textContent = value;
+    li.append(k, dots, v);
+    list.appendChild(li);
+  }
+  const foot = document.createElement("div");
+  foot.className = "dragonCardFoot";
+  foot.textContent = "// not sent to ember, not saved in this chat";
+  card.append(head, list, foot);
+  chat.appendChild(card);
+  chat.scrollTop = chat.scrollHeight;
+  announce(`The dragon's file. ${rows.map((r) => `${r.label}: ${r.value}`).join(", ")}.`);
+  dragonFace("smug", 1400);
+}
+
+// ---- the trophy shelf, in Settings > Display -----------------------------------------
+function paintTrophies() {
+  if (!trophyShelf) return;
+  const shelf = DRAGON.trophies(dragonStats.unlocked);
+  const got = shelf.filter((t) => t.unlocked).length;
+  trophyCount.textContent = `${got} of ${shelf.length} earned`;
+  trophyShelf.replaceChildren(...shelf.map((t) => {
+    const li = document.createElement("li");
+    li.className = t.unlocked ? "got" : "locked";
+    const box = document.createElement("span");
+    box.className = "trophyBox";
+    box.setAttribute("aria-hidden", "true");
+    box.textContent = t.unlocked ? "[x]" : "[ ]";
+    const name = document.createElement("span");
+    if (t.unlocked) {
+      name.textContent = t.title;
+    } else {
+      // seen as ???, said as what it is
+      name.setAttribute("aria-hidden", "true");
+      name.textContent = t.title;
+      const sr = document.createElement("span");
+      sr.className = "srOnly";
+      sr.textContent = "locked";
+      li.append(box, name, sr);
+      return li;
+    }
+    li.append(box, name);
+    return li;
+  }));
+}
+paintTrophies();
 
 // =============================
 // Voice — Ember reads replies aloud
@@ -1809,6 +2187,13 @@ let lastUserMessage = "";
 
 async function onSend() {
   const text = input.value.trim();
+  // /dragon, exactly, is for the dragon: his file in the chat, nothing sent,
+  // nothing saved, and an attached file left waiting for a real question
+  if (DRAGON.isDragonCommand(text)) {
+    input.value = "";
+    showDragonFile();
+    return;
+  }
   if (!text && !pendingUpload) return;
   lastUserMessage = text;
   input.value = "";
@@ -3006,7 +3391,7 @@ const SETTINGS_KEYWORDS = {
   updates:     "update version upgrade release install newer",
   display:     "theme dark light colour color accent font size glow sound effects reactions " +
                "animation mute appearance contrast voice speech speak talk aloud read " +
-               "narrate tts spoken pitch speed accessibility",
+               "narrate tts spoken pitch speed accessibility dragon trophies trophy achievements",
 };
 
 const settingsSearch = document.getElementById("settingsSearch");

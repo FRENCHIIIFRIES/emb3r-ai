@@ -671,6 +671,138 @@ pre{
 }
 @keyframes fxFade{ 0%{ opacity:1; } 100%{ opacity:0; } }
 
+/* ---- more of him: the charged fireball, combos, hats, /dragon, trophies ------
+   Everything here sits on top of the mark or beside it; the drawing and its
+   colours are untouched, as with the rest of the dragon. */
+
+/* holding the press: his back flames grow with the charge, and catch when full */
+#logoMark.charging .fl{
+    animation:chargeFlicker .14s steps(2) infinite alternate;
+    transform:scaleY(calc(1.08 + var(--charge, 0) * .85)) translateY(calc(var(--charge, 0) * -.6px));
+}
+@keyframes chargeFlicker{ from{ opacity:.82; } to{ opacity:1; } }
+#logoMark.charged{ filter:drop-shadow(0 0 6px #ff6a00) drop-shadow(0 0 2px var(--boot-flame)); }
+
+#dragonCharge{
+    position:fixed;
+    transform:translate(-50%,0);
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    white-space:nowrap;
+    color:var(--text-color);
+    text-shadow:0 0 var(--glow-small) var(--text-color);
+}
+#dragonCharge.full{ color:var(--boot-flame); text-shadow:0 0 6px #ff6a00; }
+#dragonCharge[hidden]{ display:none; }
+
+/* the fireball: a few flame glyphs, head first, flown by renderer.js */
+.fxFireball{
+    position:fixed;
+    display:flex;
+    align-items:center;
+    font-size:24px;
+    line-height:1;
+    white-space:nowrap;
+    text-shadow:0 0 8px currentColor, 0 0 16px #ff6a00;
+    will-change:transform;
+}
+.fxFireball .c1{ color:#ff6a00; font-size:18px; opacity:.75; }
+.fxFireball .c2{ color:var(--boot-flame); font-size:24px; }
+.fxFireball .c3{ color:#ffd964; font-size:28px; }
+.fxFireball span:last-child{ color:#fff4c2; font-size:38px; }
+.fxPop.ember{ font-size:13px; color:#ff8000; text-shadow:0 0 6px #ff6a00; animation-duration:.6s; }
+.fxPop.puff{ font-size:14px; color:var(--quiet); text-shadow:none; animation-duration:.8s; }
+
+/* "x3 combo": pops in beside his hit points, holds, and goes */
+.fxCombo{
+    position:fixed;
+    transform:translate(-50%,-50%);
+    font-size:20px;
+    white-space:nowrap;
+    color:var(--boot-flame);
+    text-shadow:0 0 6px #ff6a00;
+    animation:comboPop 1.1s ease-out forwards;
+}
+.fxCombo.ten{ font-size:26px; color:#ffd964; }
+@keyframes comboPop{
+    0%   { opacity:0; transform:translate(-50%,-50%) scale(1.6); }
+    14%  { opacity:1; transform:translate(-50%,-50%) scale(1); }
+    70%  { opacity:1; }
+    100% { opacity:0; transform:translate(-50%,-70%); }
+}
+
+/* His hat: the mark's own grid, laid exactly over him. It is never part of the
+   drawing - on an ordinary day it is not there at all. */
+#logoWrap{ position:relative; }
+#dragonHat{
+    position:absolute;
+    left:0;
+    top:0;
+    bottom:0;
+    margin:auto 0;
+    width:104px;
+    height:104px;
+    overflow:visible;
+    pointer-events:none;
+    transition:transform .5s cubic-bezier(.3,1.4,.5,1), opacity .4s ease;
+}
+#dragonHat[hidden]{ display:none; }
+#pet.compact #dragonHat{ width:48px; height:48px; }
+@media (min-width: 1200px){
+    #pet:not(.compact) #dragonHat{ width:134px; height:134px; }
+}
+#dragonHat.bonked{ animation:dragonBonk .28s cubic-bezier(.2,.7,.2,1); }
+#dragonHat.dodged{ animation:dragonDodge .36s ease; }
+/* knocked out, his hat comes off */
+#dragonHat.ko{ transform:translate(18%, 30%) rotate(70deg); opacity:0; }
+
+#dragonHat .ho{ fill:#120a07; }
+:root:not([data-theme="light"]) #dragonHat .ho{ fill:color-mix(in srgb, var(--text-color) 28%, #120a07); }
+#dragonHat .hw{ fill:#f4f1ea; }
+#dragonHat .hp{ fill:#ff5c8a; }
+#dragonHat .hy{ fill:#ffd964; }
+#dragonHat .hr{ fill:#d8323c; }
+#dragonHat .hq{ fill:#ff8a1f; }
+#dragonHat .hh{ fill:#c4560c; }
+#dragonHat .hs{ fill:#4f9a3a; }
+/* the new year's sparkles twinkle */
+#dragonHat[data-hat="sparkles"] path{ animation:hatTwinkle 1.3s ease-in-out infinite alternate; }
+#dragonHat[data-hat="sparkles"] .hw{ animation-delay:-.65s; }
+@keyframes hatTwinkle{ from{ opacity:.45; } to{ opacity:1; } }
+
+/* /dragon: his file, drawn into the transcript, in the terminal's own frame */
+/* VT323 joins "fi" into one glyph, which reads as a typo in a column of words */
+.dragonCard, #trophyShelf, .fxAchievement{ font-variant-ligatures:none; }
+.dragonCard{
+    max-width:420px;
+    margin:10px 0;
+    padding:10px 14px 8px;
+    border:1px solid var(--text-color);
+    box-shadow:var(--frame-glow);
+    white-space:normal;
+}
+.dragonCardHead,
+.dragonCardFoot{ color:var(--quiet); }
+.dragonCardFoot{ margin-top:6px; font-size:.85em; }
+.dragonCard ul{ list-style:none; margin:6px 0 0; padding:0; }
+.dragonCard li{ display:flex; align-items:baseline; gap:6px; line-height:1.35; }
+.dragonCard .dots{ flex:1; border-bottom:2px dotted color-mix(in srgb, var(--text-color) 40%, transparent); transform:translateY(-4px); }
+.dragonCard .v{ text-shadow:0 0 var(--glow-small) var(--text-color); }
+
+/* the trophy shelf in Settings > Display */
+#trophies{ margin-top:22px; }
+#trophyShelf{ list-style:none; margin:6px 0; padding:0; columns:2 220px; column-gap:24px; }
+#trophyShelf li{ display:flex; gap:8px; break-inside:avoid; line-height:1.4; font-size:17px; }
+#trophyShelf li.got{ text-shadow:0 0 var(--glow-small) var(--text-color); }
+#trophyShelf li.locked{ color:var(--quiet); }
+
+@media (prefers-reduced-motion: reduce){
+    #logoMark.charging .fl{ animation:none; transform:none; }
+    #dragonHat{ transition:none; }
+    #dragonHat.bonked, #dragonHat.dodged, #dragonHat[data-hat="sparkles"] path{ animation:none; }
+    .fxCombo{ animation:fxFade 1.1s ease forwards; }
+}
+
 #chat{
     flex:1;
     min-height:0;
@@ -4424,6 +4556,15 @@ kbd.shortcutKeys{
             <p class="settingsNote">This is about the terminal only. <b>Talk</b> always speaks — it is the whole point of that view — and it does not need this switched on.</p>
             <p class="settingsNote">Ember's voice is a speech model that runs on this computer, and it ships inside emb3r — there is nothing to fetch and nothing to sign up for. It works with the offline lock on, from the first time you open the app. Nothing you hear was made anywhere else, and nothing said to you is sent anywhere. You can speak to her in either place: hold <b>[o]</b> beside the message box, or the button in Talk.</p>
         </div>
+
+        <!-- What the dragon on the logo has given up so far. Filled by
+             renderer.js ("the trophy shelf") from src/dragon.js. -->
+        <div id="trophies">
+            <h4 class="sideLabel" id="trophyTitle">dragon trophies</h4>
+            <p id="trophyCount" class="settingsNote"></p>
+            <ul id="trophyShelf" aria-labelledby="trophyTitle"></ul>
+            <p class="settingsNote">Earned from the dragon on the logo: punch him, hold the press to charge a fireball, stroke him, or type <code>/dragon</code> to see his file. Kept on this computer only.</p>
+        </div>
     </div>
 
     <div class="settingsSection" data-tab="access">
@@ -4500,6 +4641,9 @@ kbd.shortcutKeys{
   <path class="f3" d="M28 6h1v1h-1zM27 7h2v1h-2z"/>
 </g>
 </svg>
+<!-- His hat, on a few days of the year: drawn by renderer.js ("hats") on the
+     same 40x40 grid, laid exactly over the mark. The mark itself never changes. -->
+<svg id="dragonHat" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true" hidden></svg>
 <pre id="logo">
 ███████╗███╗   ███╗██████╗ ██████╗ ██████╗
 ██╔════╝████╗ ████║██╔══██╗╚════██╗██╔══██╗
@@ -4712,7 +4856,7 @@ kbd.shortcutKeys{
 <script src="./tutor-art.js"></script>
 <script src="./koi.js"></script>
 <!-- the dragon's punches, stars and fire, over everything but the dialogs -->
-<div id="fxLayer" aria-hidden="true"><div id="dragonHp" hidden></div></div>
+<div id="fxLayer" aria-hidden="true"><div id="dragonHp" hidden></div><div id="dragonCharge" hidden></div></div>
 
 <script src="./cards.js"></script>
 <script src="./talk.js"></script>
