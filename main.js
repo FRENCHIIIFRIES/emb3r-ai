@@ -5258,58 +5258,68 @@ const calendarFailure = (kind) => Object.assign(new Error(kind), { calendar: kin
 
 // One GET of the feed: https.get, which the network guard wraps, or http.get
 // for the test origin alone. A few redirects are followed, each one held to the
-// same rule as a pasted link, and no more than 5 MB is read.
-function fetchCalendarBytes(target, redirects = 0) {
+// same rule as a pasted link, no more than 5 MB is read, and the whole of it -
+// looking the host up, connecting, every redirect, reading - has 20 seconds.
+// req.setTimeout alone was not enough: it starts only once a socket has
+// connected, and on 13 November linking a host that did not exist sat for over
+// a minute while Windows finished looking it up.
+function fetchCalendarBytes(target, redirects = 0, deadline = Date.now() + CALENDAR_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     let req;
+    let timer = null;
+    const done = (bytes) => { clearTimeout(timer); resolve(bytes); };
+    const fail = (err) => { clearTimeout(timer); reject(err); };
     try {
       req = (target.http ? http : https).get(target.url, {
         headers: { "User-Agent": "emb3r-app", Accept: "text/calendar, */*;q=0.5" },
       }, (res) => {
         if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
           res.resume();
-          if (redirects >= 5) return reject(calendarFailure("redirects"));
+          if (redirects >= 5) return fail(calendarFailure("redirects"));
           let next = null;
           try { next = calendarTarget(new URL(res.headers.location, target.url).toString()); } catch { /* not an address */ }
-          if (!next || !next.ok) return reject(calendarFailure("not-https"));
-          return fetchCalendarBytes(next, redirects + 1).then(resolve, reject);
+          if (!next || !next.ok) return fail(calendarFailure("not-https"));
+          clearTimeout(timer);
+          return fetchCalendarBytes(next, redirects + 1, deadline).then(resolve, reject);
         }
         if (res.statusCode !== 200) {
           res.resume();
-          return reject(Object.assign(new Error(`answered ${res.statusCode}`), { status: res.statusCode }));
+          return fail(Object.assign(new Error(`answered ${res.statusCode}`), { status: res.statusCode }));
         }
         const chunks = [];
         let size = 0;
         res.on("data", (chunk) => {
           size += chunk.length;
           if (size > CALENDAR_MAX_BYTES) {
-            reject(calendarFailure("too-large"));
+            fail(calendarFailure("too-large"));
             req.destroy();
             return;
           }
           chunks.push(chunk);
         });
-        res.on("end", () => resolve(Buffer.concat(chunks)));
-        res.on("error", reject);
+        res.on("end", () => done(Buffer.concat(chunks)));
+        res.on("error", fail);
       });
     } catch (err) {
       // the offline lock refuses from inside https.get itself
-      reject(err);
+      fail(err);
       return;
     }
-    req.on("error", reject);
-    req.setTimeout(CALENDAR_TIMEOUT_MS, () => req.destroy(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })));
+    req.on("error", fail);
+    timer = setTimeout(() => req.destroy(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })),
+      Math.max(0, deadline - Date.now()));
   });
 }
 
-// fetched and read, or an error that already says what went wrong in words
-async function fetchCalendar(target) {
+// fetched and read, or an error that already says what went wrong in words -
+// and when linking, that nothing will try again by itself
+async function fetchCalendar(target, { linking = false } = {}) {
   try {
     const cache = readFeed(await fetchCalendarBytes(target), Date.now());
     if (!cache) throw calendarFailure("not-calendar");
     return { cache };
   } catch (err) {
-    return { error: describeCalendarError({ status: err.status, error: err.status ? null : err, host: target.host }) };
+    return { error: describeCalendarError({ status: err.status, error: err.status ? null : err, host: target.host, linking }) };
   }
 }
 
@@ -5397,7 +5407,7 @@ ipcMain.handle("emb3r:calendar-link", async (_e, link) => {
   }
   // a refresh of the calendar being replaced finishes first, and is then discarded
   if (calendarFetching) await calendarFetching;
-  const got = await fetchCalendar(target);
+  const got = await fetchCalendar(target, { linking: true });
   if (!got.cache) {
     console.error(`Calendar: could not link ${target.host}: ${got.error}`);
     return { success: false, error: got.error, status: calendarStatus() };

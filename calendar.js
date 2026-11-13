@@ -451,9 +451,18 @@ function oneLine(s, max) {
 
 // A description as a short note: a teacher's tags and the links back to the
 // task say nothing the model can use, and cost the window as much as words.
+// Cut where a sentence ends when one does: given "...include your..." on 13
+// November, Qwen2.5 0.5B finished the sentence itself, with things the teacher
+// never asked for.
+const NOTE_MAX = 140;
+
 function note(description, title) {
-  const t = oneLine(String(description || "").replace(/<[^>]*>/g, " ").replace(/https?:\/\/\S+/g, " "), 100);
-  return t && t.toLowerCase() !== String(title || "").toLowerCase() ? t : "";
+  const t = String(description || "").replace(/<[^>]*>/g, " ").replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
+  if (!t || t.toLowerCase() === String(title || "").toLowerCase()) return "";
+  if (t.length <= NOTE_MAX) return t;
+  const head = t.slice(0, NOTE_MAX + 1);
+  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  return end >= 40 ? head.slice(0, end + 1) : oneLine(t, NOTE_MAX);
 }
 
 function eventLine(ev, now) {
@@ -491,8 +500,11 @@ export function calendarContext(events, now, { fetchedAt = 0, days = CONTEXT_DAY
 
 // Every way a fetch can fail, said in words - and never with the link in them,
 // since the link is the secret. `host` is the part of it that is safe to show.
-export function describeCalendarError({ status, error, host } = {}) {
+// A link that failed while being linked is not kept, so nothing will try it
+// again by itself; a linked calendar is tried again within the hour.
+export function describeCalendarError({ status, error, host, linking = false } = {}) {
   const where = host || "ManageBac";
+  const later = linking ? "Try again in a moment." : "emb3r will try again within the hour.";
   if (error) {
     if (error.isOfflineLock || error.name === "OfflineLockError") return "The offline lock is on, so emb3r did not fetch your calendar.";
     if (error.calendar === "not-calendar") return `${where} sent back something that is not a calendar. Copy the subscribe link again from ManageBac > Calendar.`;
@@ -501,12 +513,12 @@ export function describeCalendarError({ status, error, host } = {}) {
     if (error.calendar === "not-https") return `${where} sent emb3r to an address that is not https, so it did not follow.`;
     const code = connectionErrorCode(error);
     if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `Couldn't look up ${where} - the internet connection seems to be down, or this network blocks it.`;
-    if (code === "ETIMEDOUT") return `${where} did not answer in time. emb3r will try again within the hour.`;
-    if (code) return `Couldn't connect to ${where} (${code}). emb3r will try again within the hour.`;
+    if (code === "ETIMEDOUT") return `${where} did not answer in time. ${later}`;
+    if (code) return `Couldn't connect to ${where} (${code}). ${later}`;
     return `Couldn't fetch the calendar from ${where}.`;
   }
   if (status === 401 || status === 403) return `${where} refused the link. It may have been reset: copy a new one from ManageBac > Calendar.`;
   if (status === 404 || status === 410) return `${where} has no calendar at that link. Copy it again from ManageBac > Calendar.`;
-  if (status >= 500) return `${where} is having trouble (it answered ${status}). emb3r will try again within the hour.`;
+  if (status >= 500) return `${where} is having trouble (it answered ${status}). ${later}`;
   return `${where} answered ${status} instead of sending the calendar.`;
 }

@@ -253,13 +253,21 @@ test("what the model is told: the next fortnight, as information to answer from"
   assert.equal(lines.length, 8, ctx);
   assert.ok(lines.every((l) => l.startsWith("- ")));
   assert.equal(lines[1],
-    "- Fri 13 Nov (tomorrow), all day: Biology HL: Osmosis lab report [Biology HL, Summative] - Write up the potato osmosis practical, max 1500 words. Submit on ManageBac as a PDF; include your...");
+    "- Fri 13 Nov (tomorrow), all day: Biology HL: Osmosis lab report [Biology HL, Summative] - Write up the potato osmosis practical, max 1500 words. Submit on ManageBac as a PDF; include your raw data table.");
   assert.ok(lines.includes("- Tue 17 Nov (in 5 days), 15:30-16:30: CAS reflection check-in (at Room 2.14)"), ctx);
   // a teacher's markup and the links back to the task are not worth the window
   assert.ok(lines.includes("- Wed 18 Nov (in 6 days), 23:59: History HL: IA first draft due [History HL] - Upload the draft to Turnitin and to ManageBac."), ctx);
   assert.doesNotMatch(ctx, /https?:|<p>|<b>/);
   assert.ok(!ctx.includes("Extended Essay"), "three weeks away is past the fortnight");
   assert.ok(!ctx.includes("TOK: exhibition"), "over already");
+  // a long note ends where a sentence does, never halfway through one - a small
+  // model finishes a cut-off sentence itself (Qwen2.5 0.5B did, 13 November)
+  const essay = (description) => calendarContext([{ title: "TOK essay", allDay: true, start: "2026-11-13", end: "2026-11-14", description }], NOW).split("\n")[1];
+  const sentences = "Choose one of the six prescribed titles. Write no more than 1600 words. Use at least two areas of knowledge. Cite every source you use in the bibliography at the end.";
+  assert.equal(essay(sentences), "- Fri 13 Nov (tomorrow), all day: TOK essay - Choose one of the six prescribed titles. Write no more than 1600 words. Use at least two areas of knowledge.");
+  const runOn = "bring your calculator your formula booklet a black pen a pencil an eraser a ruler and your revision notes for the whole of topic five and topic six please";
+  assert.match(essay(runOn), / - bring your calculator .+\.\.\.$/);
+  assert.ok(essay(runOn).length < 60 + 140, essay(runOn));
   // nothing on is said, so a small model does not invent homework
   assert.match(calendarContext([], NOW), /\nNothing is on it for the next 14 days\.$/);
   // a crowded fortnight is capped at 25 entries
@@ -326,5 +334,15 @@ test("every refusal is said in words, and none of them carries the link", () => 
   for (const s of said) {
     assert.ok(s.length > 20, s);
     assert.ok(!s.includes(secret) && !s.includes("/token/"), s);
+  }
+  // a link that failed while being linked was not kept, so nothing tries it again by itself
+  assert.match(said[3], /emb3r will try again within the hour\.$/);
+  for (const linking of [
+    describeCalendarError({ status: 503, host, linking: true }),
+    describeCalendarError({ error: Object.assign(new Error("x"), { code: "ETIMEDOUT" }), host, linking: true }),
+    describeCalendarError({ error: Object.assign(new Error("x"), { code: "ECONNRESET" }), host, linking: true }),
+  ]) {
+    assert.match(linking, /Try again in a moment\.$/);
+    assert.doesNotMatch(linking, /within the hour/);
   }
 });
