@@ -1,5 +1,19 @@
 A small terminal-dwelling AI companion that runs a language model entirely on your own machine. By default, nothing you type is sent to a server — and as of v1.1.0 you can verify that, and enforce it.
 
+## v1.42.0 — the dragon fights back, updates install themselves, and the first launch loads properly
+
+**emb3r updates itself now.** It looks for a new version a few seconds after it opens and every few hours after that, downloads it quietly in the background, and installs it the next time you close the app — or straight away, from the line that appears above the message box when one is ready. Settings → Updates can turn it off, which brings back the old way (it checks, and you press Download). The offline lock stops all of it, looking included. On a Mac the update still waits for you to press restart, because a Mac will not let an app replace itself unasked, and the note says so.
+
+**The first launch no longer glitches.** The model you pick on the first screen used to load with nothing on screen: the loading screen had already gone, so the chat came up first and answered "still loading" to anything typed in the half-minute the load took. Now the setup screen closes, the fire comes back for the load with its torches following the real progress, and the chat opens only when there is a model behind it, with the cursor already in the message box. The tutors' models, if you ticked them, download after that, behind the chat, instead of holding the setup screen open.
+
+**You choose the model you install.** The first screen lists every model your computer can hold, with its size and what it is good at. The recommended one is already picked; pick another and that is the one that downloads and opens.
+
+**The dragon on the logo can take a punch.** Click him and he flinches and says so. Punch him fast and he sees stars. Get him low and he breathes fire across the wordmark, once, then dodges for a moment. Knock him out and he lies there on his back, then gets up. Stroke him instead — the pointer back and forth across him — and he purrs and gets better. Click the letters and EMB3R is spelled with an E for a second, then it is a three again, as it has always been. There is a code from an old game that does something to the colours, and a few achievements, kept on this computer. The Sound and Animations settings and your system's reduced-motion setting are respected.
+
+**Settings and Talk no longer mix.** Opening Settings while Talk was up drew the two screens over each other. Each now closes the other.
+
+**Fixed.** On a Mac the update note used to promise it would install when you closed the app, which a Mac cannot do.
+
 ## v1.41.0 — her voice, actually; flashcards from your tutors; and Talk in blue
 
 **Ember can speak now — in the installed app, for the first time.** She was always able to from source, which is why every test heard her, but the installer has been packing the wrong voice file since v1.34.0: it shipped one voice and she speaks with another, so every installed copy failed every sentence with a file-not-found error written in small print under the reply. The build now packs the voice she actually uses, a test reads her voice's name out of the code so the two can never drift apart again, and the fix was proven on a packaged build before it shipped: speech made, played, and heard back by her own ears.
