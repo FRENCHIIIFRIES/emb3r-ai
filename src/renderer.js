@@ -4134,10 +4134,14 @@ window.emb3r.onUpdateStatus((status) => {
     }
     case "downloaded":
       updateProgressEl.textContent = "";
-      updateStatusEl.textContent = `v${status.version} downloaded - it installs when you close emb3r`;
+      updateStatusEl.textContent = status.onQuit
+        ? `v${status.version} downloaded - it installs when you close emb3r`
+        : `v${status.version} downloaded - restart to install`;
       showUpdateButtons({ install: true });
       // and said where it will be seen, not only in Settings
-      updateNoteTextEl.textContent = `// emb3r v${status.version} is ready. it installs when you close the app`;
+      updateNoteTextEl.textContent = status.onQuit
+        ? `// emb3r v${status.version} is ready. it installs when you close the app`
+        : `// emb3r v${status.version} is ready. restart to install it`;
       updateNoteEl.hidden = false;
       break;
     case "error":

@@ -145,6 +145,16 @@ function defaultConfig() {
 // emb3r is that it works with the network off, so a "what's new" screen that
 // needs a request to render would be the wrong shape. Newest first.
 const CHANGELOG = [
+  { version: "1.42.0",
+    added: [
+      "emb3r updates itself. It looks for a new version when it opens and every few hours, downloads it quietly, and installs it the next time you close the app - or now, from the note above the message box. Settings > Updates can turn it off, and the offline lock stops it.",
+      "The first screen lists every model your computer can hold, with the recommended one already picked. Whatever you pick is what downloads and opens.",
+      "The dragon on the logo can take a punch: he flinches, sees stars, breathes fire when he has had enough, gets knocked out and gets back up. Stroke him instead and he purrs. Click the letters, or try an old game's code, for the rest.",
+    ],
+    fixed: [
+      "After the first model downloads, the loading screen comes back while it loads and the chat opens only once it is ready, with the cursor in the message box. Before, the chat came up first and said it was still loading.",
+      "Settings and Talk no longer draw over each other: each closes the other.",
+    ] },
   { version: "1.41.0",
     added: [
       "Every tutor keeps a deck of flashcards. Press [ cards ] in a tutor's chat, type a topic or paste your notes, and the tutor writes three to ten cards on this computer. They arrive as drafts you read, fix or drop before they join the deck - a small model can be wrong - and review takes one key at a time: Space turns the card, 1 again, 2 good, 3 easy, and the gaps grow as you keep getting it right. E explains a card step by step. Languages keeps a deck per language.",
@@ -1658,6 +1668,8 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
 const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+// the version a Mac has staged or is staging (see the update-available handler)
+let macStagedFor = null;
 
 function autoUpdatesOn() {
   return config.autoUpdate !== false;
@@ -1690,15 +1702,21 @@ autoUpdater.on("update-available", (info) => {
   sendUpdateStatus({ state: "available", version: info.version, auto });
   // a Mac stages its own copy, checked against the published hash, instead of
   // handing the job to Squirrel - started here when updates are automatic
-  if (auto && process.platform === "darwin") {
-    stageMacUpdate().catch((err) => sendUpdateStatus({ state: "error", message: err.message || String(err), releasesUrl: RELEASES_URL }));
+  // once per version: every later check would otherwise delete the staged copy and fetch ~300 MB again
+  if (auto && process.platform === "darwin" && macStagedFor !== info.version) {
+    macStagedFor = info.version;
+    const failed = () => { macStagedFor = null; };
+    stageMacUpdate()
+      .then((r) => { if (r && r.success === false) failed(); })
+      .catch((err) => { failed(); sendUpdateStatus({ state: "error", message: err.message || String(err), releasesUrl: RELEASES_URL }); });
   }
 });
 autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ state: "not-available", version: info.version }));
 autoUpdater.on("download-progress", (p) => {
   sendUpdateStatus({ state: "downloading", percent: p.percent, transferred: p.transferred, total: p.total });
 });
-autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ state: "downloaded", version: info.version }));
+// onQuit: this one installs by itself when emb3r closes; the Mac's staged copy waits for "restart now"
+autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ state: "downloaded", version: info.version, onQuit: true }));
 autoUpdater.on("error", (err) => {
   console.error("Update error:", err);
   // this is the path an unsigned macOS build is expected to take: Squirrel.Mac
