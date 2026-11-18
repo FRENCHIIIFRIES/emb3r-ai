@@ -16,6 +16,7 @@ import {
 // the keys that work from anywhere, and the clipboard made ready to explain
 import { DEFAULT_GLOBALS, prepareClipboard, isUsableAccelerator } from "./access.js";
 import { DOWNLOAD_ATTEMPTS, RETRY_DELAYS_MS, describeDownloadError, isRetryableConnectionError } from "./downloads.js";
+import { startPhoneLink, lanAddress, newCode, PHONE_PORT } from "./phone.js";
 // the eight subject tutors: their prompts and which model suits each
 import { TUTORS, TUTOR_MODELS, isTutor, tutorPrompt, preferredModelFor, bestModelFor } from "./tutors.js";
 // a tutor's flashcards: decks, Leitner boxes, prompts, cards read as they come
@@ -2110,6 +2111,7 @@ app.whenReady().then(async () => {
   // before the window, so it never appears with the default menu and then
   // loses it a frame later
   installAppMenu();
+  setupPhoneLink();
   mainWindow = createWindow();
   registerGlobalShortcuts();
 
@@ -2248,6 +2250,7 @@ ipcMain.handle("emb3r:set-offline-lock", (_e, on) => {
   }
   config.offlineLock = wanted;
   saveConfig(config);
+  setupPhoneLink();   // the lock closes the phone link too
   broadcastNet();
   return { success: true, locked: wanted };
 });
@@ -3891,6 +3894,47 @@ ipcMain.handle("emb3r:spotify-status", () => ({
   reactions: Boolean(config.spotifyReactions),
 }));
 
+// ---- Phone link (h3arth on an iPad) ----
+// The iPad's message is handed to the window and answered exactly as if it were typed here, so it
+// shows in the transcript too; the answer goes back to the iPad. Her song reactions and replies to
+// what is typed here are queued for the iPad to pop up. Off by default, and off under the offline lock.
+let phoneLink = null;
+const phonePending = new Map();
+
+function phoneLinkStatus() {
+  return { on: Boolean(config.phoneLink), address: `${lanAddress()}:${PHONE_PORT}`, code: config.phoneLinkCode || "", locked: Boolean(config.offlineLock) };
+}
+
+function setupPhoneLink() {
+  if (phoneLink) { phoneLink.close(); phoneLink = null; }
+  if (!config.phoneLink || config.offlineLock) return;
+  if (!config.phoneLinkCode) { config.phoneLinkCode = newCode(); saveConfig(config); }
+  phoneLink = startPhoneLink({
+    code: config.phoneLinkCode,
+    ask: (text) => new Promise((resolve, reject) => {
+      if (!mainWindow) return reject(new Error("emb3r's window is closed"));
+      const id = crypto.randomUUID();
+      const timer = setTimeout(() => { phonePending.delete(id); reject(new Error("ember took too long")); }, 120_000);
+      phonePending.set(id, (reply) => { clearTimeout(timer); resolve(reply); });
+      mainWindow.webContents.send("emb3r:phone-message", { id, text });
+    }),
+  });
+  phoneLink.server.on("error", (e) => { console.error("phone link:", e.message); phoneLink = null; });
+}
+
+ipcMain.on("emb3r:phone-reply", (_e, id, text) => {
+  const done = phonePending.get(id);
+  if (done) { phonePending.delete(id); done(String(text)); }
+});
+ipcMain.on("emb3r:phone-event", (_e, text) => { if (phoneLink && text) phoneLink.push(text); });
+ipcMain.handle("emb3r:phone-link-status", () => phoneLinkStatus());
+ipcMain.handle("emb3r:set-phone-link", (_e, on) => {
+  config.phoneLink = Boolean(on);
+  saveConfig(config);
+  setupPhoneLink();
+  return phoneLinkStatus();
+});
+
 ipcMain.handle("emb3r:set-spotify-reactions", (_e, on) => {
   config.spotifyReactions = Boolean(on);
   saveConfig(config);
@@ -3998,6 +4042,7 @@ async function readNowPlaying() {
   // when emb3r opened, and only when asked for
   if (data.id && data.id !== spotifyLastTrackId) {
     if (spotifyLastTrackId !== null && config.spotifyReactions && data.playing) data.reaction = reactionLine(data);
+    if (data.reaction && phoneLink) phoneLink.push(data.reaction);
     spotifyLastTrackId = data.id;
   }
   spotifyLast = { at: Date.now(), data };

@@ -152,6 +152,12 @@ contextBridge.exposeInMainWorld("emb3r", {
   disconnectSpotify: () => ipcRenderer.invoke("emb3r:disconnect-spotify"),
   spotifyStatus: () => ipcRenderer.invoke("emb3r:spotify-status"),
   getNowPlaying: () => ipcRenderer.invoke("emb3r:get-now-playing"),
+  // h3arth on an iPad: its messages in, Ember's replies and lines out
+  phoneLinkStatus: () => ipcRenderer.invoke("emb3r:phone-link-status"),
+  setPhoneLink: (on) => ipcRenderer.invoke("emb3r:set-phone-link", on),
+  onPhoneMessage: (cb) => ipcRenderer.on("emb3r:phone-message", (_e, m) => cb(m)),
+  phoneReply: (id, text) => ipcRenderer.send("emb3r:phone-reply", id, text),
+  phoneEvent: (text) => ipcRenderer.send("emb3r:phone-event", text),
   // "pause", "play", "next", "previous" or "toggle" - answered in Ember's words
   spotifyControl: (action) => ipcRenderer.invoke("emb3r:spotify-control", action),
   // the colour of an album's cover, for music moods; main only fetches from

@@ -1888,6 +1888,8 @@ async function onSend() {
   // few short sentences instead of an essay to be read to you
   if (faceModeOn) opts.spoken = true;
   await submitToModel(messageToSend, Object.keys(opts).length ? opts : undefined, { fromDocument: usedRetrieval });
+  // her answer pops up on a linked iPad too
+  if (streamText) window.emb3r.phoneEvent(streamText);
   // the attachment deliberately survives, so follow-ups can query it again.
   // Cleared with the ✕ on the attachment bar.
   input.focus();
@@ -5294,6 +5296,30 @@ function renderNowPlaying(info) {
 
 spotifyReactToggle.addEventListener("change", async () => {
   await window.emb3r.setSpotifyReactions(spotifyReactToggle.checked);
+});
+
+// ---- phone link (h3arth on an iPad) ----------------------------------------
+// A message from the iPad goes down the same road as one typed here - shown in
+// the transcript as from the ipad - and the finished answer is handed back.
+const phoneLinkToggle = document.getElementById("phoneLinkToggle");
+const phoneLinkInfo = document.getElementById("phoneLinkInfo");
+
+function renderPhoneLink(s) {
+  phoneLinkToggle.checked = s.on;
+  phoneLinkInfo.textContent = s.locked ? "The offline lock is on, so the phone link is closed."
+    : s.on ? `In h3arth, open the ember tab, choose [ pc link ] and type ${s.address} with code ${s.code}. Same Wi-Fi as this computer.`
+    : "Off. Turn it on to chat with Ember from h3arth, and to see her lines pop up there.";
+}
+
+phoneLinkToggle.addEventListener("change", async () => renderPhoneLink(await window.emb3r.setPhoneLink(phoneLinkToggle.checked)));
+window.emb3r.phoneLinkStatus().then(renderPhoneLink);
+
+window.emb3r.onPhoneMessage(async ({ id, text }) => {
+  // one answer at a time: the box is locked while she's working on one from here
+  if (send.disabled) { window.emb3r.phoneReply(id, "( ._.) busy answering something on the pc, ask again in a moment"); return; }
+  append("you", "ipad", text, { copyable: true });
+  await submitToModel(text);
+  window.emb3r.phoneReply(id, streamText || "( ;_; ) no answer");
 });
 
 // A line of hers when a new song starts: written, not generated, and not saved
